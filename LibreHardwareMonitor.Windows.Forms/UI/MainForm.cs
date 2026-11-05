@@ -17,6 +17,7 @@ using Aga.Controls.Tree;
 using Aga.Controls.Tree.NodeControls;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Hardware.Storage;
+using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 using LibreHardwareMonitor.Windows.Forms.Utilities;
 
@@ -55,6 +56,8 @@ public sealed partial class MainForm : Form
     private readonly SystemTray _systemTray;
     private readonly UnitManager _unitManager;
     private readonly UpdateVisitor _updateVisitor = new();
+    private readonly FanControlEngine _fanControlEngine;
+    private bool _isWorkingSetTrimmed;
 
     private int _delayCount;
     private Form _plotForm;
@@ -131,7 +134,11 @@ public sealed partial class MainForm : Form
 
         _computer = new Computer(_settings);
 
+        _fanControlEngine = new FanControlEngine(_computer, _settings);
+        _fanControlPanel?.SetEngine(_fanControlEngine);
+
         _systemTray = new SystemTray(_computer, _settings, _unitManager);
+        _systemTray.SetFanControlEngine(_fanControlEngine);
         _systemTray.HideShowCommand += HideShowClick;
         _systemTray.ExitCommand += ExitClick;
 
@@ -512,6 +519,7 @@ public sealed partial class MainForm : Form
         // Make sure the settings are saved when the user logs off
         Microsoft.Win32.SystemEvents.SessionEnded += delegate
         {
+            FanControlEngine.RestoreAllControlsToDefault();
             _computer.Close();
             SaveConfiguration();
             if (_runWebServer.Value)
@@ -525,6 +533,7 @@ public sealed partial class MainForm : Form
     private void BackgroundUpdater_DoWork(object sender, DoWorkEventArgs e)
     {
         _computer.Accept(_updateVisitor);
+        _fanControlEngine?.Update();
 
         if (_logSensors != null && _logSensors.Value && _delayCount >= 4)
             _logger.Log();
@@ -663,6 +672,8 @@ public sealed partial class MainForm : Form
         {
             treeView.Invalidate();
             UpdateShell();
+            if (_fanControlPanel != null && _fanControlPanel.Visible)
+                _fanControlPanel.UpdateTelemetry();
         }
 
         _systemTray.Redraw();
@@ -688,6 +699,8 @@ public sealed partial class MainForm : Form
     public void ApplyAdaptivePolling()
     {
         bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
+        bool fanControlActive = _fanControlEngine != null && _fanControlEngine.HasActiveControls;
+        _updateVisitor.ActiveFanControl = fanControlActive;
 
         if (isFormVisible)
         {
@@ -697,9 +710,16 @@ public sealed partial class MainForm : Form
         else
         {
             _updateVisitor.LowPowerMode = true;
-            bool needsFrequentBackgroundUpdates = (_runWebServer != null && _runWebServer.Value) ||
-                                                  (_systemTray != null && _systemTray.HasSensors);
-            timer.Interval = needsFrequentBackgroundUpdates ? 3000 : 5000;
+            if (fanControlActive)
+            {
+                timer.Interval = 1000;
+            }
+            else
+            {
+                bool needsFrequentBackgroundUpdates = (_runWebServer != null && _runWebServer.Value) ||
+                                                      (_systemTray != null && _systemTray.HasSensors);
+                timer.Interval = needsFrequentBackgroundUpdates ? 3000 : 5000;
+            }
         }
     }
 
@@ -734,8 +754,26 @@ public sealed partial class MainForm : Form
         ApplyAdaptivePolling();
         if (WindowState == FormWindowState.Minimized)
         {
+            TryTrimWorkingSetOnce();
+        }
+        else if (WindowState == FormWindowState.Normal || WindowState == FormWindowState.Maximized)
+        {
+            ResetWorkingSetTrimmed();
+        }
+    }
+
+    public void TryTrimWorkingSetOnce()
+    {
+        if (!_isWorkingSetTrimmed)
+        {
+            _isWorkingSetTrimmed = true;
             TrimWorkingSet();
         }
+    }
+
+    public void ResetWorkingSetTrimmed()
+    {
+        _isWorkingSetTrimmed = false;
     }
 
     private void SaveConfiguration()

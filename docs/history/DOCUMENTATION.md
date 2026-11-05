@@ -137,3 +137,30 @@
     - Invocacao da API Win32 `EmptyWorkingSet` via `psapi.dll` associada a `GC.Collect()` na transicao para a bandeja do sistema, libertando memoria fisica nao utilizada.
   - **Otimizacao de Alocacao de Historico de Sensores:** Em `MainForm.Plot.cs` e `MainForm.cs`, desativacao automatica de `ValuesTimeWindow` (`TimeSpan.Zero`) para todos os sensores quando o painel de graficos se encontra inativo, suprimindo alocacoes contínuas de series temporais.
   - **Cache de Afinidade de Thread em MSRs:** Em `ThreadAffinity.cs`, introducao de cache local `[ThreadStatic]` para evitar chamadas de sistema `SetThreadGroupAffinity` redundantes para o mesmo grupo e mascara.
+
+
+---
+
+## 12. Fase 12: Motor de Controlo de Ventoinhas (Fan Control), Fail-Safes e UI Integrada
+
+* **Objetivo:** Implementar a Fase 2 da transformacao em Master Hardware Hub, introduzindo controlo ativo de ventilacao seguro e de baixo overhead sobre as primitivas `IControl` (`Control.cs`) e sensores `SensorType.Control` / `SensorType.Fan` existentes em `LibreHardwareMonitorLib`.
+* **Acoes Efetuadas:**
+  - **Resolucao Cirurgica de Detalhes da Fase 1:**
+    - Frequencia do timer em background com Fan Control ativo: `UpdateVisitor.ActiveFanControl` faz com que o Tier Critico e o PWM sejam avaliados a cada 1000ms mesmo quando minimizado, mantendo a pintura de UI GDI+ 100% suspensa.
+    - Gatilho unico para `TrimWorkingSet()`: Introduzidos `TryTrimWorkingSetOnce()` e `ResetWorkingSetTrimmed()` para garantir que `GC.Collect()` e `EmptyWorkingSet` ocorrem exclusivamente na transicao para o estado minimizado/oculto, evitando hard page faults continuos no kernel.
+    - Blindagem de `ThreadAffinity.cs`: Garantido que se `SetThreadGroupAffinity` falhar, a cache `_isAffinityCached` e invalidada; ao saltar syscalls redundantes por o nucleo ja corresponder a afinidade pretendida, o metodo devolve a afinidade valida para restauracao segura nos blocos finally.
+  - **Subsistema Nuclear de Fan Control (`UI/FanControl/`):**
+    - `FanControlTypes.cs`: Enumeracoes `FanChannelMode` (`DefaultBios`, `Fixed`, `Curve`) e `GlobalFanPreset` (`DefaultBios`, `Silent`, `Balanced`, `Performance`, `Custom`).
+    - `FanCurvePoint.cs`: Estrutura imutavel com clamping de PWM (0-100%) compativel com .NET 8 e .NET Framework 4.7.2.
+    - `FanCurve.cs`: Interpolacao linear entre pontos com clamping de extremos, serializacao compacta para texto e definicao de curvas de fabrica (Silent, Balanced, Performance).
+    - `FanChannelConfig.cs`: Configuracao por canal persistida em `PersistentSettings` com selecao de fontes termicas (`CPU Package`, `GPU Core`, `Max(CPU, GPU)` ou sensor individual), histerese assimetrica e suavizacao temporal.
+    - `FanChannelRuntime.cs`: Motor de runtime por canal com media movel (`ResponseTimeSeconds`), histerese assimetrica (+1.5 C para acelerar, -3.0 C para desacelerar), limitadores de taxa de variacao (`MaxStepUpPercent`, `MaxStepDownPercent`) e Hard Thermal Override (>= 90 C forca 100% PWM com histerese de retorno ate 82 C).
+    - `FanControlEngine.cs`: Orquestrador central que descobre canais atraves de `IControl`, associa sensores RPM correspondentes, resolve temperaturas compostas, aplica perfis globais e gere a persistencia.
+  - **Fail-Safes de Seguranca de Hardware:**
+    - Hard Thermal Override: Alerta visual de emergencia e bloqueio automatico em 100% PWM perante temperatura do sensor alvo >= 90 C com histerese de desbloqueio aos 82 C.
+    - Dead-Man's Switch: Registo estatico global que devolve todos os canais de controlo ao padrao do BIOS (`IControl.SetDefault()`) nos eventos `AppDomain.ProcessExit`, `AppDomain.UnhandledException`, `Application.ThreadException`, encerramento da aplicacao (`CloseApplication`) e termino de sessao do Windows (`SessionEnded`).
+  - **Interface Fluent e Acesso Rapido:**
+    - Cartao de canal `FanChannelCard.cs`: Controlo visual com selecao de modo, slider de percentagem fixa, atalhos de curvas e indicador de alerta de emergencia.
+    - Painel integrado `FanControlPanel.cs`: Seletor de perfil global, telemetria termica em tempo real e lista dinamica de canais.
+    - Integracao com a barra lateral Fluent (`SidebarPanel.cs`): Item dedicado "Fan Control" com iconografia vetorial `FluentIcons.ForSensorType(SensorType.Fan)`.
+    - Menu de contexto na System Tray: Submenu "Perfil de Ventoinhas" para troca instantanea de perfis sem abrir a janela principal.

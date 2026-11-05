@@ -1,13 +1,14 @@
 // This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 // If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // Copyright (C) LibreHardwareMonitor and Contributors.
-// Partial Copyright (C) Michael Möller <mmoeller@openhardwaremonitor.org> and Contributors.
+// Partial Copyright (C) Michael MÃ¶ller <mmoeller@openhardwaremonitor.org> and Contributors.
 // All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Hardware;
+using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 using LibreHardwareMonitor.Windows.Forms.Utilities;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI;
@@ -17,9 +18,11 @@ public class SystemTray : IDisposable
     private IComputer _computer;
     private readonly PersistentSettings _settings;
     private readonly UnitManager _unitManager;
-    private readonly List<SensorNotifyIcon> _sensorList = new List<SensorNotifyIcon>();
+    private readonly List<SensorNotifyIcon> _sensorList = new();
     private bool _mainIconEnabled;
     private readonly NotifyIconAdv _mainIcon;
+    private readonly ContextMenuStrip _contextMenuStrip;
+
     public bool HasSensors => _sensorList.Count > 0;
 
     public SystemTray(IComputer computer, PersistentSettings settings, UnitManager unitManager)
@@ -32,27 +35,66 @@ public class SystemTray : IDisposable
 
         _mainIcon = new NotifyIconAdv();
 
-        ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        _contextMenuStrip = new ContextMenuStrip();
         ToolStripItem hideShowItem = new ToolStripMenuItem("Hide/Show");
         hideShowItem.Click += delegate
         {
             SendHideShowCommand();
         };
-        contextMenuStrip.Items.Add(hideShowItem);
-        contextMenuStrip.Items.Add(new ToolStripSeparator());
+        _contextMenuStrip.Items.Add(hideShowItem);
+        _contextMenuStrip.Items.Add(new ToolStripSeparator());
         ToolStripItem exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += delegate
         {
             SendExitCommand();
         };
-        contextMenuStrip.Items.Add(exitItem);
-        _mainIcon.ContextMenuStrip = contextMenuStrip;
+        _contextMenuStrip.Items.Add(exitItem);
+        _mainIcon.ContextMenuStrip = _contextMenuStrip;
         _mainIcon.DoubleClick += delegate
         {
             SendHideShowCommand();
         };
         _mainIcon.Icon = EmbeddedResources.GetIcon("smallicon.ico");
         _mainIcon.Text = "Libre Hardware Monitor";
+    }
+
+    public void SetFanControlEngine(FanControlEngine engine)
+    {
+        if (engine == null)
+            return;
+
+        ToolStripMenuItem fanMenu = new("Perfil de Ventoinhas");
+        ToolStripMenuItem biosItem = new("BIOS Padrao");
+        ToolStripMenuItem silentItem = new("Silencioso");
+        ToolStripMenuItem balancedItem = new("Equilibrado");
+        ToolStripMenuItem perfItem = new("Desempenho");
+        ToolStripMenuItem customItem = new("Personalizado");
+
+        void UpdateChecks()
+        {
+            biosItem.Checked = engine.ActivePreset == GlobalFanPreset.DefaultBios;
+            silentItem.Checked = engine.ActivePreset == GlobalFanPreset.Silent;
+            balancedItem.Checked = engine.ActivePreset == GlobalFanPreset.Balanced;
+            perfItem.Checked = engine.ActivePreset == GlobalFanPreset.Performance;
+            customItem.Checked = engine.ActivePreset == GlobalFanPreset.Custom;
+        }
+
+        biosItem.Click += (_, _) => { engine.ApplyPreset(GlobalFanPreset.DefaultBios); UpdateChecks(); };
+        silentItem.Click += (_, _) => { engine.ApplyPreset(GlobalFanPreset.Silent); UpdateChecks(); };
+        balancedItem.Click += (_, _) => { engine.ApplyPreset(GlobalFanPreset.Balanced); UpdateChecks(); };
+        perfItem.Click += (_, _) => { engine.ApplyPreset(GlobalFanPreset.Performance); UpdateChecks(); };
+        customItem.Click += (_, _) => { engine.ApplyPreset(GlobalFanPreset.Custom); UpdateChecks(); };
+
+        fanMenu.DropDownItems.Add(biosItem);
+        fanMenu.DropDownItems.Add(silentItem);
+        fanMenu.DropDownItems.Add(balancedItem);
+        fanMenu.DropDownItems.Add(perfItem);
+        fanMenu.DropDownItems.Add(customItem);
+
+        fanMenu.DropDownOpening += (_, _) => UpdateChecks();
+        engine.PresetChanged += (_, _) => UpdateChecks();
+
+        _contextMenuStrip.Items.Insert(1, fanMenu);
     }
 
     private void HardwareRemoved(IHardware hardware)
@@ -117,7 +159,6 @@ public class SystemTray : IDisposable
         if (Contains(sensor))
             return;
 
-
         _sensorList.Add(new SensorNotifyIcon(this, sensor, _settings, _unitManager));
         UpdateMainIconVisibility();
         _settings.SetValue(new Identifier(sensor.Identifier, "tray").ToString(), true);
@@ -130,22 +171,18 @@ public class SystemTray : IDisposable
 
     private void Remove(ISensor sensor, bool deleteConfig)
     {
-        if (deleteConfig)
-        {
-            _settings.Remove(new Identifier(sensor.Identifier, "tray").ToString());
-            _settings.Remove(new Identifier(sensor.Identifier, "traycolor").ToString());
-        }
         SensorNotifyIcon instance = null;
         foreach (SensorNotifyIcon icon in _sensorList)
-        {
             if (icon.Sensor == sensor)
                 instance = icon;
-        }
+
         if (instance != null)
         {
             _sensorList.Remove(instance);
-            UpdateMainIconVisibility();
             instance.Dispose();
+            UpdateMainIconVisibility();
+            if (deleteConfig)
+                _settings.Remove(new Identifier(sensor.Identifier, "tray").ToString());
         }
     }
 

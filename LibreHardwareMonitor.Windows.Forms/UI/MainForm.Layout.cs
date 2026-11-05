@@ -1,3 +1,8 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright (C) LibreHardwareMonitor and Contributors.
+// All Rights Reserved.
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -5,6 +10,7 @@ using System.Windows.Forms;
 using Aga.Controls.Tree;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Controls;
+using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 using LibreHardwareMonitor.Windows.Forms.UI.Icons;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI;
@@ -27,6 +33,8 @@ public sealed partial class MainForm
     private Panel _content;
     private CardPanel _treeCard;
     private SearchBox _search;
+    private Panel _toolbar;
+    private FanControlPanel _fanControlPanel;
     private int _summaryResolveCountdown = SummaryResolveTicks;
 
     private void InitializeShell()
@@ -37,6 +45,8 @@ public sealed partial class MainForm
         _treeCard = new CardPanel { Dock = DockStyle.Fill };
         _treeCard.Controls.Add(splitContainer);
 
+        _fanControlPanel = new FanControlPanel { Dock = DockStyle.Fill, Visible = false };
+
         _summary = new SummaryPanel { Dock = DockStyle.Top, Visible = false };
         _summary.UseFahrenheit = () => _unitManager.TemperatureUnit == TemperatureUnit.Fahrenheit;
         _summary.CardClicked += Summary_CardClicked;
@@ -44,13 +54,14 @@ public sealed partial class MainForm
         int gutter = LogicalToDeviceUnits(12);
         _search = new SearchBox { Dock = DockStyle.Left, Width = LogicalToDeviceUnits(SearchLogicalWidth) };
         _search.SearchChanged += Search_SearchChanged;
-        Panel toolbar = new() { Dock = DockStyle.Top, Height = _search.Height + gutter, Padding = new Padding(0, 0, 0, gutter) };
-        toolbar.Controls.Add(_search);
+        _toolbar = new Panel { Dock = DockStyle.Top, Height = _search.Height + gutter, Padding = new Padding(0, 0, 0, gutter) };
+        _toolbar.Controls.Add(_search);
 
-        // Docking runs from the back of the z-order: summary, then toolbar, then the tree card.
+        // Docking runs from the back of the z-order: summary, then toolbar, then the tree card / fan panel.
         _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, LogicalToDeviceUnits(6), gutter, gutter) };
+        _content.Controls.Add(_fanControlPanel);
         _content.Controls.Add(_treeCard);
-        _content.Controls.Add(toolbar);
+        _content.Controls.Add(_toolbar);
         _content.Controls.Add(_summary);
 
         _sidebar = new SidebarPanel { Dock = DockStyle.Left, Width = LogicalToDeviceUnits(SidebarLogicalWidth) };
@@ -88,7 +99,12 @@ public sealed partial class MainForm
             scope = null;
 
         string savedScope = _settings.GetValue(ScopeSettingKey, string.Empty);
-        List<SidebarItem> items = new() { new SidebarItem("All devices", FluentIcons.Computer, null) };
+        List<SidebarItem> items = new()
+        {
+            new SidebarItem("All devices", FluentIcons.Computer, null),
+            new SidebarItem("Fan Control", FluentIcons.ForSensorType(SensorType.Fan), "fan_control")
+        };
+
         foreach (HardwareNode node in _root.Nodes.OfType<HardwareNode>())
         {
             items.Add(new SidebarItem(node.Text, node.Image, node));
@@ -123,7 +139,26 @@ public sealed partial class MainForm
 
     private void Sidebar_SelectionChanged(object sender, EventArgs e)
     {
-        ApplyScope(_sidebar.SelectedItem?.Tag as HardwareNode, true);
+        if (_sidebar.SelectedItem?.Tag is string tag && tag == "fan_control")
+        {
+            _treeCard.Visible = false;
+            if (_toolbar != null) _toolbar.Visible = false;
+            if (_summary != null) _summary.Visible = false;
+            if (_fanControlPanel != null)
+            {
+                _fanControlPanel.Visible = true;
+                _fanControlPanel.BringToFront();
+                _fanControlPanel.RefreshChannels();
+            }
+        }
+        else
+        {
+            if (_fanControlPanel != null) _fanControlPanel.Visible = false;
+            if (_toolbar != null) _toolbar.Visible = true;
+            if (_summary != null) _summary.Visible = _summary.HasMetrics;
+            _treeCard.Visible = true;
+            ApplyScope(_sidebar.SelectedItem?.Tag as HardwareNode, true);
+        }
     }
 
     private void Summary_CardClicked(object sender, IHardware hardware)

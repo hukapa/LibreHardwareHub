@@ -25,6 +25,7 @@ public static class Program
     {
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
+            UI.FanControl.FanControlEngine.RestoreAllControlsToDefault();
             if (e.ExceptionObject is Exception ex)
             {
                 try
@@ -39,6 +40,7 @@ public static class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (s, e) =>
         {
+            UI.FanControl.FanControlEngine.RestoreAllControlsToDefault();
             try
             {
                 File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), $"[{DateTime.Now}] Thread Exception: {e.Exception}\n");

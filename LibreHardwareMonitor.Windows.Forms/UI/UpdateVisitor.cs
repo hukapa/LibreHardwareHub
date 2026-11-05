@@ -16,6 +16,8 @@ public class UpdateVisitor : IVisitor
 
     public bool LowPowerMode { get; set; }
 
+    public bool ActiveFanControl { get; set; }
+
     public void VisitComputer(IComputer computer)
     {
         computer.Traverse(this);
@@ -55,7 +57,7 @@ public class UpdateVisitor : IVisitor
             HardwareType.Cpu or HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel
                 or HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.Cooler
                 or HardwareType.EmbeddedController or HardwareType.PowerMonitor =>
-                elapsedMs >= (LowPowerMode ? 2500 : 800),
+                elapsedMs >= (ActiveFanControl ? 1000 : (LowPowerMode ? 2500 : 800)),
 
             _ => elapsedMs >= (LowPowerMode ? 3000 : 1000)
         };

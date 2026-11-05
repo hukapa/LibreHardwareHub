@@ -61,7 +61,10 @@ internal static class ThreadAffinity
 
             ulong mask = affinity.Mask;
             if (LibC.sched_setaffinity(0, (IntPtr)8, ref mask) != 0)
+            {
+                _isAffinityCached = false;
                 return GroupAffinity.Undefined;
+            }
 
             _currentThreadAffinity = affinity;
             _isAffinityCached = true;
@@ -86,6 +89,7 @@ internal static class ThreadAffinity
             return new GroupAffinity(previousGroupAffinity.Group, previousGroupAffinity.Mask);
         }
 
+        _isAffinityCached = false;
         return GroupAffinity.Undefined;
     }
 }

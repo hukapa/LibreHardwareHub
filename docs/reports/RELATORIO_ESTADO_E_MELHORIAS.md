@@ -131,3 +131,38 @@ Em `UpdateVisitor.cs`, a atualizacao sincrona e indiferenciada foi substituta po
 * **Supressao de Pintura GDI+:** Quando a janela principal se encontra oculta ou minimizada, as chamadas a `treeView.Invalidate()`, `UpdateShell()` e `_plotPanel.InvalidatePlot()` sao suspensas, eliminando alocacoes de objetos de desenho GDI+.
 * **Esvaziamento de Working Set:** Na minimizacao para a bandeja, `TrimWorkingSet()` executa `GC.Collect()` e chama a API Win32 `EmptyWorkingSet`, devolvendo paginas de memoria fisica ao sistema operativo e garantindo uma pegada de RAM minima visivel no Gestor de Tarefas.
 * **Supressao de Historico Inativo:** Sensores agora apenas acumulam historico temporal (`ValuesTimeWindow`) quando o painel de graficos (`PlotPanel`) esta ativamente aberto pelo utilizador.
+
+
+---
+
+## 9. Execucao da Fase 2: Motor de Controlo de Ventoinhas (Fan Control), Fail-Safes e UI Integrada
+
+### 9.1 Arquitetura Desacoplada e Integracao com Primitivas IControl
+A Fase 2 estabelece o subsistema de controlo ativo de arrefecimento em `LibreHardwareMonitor.Windows.Forms.UI.FanControl`, operando diretamente sobre as interfaces `IControl` (`Control.cs`) e sensores `SensorType.Control` / `SensorType.Fan` de `LibreHardwareMonitorLib`:
+* **FanControlEngine.cs:** Coordenador central que efetua a descoberta automatica de todos os controlos de hardware (chips Super I/O em Motherboard e controladores dedicados AIO/RGB), associando cada canal ao respetivo sensor de RPM e mantendo a persistencia em `PersistentSettings`.
+* **Modos de Operacao por Canal (`FanChannelMode`):**
+  - `Default (Auto BIOS)`: Restaura o controlo autonomo do hardware via `IControl.SetDefault()`.
+  - `Fixed (Manual %)`: Fixa a percentagem de rotacao via `IControl.SetSoftware(float value)`, respeitando os limites `MinSoftwareValue` e `MaxSoftwareValue`.
+  - `Curve (Curva Dinamica)`: Calcula o PWM alvo em tempo real com base no sensor ou combinacao de sensores configurados.
+
+### 9.2 Motor de Curvas Termicas e Algoritmo Anti-Oscilacao
+* **Interpolacao Linear por Pontos (`FanCurve.cs` / `FanCurvePoint.cs`):** Avaliacao continua de pontos `(Temperatura C, PWM %)`. Abaixo do ponto inferior aplica o PWM minimo; acima do ponto superior aplica o PWM maximo; entre pontos aplica interpolacao linear proporcional.
+* **Fontes Termicas e Mix Function:** Suporte nativo a sensores individuais (`CPU Package`, `GPU Core`) ou funcao composta `Max(CPU, GPU)` para ventiladores de chassis que necessitam de responder a carga quer de processamento quer grafica.
+* **Estabilizacao Anti-Oscilacao (`FanChannelRuntime.cs`):**
+  - **Suavizacao Temporal (`ResponseTimeSeconds`):** Media movel das ultimas medicoes (predefinicao: 3s) para filtrar picos instantaneos de boost da CPU.
+  - **Histerese Assimetrica:** Exige variacao minima de +1.5 C para acelerar e -3.0 C para desacelerar, prevenindo ciclos acusticos irritantes de aceleracao e travagem em idle/carga moderada.
+  - **Taxa de Variacao Limitada (`MaxStepUpPercent` / `MaxStepDownPercent`):** Ramp-up de ate 25%/s e ramp-down suave de 8%/s para proteger os rolamentos das ventoinhas e manter conforto acustico.
+
+### 9.3 Fail-Safes Criticos de Hardware
+1. **Hard Thermal Override (Bloqueio Termico Forcado):**
+   - Se a temperatura do sensor alvo atingir ou ultrapassar **90 C**, o motor forca imediatamente 100% de PWM no canal, ativando um banner visual de emergencia em carmim na interface.
+   - O retorno a curva normal so e permitido quando a temperatura descer abaixo de **82 C** (histerese de seguranca de 8 C).
+2. **Dead-Man's Switch (Devolucao Automatica a BIOS):**
+   - Registo estatico global em `FanControlEngine.RestoreAllControlsToDefault()`.
+   - Subscrito automaticamente em `AppDomain.CurrentDomain.ProcessExit`, `AppDomain.CurrentDomain.UnhandledException`, `Application.ThreadException`, no encerramento normal da aplicacao (`CloseApplication`) e no encerramento da sessao do Windows (`Microsoft.Win32.SystemEvents.SessionEnded`).
+   - Garante que nenhuma ventoinha fica presa a baixas rotacoes caso a aplicacao falhe, seja terminada abruptamente ou o sistema seja reiniciado.
+
+### 9.4 Acesso Rapido na System Tray e Painel Fluent Integrado
+* **Submenu Contextual no System Tray (`SystemTray.cs`):** Integracao do submenu "Perfil de Ventoinhas" permitindo alternar instantaneamente entre perfis globais (*BIOS Padrao*, *Silencioso*, *Equilibrado*, *Desempenho*, *Personalizado*) sem abrir a janela.
+* **Painel Dedicado Fluent (`FanControlPanel.cs` / `FanChannelCard.cs`):** Seccao integrada acessivel na barra lateral Fluent (`SidebarPanel.cs`), exibindo telemetria termica em tempo real, seletor de perfil global e cartoes individuais por canal com ajuste de sliders, curvas de fabrica e alertas de seguranca.
+* **Frequencia de Background Otimizada:** Quando o Fan Control se encontra ativo e a aplicacao minimizada na bandeja, o ciclo do Tier Critico ajusta-se para 1000ms mantendo todas as rotinas GDI+ de renderizacao suspensas e a memoria fisica enxuta via `TryTrimWorkingSetOnce()`.

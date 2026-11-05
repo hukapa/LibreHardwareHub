@@ -36,6 +36,7 @@ public sealed partial class MainForm
         Visible = false;
         _systemTray.IsMainIconEnabled = false;
         timer.Enabled = false;
+        FanControl.FanControlEngine.RestoreAllControlsToDefault();
         _computer.Close();
         SaveConfiguration();
         if (_runWebServer.Value)
@@ -61,6 +62,7 @@ public sealed partial class MainForm
         {
             if (WindowState == FormWindowState.Minimized)
                 WindowState = FormWindowState.Normal;
+            ResetWorkingSetTrimmed();
             Activate();
             ApplyAdaptivePolling();
             treeView.Invalidate();
@@ -68,7 +70,7 @@ public sealed partial class MainForm
         else
         {
             ApplyAdaptivePolling();
-            TrimWorkingSet();
+            TryTrimWorkingSetOnce();
         }
     }
 
@@ -81,10 +83,11 @@ public sealed partial class MainForm
             if (!_systemTray.IsMainIconEnabled)
                 _systemTray.IsMainIconEnabled = true;
             ApplyAdaptivePolling();
-            TrimWorkingSet();
+            TryTrimWorkingSetOnce();
             return;
         }
 
+        FanControl.FanControlEngine.RestoreAllControlsToDefault();
         base.OnFormClosing(e);
     }
 

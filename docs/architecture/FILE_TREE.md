@@ -10,98 +10,117 @@
 
 ```text
 LibreHardwareMonitor/
-├── Iniciar-LibreHardwareMonitor.bat             # Launcher ultra-rapido (agendador schtasks em 40ms ou shell assincrono)
-├── Iniciar-Elevado.cmd                         # Script de arranque elevado: mata instancias zombi e inicia o executavel
-├── Fechar-LibreHardwareMonitor.bat             # Utilitario para encerrar todas as instancias em segundo plano
-├── launch.vbs                                 # Script de elevacao assincrona silenciosa via WScript (0 ms de consola)
-├── Configurar-Arranque-Rapido-Sem-UAC.bat     # Assistente de 1 clique para criar tarefa de alta prioridade sem UAC
-├── docs/                                      # Hub Central de Documentacao
-│   ├── INDEX.md                               # Guia Master de navegacao e sitemap
-│   ├── architecture/
-│   │   └── FILE_TREE.md                       # Este ficheiro: registo rapido de todos os ficheiros e funcoes
-│   ├── reports/
-│   │   └── RELATORIO_ESTADO_E_MELHORIAS.md    # Relatorio tecnico detalhado (SAC, .NET 8, Tray, Web)
-│   ├── history/
-│   │   └── DOCUMENTATION.md                   # Historico cronologico de engenharia
-│   └── agents/
-│       └── AGENTS.md                          # Regras e padroes para programadores e agentes
-│
-├── LibreHardwareMonitor.Windows.Forms/            # Projeto Desktop WinForms Principal
-│   ├── Program.cs                                 # Ponto de entrada, verificacao de ficheiros e crash handler
-│   ├── Resources/
-│   │   ├── app.manifest                           # Manifest de compatibilidade OS e nivel de execucao (asInvoker)
-│   │   └── Web/
-│   │       └── index.html                         # Dashboard web moderno embutido (HTML5/CSS3/ES6 dark mode)
-│   ├── UI/
-│   │   ├── MainForm.cs                            # Classe parcial: Construtor, ciclo de vida e estado
-│   │   ├── MainForm.Designer.cs                   # Controlos graficos gerados pelo designer WinForms
-│   │   ├── MainForm.Tray.cs                       # Classe parcial: Bandeja do sistema e minimizar ao fechar 'X'
-│   │   ├── MainForm.WebServer.cs                  # Classe parcial: Controlo do servidor web e dialogos de porta/auth
-│   │   ├── MainForm.Plot.cs                       # Classe parcial: Painel de graficos, selecao e sincronizacao
-│   │   ├── MainForm.Tree.cs                       # Classe parcial: Gestao de TreeViewAdv, colunas e contexto
-�   �   +-- UpdateVisitor.cs                       # Motor de polling adaptativo por tiers (Critico, Normal, Lento)
-│   │   ├── SystemTray.cs                          # Gestor de icones na area de notificacao do Windows
-│   │   ├── PlotPanel.cs                           # Painel de desenho com biblioteca OxyPlot
-│   │   ├── ScaledPlotModel.cs                     # Modelo escalonado para visualizacao temporal de sensores
-│   │   ├── Node.cs                                # No base da arvore de exibicao
-│   │   ├── HardwareNode.cs                        # No que encapsula um componente de hardware
-│   │   ├── SensorNode.cs                          # No que encapsula um sensor individual
-│   │   ├── TypeNode.cs                            # No agrupador por tipo de sensor (Temperatura, Tensao, etc.)
-│   │   ├── UserOption.cs                          # Mapeamento bidirecional de definicoes booleanas em menus
-│   │   ├── UserRadioGroup.cs                      # Mapeamento de grupos de selecao mutualmente exclusivos
-│   │   ├── UnitManager.cs                         # Gestor de unidades de medida (Celsius vs Fahrenheit)
-│   │   ├── AboutBox.cs                            # Dialogo "Sobre" com informacoes de versao e creditos
-│   │   ├── AuthForm.cs                            # Dialogo para definicao de credenciais do servidor web
-│   │   ├── InterfacePortForm.cs                   # Dialogo para definicao da porta e IP de escuta HTTP
-│   │   └── ParameterForm.cs                       # Dialogo para ajuste fino de parametros de calibracao
-│   ├── Utilities/
-│   │   ├── HttpServer.cs                          # Servidor HTTP embutido que entrega JSON e o dashboard web
-│   │   ├── PersistentSettings.cs                  # Leitura e escrita de definicoes em ficheiro XML/config
-│   │   ├── Logger.cs                              # Registo historico de leituras em ficheiro CSV
-│   │   ├── StartupManager.cs                      # Configuracao de arranque automatico com o Windows
-│   │   └── EmbeddedResources.cs                   # Extracao de imagens e recursos binarios embutidos
-│   └── UI/Themes/
-│       ├── Theme.cs                               # Classe abstrata base e gestao do tema ativo (Auto/Dark/Light)
-│       ├── DarkTheme.cs                           # Paleta de cores para tema escuro
-│       ├── LightTheme.cs                          # Paleta de cores para tema claro
-│       ├── ThemedToolStripRenderer.cs             # Renderizador visual customizado para menus
-│       └── ThemedScrollIndicators.cs              # Barras de deslocamento estilizadas
-│
-├── LibreHardwareMonitorLib/                       # Biblioteca Nuclear de Leitura de Hardware
-│   ├── Hardware/
-│   │   ├── Computer.cs                            # Fachada central: gestao de grupos e traversal de visitantes
-│   │   ├── IComputer.cs                           # Interface publica de acesso aos grupos de hardware
-│   │   ├── IHardware.cs                           # Contrato para qualquer componente de hardware detetado
-│   │   ├── ISensor.cs                             # Contrato de um sensor (Value, Min, Max, SensorType)
-│   │   ├── Sensor.cs                              # Implementacao base de sensor com historico temporal
-│   │   ├── Hardware.cs                            # Implementacao base com suporte a arvore hierarquica
-│   │   ├── SensorType.cs                          # Enumeracao (Voltage, Clock, Temperature, Load, Fan, Flow, Power, etc.)
-│   │   ├── Cpu/                                   # Leitura de CPU (Intel, AMD Zen/Ryzen) via MSR e PawnIO
-│   │   ├── Gpu/                                   # Leitura de placas graficas (Nvidia NVAPI, AMD ADL, Intel)
-│   │   ├── Memory/                                # Memoria virtual, memoria fisica total e deteccao SPD
-│   │   │   ├── MemoryGroup.cs                     # Inicializacao protegida de memoria RAM
-│   │   │   ├── VirtualMemory.cs                   # Estatisticas de RAM disponivel e em uso via Windows API
-│   │   │   ├── TotalMemory.cs                     # Capacidade total de RAM instalada
-│   │   │   └── DimmMemory.cs                      # Leitura de temperatura e SPD de modulos individuais
-│   │   ├── Motherboard/                           # Chips Super I/O (ITE, Nuvoton, Winbond, Fintek, SMSC)
-│   │   ├── Storage/                               # SMART de discos HDD, SSD SATA e NVMe
-│   │   ├── Controller/                            # Controladores externos (AquaComputer, NZXT, Corsair, Razer, Arctic)
-│   │   ├── Network/                               # Placas de rede (taxas de download e upload via Performance Counters)
-│   │   ├── Psu/                                   # Fontes de alimentacao inteligentes (Corsair, MSI)
-│   │   └── Battery/                               # Baterias de portateis (capacidade restante, taxa de descarga)
-│   ├── Interop/
-│   │   ├── Kernel32.cs                            # Chamadas Win32 nativas para memoria e processos
-│   │   └── SetupApi.cs                            # Enumeracao de dispositivos de hardware do Windows
-│   └── PawnIO/                                    # Suporte ao driver moderno PawnIO para acesso Ring-0
-│
-└── Aga.Controls/                                  # Componente WinForms TreeViewAdv Multicoluna
-    ├── Tree/
-    │   ├── TreeViewAdv.cs                         # Controlo de arvore com renderizacao virtualizada de alto desempenho
-    │   ├── TreeColumn.cs                          # Definicao de coluna (largura, cabecalho, visibilidade)
-    │   ├── TreeModel.cs                           # Modelo de dados hierarquico que alimenta a arvore
-    │   └── NodeControls/                          # Controlos embutidos nas celulas (CheckBox, TextBox, Icon)
-    └── Threading/
-        └── AbortableThreadPool.cs                 # Pool de threads para tarefas assincronas de interface
++-- Iniciar-LibreHardwareMonitor.bat             # Launcher rapido com deteccao e arranque elevado
++-- tools/                                      # Ferramentas e instaladores externos desacoplados
+|   \-- PawnIO_setup.exe                        # Instalador de Ring-0 PawnIO (3.22 MB desacoplado)
++-- docs/                                      # Hub Central de Documentacao
+|   +-- INDEX.md                               # Guia Master de navegacao e sitemap
+|   +-- architecture/
+|   |   \-- FILE_TREE.md                       # Este ficheiro: registo rapido de todos os ficheiros e funcoes
+|   +-- reports/
+|   |   \-- RELATORIO_ESTADO_E_MELHORIAS.md    # Relatorio tecnico detalhado (SAC, .NET 8, Tray, Web, Fan Control)
+|   +-- history/
+|   |   \-- DOCUMENTATION.md                   # Historico cronologico de engenharia
+|   \-- agents/
+|       \-- AGENTS.md                          # Regras e padroes para programadores e agentes
+|
++-- LibreHardwareMonitor.Windows.Forms/            # Projeto Desktop WinForms Principal
+|   +-- Program.cs                             # Ponto de entrada, verificacao de integridade, CLI (--exit/--elevate) e crash handler
+|   +-- Resources/
+|   |   +-- app.manifest                       # Manifest de compatibilidade OS e nivel de execucao (asInvoker)
+|   |   \-- Web/
+|   |       \-- index.html                     # Dashboard web moderno embutido (HTML5/CSS3/ES6 dark mode)
+|   +-- UI/
+|   |   +-- MainForm.cs                        # Classe parcial: Construtor, ciclo de vida e estado
+|   |   +-- MainForm.Designer.cs               # Controlos graficos gerados pelo designer WinForms
+|   |   +-- MainForm.Layout.cs                 # Classe parcial: Layout Fluent moderno, barra lateral e cartao de arvore
+|   |   +-- MainForm.Tray.cs                   # Classe parcial: Bandeja do sistema e minimizar ao fechar 'X'
+|   |   +-- MainForm.WebServer.cs              # Classe parcial: Controlo do servidor web e dialogos de porta/auth
+|   |   +-- MainForm.Plot.cs                   # Classe parcial: Painel de graficos, selecao e sincronizacao
+|   |   +-- MainForm.Tree.cs                   # Classe parcial: Gestao de TreeViewAdv, colunas e contexto
+|   |   +-- UpdateVisitor.cs                   # Motor de polling adaptativo por tiers (Critico, Normal, Lento)
+|   |   +-- SystemTray.cs                      # Gestor de icones na area de notificacao do Windows e menu de perfis
+|   |   +-- PlotPanel.cs                       # Painel de desenho com biblioteca OxyPlot
+|   |   +-- ScaledPlotModel.cs                 # Modelo escalonado para visualizacao temporal de sensores
+|   |   +-- Node.cs                            # No base da arvore de exibicao
+|   |   +-- HardwareNode.cs                    # No que encapsula um componente de hardware
+|   |   +-- SensorNode.cs                      # No que encapsula um sensor individual
+|   |   +-- TypeNode.cs                        # No agrupador por tipo de sensor (Temperatura, Tensao, etc.)
+|   |   +-- UserOption.cs                      # Mapeamento bidirecional de definicoes booleanas em menus
+|   |   +-- UserRadioGroup.cs                  # Mapeamento de grupos de selecao mutualmente exclusivos
+|   |   +-- UnitManager.cs                     # Gestor de unidades de medida (Celsius vs Fahrenheit)
+|   |   +-- AboutBox.cs                        # Dialogo "Sobre" com informacoes de versao e creditos
+|   |   +-- AuthForm.cs                        # Dialogo para definicao de credenciais do servidor web
+|   |   +-- InterfacePortForm.cs               # Dialogo para definicao da porta e IP de escuta HTTP
+|   |   +-- ParameterForm.cs                   # Dialogo para ajuste fino de parametros de calibracao
+|   |   +-- Controls/                          # Controlos Fluent personalizados
+|   |   |   +-- CardPanel.cs                   # Contentor de superficie arredondada com contorno suave
+|   |   |   +-- SearchBox.cs                   # Caixa de pesquisa estilizada
+|   |   |   +-- SidebarPanel.cs                # Barra lateral colapsavel de navegacao
+|   |   |   \-- SummaryPanel.cs                # Barra superior com cartoes de resumo de telemetria
+|   |   +-- FanControl/                        # Subsistema de Controlo Ativo de Ventilacao
+|   |   |   +-- FanControlTypes.cs             # Enumeracoes de modos de canal e perfis globais
+|   |   |   +-- FanCurvePoint.cs               # Ponto imutavel de curva (Temperatura, PWM %)
+|   |   |   +-- FanCurve.cs                    # Interpolacao linear, serializacao e curvas de fabrica
+|   |   |   +-- FanChannelConfig.cs            # Definicoes de configuracao e persistencia por canal
+|   |   |   +-- FanChannelRuntime.cs           # Motor de canal: media movel, histerese assimetrica e Hard Thermal Override
+|   |   |   +-- FanControlEngine.cs            # Orquestrador central, descoberta de IControl e Dead-Man's Switch
+|   |   |   +-- FanChannelCard.cs              # Cartao de canal com modo, slider fixo e selecao de curva
+|   |   |   \-- FanControlPanel.cs             # Painel integrado de controlo de ventiladores Fluent
+|   |   +-- Icons/
+|   |   |   +-- FluentIcons.cs                 # Gerador vetorial GDI+ de iconografia dinamica por sensor e hardware
+|   |   |   \-- FluentIconShapes.cs            # Primitivas geometricas dos icones
+|   |   \-- Themes/
+|   |       +-- Theme.cs                       # Classe abstrata base e gestao do tema ativo (Auto/Dark/Light)
+|   |       +-- DarkTheme.cs                   # Paleta de cores para tema escuro
+|   |       +-- LightTheme.cs                  # Paleta de cores para tema claro
+|   |       +-- BlackTheme.cs                  # Paleta de cores para tema de contraste preto profundo
+|   |       +-- ThemedToolStripRenderer.cs     # Renderizador visual customizado para menus
+|   |       +-- ThemedTreeRenderer.cs          # Renderizador de nos da arvore TreeViewAdv
+|   |       +-- ThemedScrollIndicators.cs      # Barras de deslocamento estilizadas
+|   |       +-- ThemedHScrollIndicator.cs      # Indicador de barra horizontal
+|   |       \-- ThemedVScrollIndicator.cs      # Indicador de barra vertical
+|   \-- Utilities/
+|       +-- HttpServer.cs                      # Servidor HTTP embutido que entrega JSON e o dashboard web
+|       +-- PersistentSettings.cs              # Leitura e escrita de definicoes em ficheiro XML/config
+|       +-- Logger.cs                          # Registo historico de leituras em ficheiro CSV
+|       +-- StartupManager.cs                  # Configuracao de arranque automatico com o Windows
+|       \-- EmbeddedResources.cs               # Extracao de imagens e recursos binarios embutidos
+|
++-- LibreHardwareMonitorLib/                   # Biblioteca Nuclear de Leitura de Hardware
+|   +-- Hardware/
+|   |   +-- Computer.cs                        # Fachada central: gestao de grupos e traversal de visitantes
+|   |   +-- IComputer.cs                       # Interface publica de acesso aos grupos de hardware
+|   |   +-- IHardware.cs                       # Contrato para qualquer componente de hardware detetado
+|   |   +-- ISensor.cs                         # Contrato de um sensor (Value, Min, Max, SensorType)
+|   |   +-- Sensor.cs                          # Implementacao base de sensor com historico temporal
+|   |   +-- Hardware.cs                        # Implementacao base com suporte a arvore hierarquica
+|   |   +-- SensorType.cs                      # Enumeracao (Voltage, Clock, Temperature, Load, Fan, Flow, Power, etc.)
+|   |   +-- Control.cs                         # Implementacao de IControl para manipulacao de portas PWM
+|   |   +-- IControl.cs                        # Contrato de controlo de hardware (SetDefault, SetSoftware)
+|   |   +-- ThreadAffinity.cs                  # Gestao otimizada de afinidade de thread com cache local [ThreadStatic]
+|   |   +-- Cpu/                               # Leitura de CPU (Intel, AMD Zen/Ryzen) via MSR e PawnIO
+|   |   +-- Gpu/                               # Leitura de placas graficas (Nvidia NVAPI, AMD ADL, Intel)
+|   |   +-- Memory/                            # Memoria virtual, memoria fisica total e deteccao SPD
+|   |   +-- Motherboard/                       # Chips Super I/O (ITE, Nuvoton, Winbond, Fintek, SMSC)
+|   |   +-- Storage/                           # SMART de discos HDD, SSD SATA e NVMe
+|   |   +-- Controller/                        # Controladores externos (AquaComputer, NZXT, Corsair, Razer, Arctic)
+|   |   +-- Network/                           # Placas de rede (taxas de download e upload via Performance Counters)
+|   |   +-- Psu/                               # Fontes de alimentacao inteligentes (Corsair, MSI)
+|   |   \-- Battery/                           # Baterias de portateis (capacidade restante, taxa de descarga)
+|   +-- Interop/
+|   |   +-- Kernel32.cs                        # Chamadas Win32 nativas para memoria e processos
+|   |   \-- SetupApi.cs                        # Enumeracao de dispositivos de hardware do Windows
+|   \-- PawnIO/                                # Suporte ao driver moderno PawnIO para acesso Ring-0
+|
+\-- Aga.Controls/                              # Componente WinForms TreeViewAdv Multicoluna
+    +-- Tree/
+    |   +-- TreeViewAdv.cs                     # Controlo de arvore com renderizacao virtualizada de alto desempenho
+    |   +-- TreeColumn.cs                      # Definicao de coluna (largura, cabecalho, visibilidade)
+    |   +-- TreeModel.cs                       # Modelo de dados hierarquico que alimenta a arvore
+    |   \-- NodeControls/                      # Controlos embutidos nas celulas (CheckBox, TextBox, Icon)
+    \-- Threading/
+        \-- AbortableThreadPool.cs             # Pool de threads para tarefas assincronas de interface
 ```
 
 ---
@@ -112,51 +131,30 @@ LibreHardwareMonitor/
 
 | Ficheiro | Responsabilidade Principal | Limite de Linhas | Dependencias Criticas |
 |---|---|---|---|
-| `Program.cs` | Ponto de entrada, verificacao de integridade de ficheiros e captura global de excecoes para `crash.log`. | <= 100 lin | `System.Windows.Forms`, `MainForm` |
-| `UI/MainForm.cs` | Orquestracao principal do formulário, ciclo de vida, construtor, carregamento de definicoes e despacho de atualizacoes. | <= 450 lin | `Computer`, `PersistentSettings`, `TreeModel` |
-| `UI/MainForm.Tray.cs` | Controlo da barra de notificacoes (System Tray), intercepcao do comando fechar no botao "X" (`SC_CLOSE`) e saida definitiva. | <= 150 lin | `SystemTray`, `FormClosingEventArgs`, `WndProc` |
+| `Program.cs` | Ponto de entrada, verificacao de integridade de ficheiros, CLI (--exit/--elevate), mutex unico e crash handler. | <= 250 lin | `System.Windows.Forms`, `MainForm`, `FanControlEngine` |
+| `UI/MainForm.cs` | Orquestracao principal do formulario, ciclo de vida, construtor, polling adaptativo e despacho de atualizacoes. | <= 800 lin | `Computer`, `PersistentSettings`, `FanControlEngine` |
+| `UI/MainForm.Layout.cs` | Disposicao Fluent do ecra: CardPanel, Toolbar de pesquisa, KPI summary strip e alternancia de paineis. | <= 250 lin | `SidebarPanel`, `SummaryPanel`, `FanControlPanel` |
+| `UI/MainForm.Tray.cs` | Controlo da barra de notificacoes (System Tray), intercepcao do comando fechar no botao 'X' e esvaziamento unico de WorkingSet. | <= 150 lin | `SystemTray`, `FormClosingEventArgs`, `psapi.dll` |
 | `UI/MainForm.WebServer.cs` | Ativacao, paragem e configuracao da porta de escuta e credenciais de seguranca do servidor HTTP. | <= 100 lin | `HttpServer`, `InterfacePortForm`, `AuthForm` |
 | `UI/MainForm.Plot.cs` | Sincronizacao do formulario ou painel embutido de graficos, selecao de cores de sensores e rotacao de logs. | <= 300 lin | `PlotPanel`, `OxyPlot`, `Logger` |
-| `UI/MainForm.Tree.cs` | Gestao de eventos da arvore `TreeViewAdv`, redimensionamento de colunas, cliques, atalhos de teclado e menu de contexto de sensores. | <= 400 lin | `TreeViewAdv`, `SensorNode`, `HardwareNode` |
-| `Utilities/HttpServer.cs` | Servidor HTTP multithreaded que escuta requisicoes REST (`/data.json`) e serve o dashboard web embutido (`/` ou `/index.html`). | <= 450 lin | `HttpListener`, `IElement`, `Node` |
+| `UI/MainForm.Tree.cs` | Gestao de eventos da arvore `TreeViewAdv`, redimensionamento de colunas, cliques, atalhos de teclado e menu de contexto. | <= 400 lin | `TreeViewAdv`, `SensorNode`, `HardwareNode` |
+| `UI/UpdateVisitor.cs` | Polling adaptativo por tiers (Tier Lento 30s, Tier Normal 2-5s, Tier Critico 800ms-1000ms com Fan Control). | <= 150 lin | `IVisitor`, `IHardware` |
+| `UI/FanControl/FanControlEngine.cs` | Orquestrador de canais `IControl`, aplicacao de perfis globais e Dead-Man's Switch para seguranca de hardware. | <= 300 lin | `IControl`, `ISensor`, `PersistentSettings` |
+| `UI/FanControl/FanChannelRuntime.cs` | Avaliacao de PWM por canal com media movel, histerese assimetrica (+1.5C/-3.0C) e Hard Thermal Override (>=90C -> 100%). | <= 200 lin | `IControl`, `FanChannelConfig` |
+| `UI/FanControl/FanControlPanel.cs` | Painel Fluent para monitorizacao e configuracao de todas as ventoinhas com seletor de perfil e telemetria. | <= 200 lin | `FanControlEngine`, `FanChannelCard` |
+| `UI/FanControl/FanChannelCard.cs` | Cartao interativo com modos BIOS, Fixo (slider) e Curva (botoes de perfis), e banner de alerta termico. | <= 250 lin | `FanChannelRuntime`, `Theme` |
+| `Utilities/HttpServer.cs` | Servidor HTTP multithreaded que escuta requisicoes REST (`/data.json`) e serve o dashboard web embutido. | <= 450 lin | `HttpListener`, `IElement`, `Node` |
 | `Utilities/PersistentSettings.cs` | Mecanismo de persistencia de configuracoes em XML com fallback automatico para ficheiro `.backup`. | <= 250 lin | `System.Xml`, `ISettings` |
 
 ---
 
-### 2.2 Modulo Nuclear de Monitorizacao (`LibreHardwareMonitorLib`)
+## 3. Padroes de Seguranca de Hardware e Fail-Safes
 
-| Ficheiro | Responsabilidade Principal | Mecanismo de Acesso |
-|---|---|---|
-| `Hardware/Computer.cs` | Ponto de entrada para deteccao de hardware, ativacao dinamica de grupos e percurso de arvore de sensores. | Fachada / Visitor Pattern |
-| `Hardware/Memory/MemoryGroup.cs` | Monitorizacao de memoria RAM do sistema. Possui isolamento `NoInlining` contra bloqueios de politicas de seguranca. | Win32 GlobalMemoryStatusEx + PawnIO |
-| `Hardware/Cpu/CpuGroup.cs` | Deteccao de processadores Intel Core e AMD Ryzen/EPYC, tensoes, temperaturas por nucleo e potencias de pacote. | MSRs (Model-Specific Registers) via PawnIO |
-| `Hardware/Gpu/GpuGroup.cs` | Deteccao de placas de video dedicadas e integradas, frequencias de motor, VRAM e curvas de ventilacao. | NVAPI (Nvidia), ADL (AMD), Intel IGFX |
-| `Hardware/Motherboard/MotherboardGroup.cs` | Leitura de chips Super I/O em placas-mae (voltagens de linhas +12V, +5V, +3.3V, RPMs de conectores FAN). | Portas LPC I/O via PawnIO |
-| `Hardware/Storage/StorageGroup.cs` | Extracao de dados SMART de unidades de estado solido e discos rigidos, saude e temperaturas. | Win32 DeviceIoControl / NVMe pass-through |
-| `Hardware/Controller/` | Suporte a controladores USB proprietarios de marcas populares de arrefecimento liquido e ventoinhas. | HidSharp / USB HID Reports |
+1. **Hard Thermal Override:**  
+   Se qualquer temperatura monitorizada por uma curva atingir ou exceder 90 C, o motor forca imediatamente 100% de PWM no canal, ignorando restricoes de taxa de variacao e ativando o alerta visual. A saida do modo de emergencia so ocorre com histerese aos 82 C.
 
----
+2. **Dead-Man's Switch:**  
+   Garante a devolucao de todos os canais de controlo para a gestao autonoma da BIOS (`IControl.SetDefault()`) perante qualquer encerramento inesperado (`UnhandledException`, `ThreadException`), fecho regular da aplicacao ou termino de sessao do utilizador.
 
-### 2.3 Modulo de Dashboard Web (`Resources/Web/index.html`)
-
-| Caracteristica | Especificacao Tecnica |
-|---|---|
-| Dependencias | 0 bibliotecas externas (Vanilla HTML5, CSS3 Moderno, JavaScript ES2022). |
-| Temas | Deteccao automatica de Dark Mode / Light Mode do sistema via CSS `color-scheme: light dark` e `light-dark()`. |
-| Responsividade | Layout baseado em CSS Grid adaptativo (Mobile, Tablet e Monitores Ultra-Wide). |
-| Atualizacao | Polling assincrono via `fetch('/data.json')` a cada 1.5 segundos com tratamento de erros. |
-| Pesquisa | Filtro em tempo real de hardware e sensores diretamente na interface. |
-
----
-
-## 3. Padrões de Interop e Tratamento de Exceções
-
-1. **Protecao de Carregamento Dinamico (Smart App Control):**  
-   Nenhum tipo de driver de terceiros nao assinado pode ser instanciado diretamente no construtor de uma classe publica. Deve ser sempre isolado num metodo privado anotado com:
-   ```csharp
-   [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-   ```
-   e envolvido por blocos `try / catch (Exception)`.
-
-2. **Fecho em Segundo Plano (Minimize to Tray):**  
-   O encerramento do formulario no 'X' deve sempre verificar `e.CloseReason == CloseReason.UserClosing && _minimizeOnClose.Value`. Se ativo, cancela o evento (`e.Cancel = true`) e altera `Visible = false`. O fecho definitivo apenas ocorre atraves da acao explicita `CloseApplication()`.
+3. **Prevencao de Regressao de Memoria (TrimWorkingSet Unico):**  
+   Invocado estritamente uma unica vez por transicao para o estado minimizado/oculto atraves de `TryTrimWorkingSetOnce()`. Nunca e executado dentro do ciclo continuo do timer, prevenindo hard page faults continuos no kernel.
