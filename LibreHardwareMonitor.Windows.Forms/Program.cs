@@ -5,8 +5,12 @@
 // All Rights Reserved.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Threading;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Windows.Forms.UI;
 
@@ -14,8 +18,10 @@ namespace LibreHardwareMonitor.Windows.Forms;
 
 public static class Program
 {
+    private const string SingleInstanceMutexName = "Global\\LibreHardwareMonitor_SingleInstance_Mutex";
+
     [STAThread]
-    public static void Main()
+    public static void Main(string[] args)
     {
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
@@ -41,6 +47,40 @@ public static class Program
             catch { }
         };
 
+        // Processamento de argumentos de linha de comando
+        if (args != null && args.Length > 0)
+        {
+            foreach (string arg in args)
+            {
+                if (string.Equals(arg, "--exit", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "/exit", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "-exit", StringComparison.OrdinalIgnoreCase))
+                {
+                    CloseRunningInstances();
+                    return;
+                }
+
+                if (string.Equals(arg, "--elevate", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "/elevate", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "-elevate", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!IsElevated())
+                    {
+                        RestartElevated();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Blindagem contra execucao concorrente para prevenir colisoes de barramento LPC/SMBus
+        using Mutex mutex = new(true, SingleInstanceMutexName, out bool isNewInstance);
+        if (!isNewInstance)
+        {
+            BringExistingInstanceToFront();
+            return;
+        }
+
         if (!AllRequiredFilesAvailable())
             Environment.Exit(0);
 
@@ -53,6 +93,86 @@ public static class Program
                 Application.Exit();
             };
             Application.Run();
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private static void BringExistingInstanceToFront()
+    {
+        try
+        {
+            int currentPid = Process.GetCurrentProcess().Id;
+            foreach (Process proc in Process.GetProcessesByName("LibreHardwareMonitor.Windows.Forms"))
+            {
+                if (proc.Id != currentPid && proc.MainWindowHandle != IntPtr.Zero)
+                {
+                    ShowWindow(proc.MainWindowHandle, 9); // SW_RESTORE
+                    SetForegroundWindow(proc.MainWindowHandle);
+                    return;
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static void CloseRunningInstances()
+    {
+        try
+        {
+            int currentPid = Process.GetCurrentProcess().Id;
+            string[] processNames = ["LibreHardwareMonitor.Windows.Forms", "LibreHardwareMonitor"];
+            foreach (string name in processNames)
+            {
+                foreach (Process proc in Process.GetProcessesByName(name))
+                {
+                    if (proc.Id != currentPid)
+                    {
+                        proc.Kill();
+                        proc.WaitForExit(3000);
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static bool IsElevated()
+    {
+        try
+        {
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void RestartElevated()
+    {
+        try
+        {
+            ProcessStartInfo psi = new(Application.ExecutablePath)
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory
+            };
+            Process.Start(psi);
+        }
+        catch
+        {
         }
     }
 

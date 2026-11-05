@@ -62,6 +62,7 @@ public sealed partial class MainForm
                 splitContainer.Panel2Collapsed = !_showPlot.Value;
             }
 
+            SyncSensorHistoryTracking();
             treeView.Invalidate();
         };
 

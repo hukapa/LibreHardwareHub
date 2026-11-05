@@ -117,3 +117,23 @@
   - **Hero Highlights:** Adicao de 4 cartoes de topo com metricas imediatas de CPU (temperatura de pacote e carga total com barra), GPU (temperatura de nucleo e carga 3D), RAM (utilizacao e percentagem) e Armazenamento (temperatura maxima e unidades ativas).
   - **Performance e LCP:** Implementacao de `content-visibility: auto` com `contain-intrinsic-size` em cada cartao para isolar o trabalho de renderizacao e garantir 60 FPS com consumo minimo de CPU.
   - **Modern Web Guidance:** Suporte nativo a `<meta name="color-scheme" content="light dark">`, prevencao de FOUC via inline script, alternador tri-state (Auto, Claro, Escuro) persistente em `localStorage`, e comutador fluido entre Vista em Cartões e Vista em Tabela Técnica.
+
+
+---
+
+## 11. Fase 11: Limpeza da Solucao, Polling Adaptativo por Tiers e Modo de Baixo Consumo na System Tray
+
+* **Objetivo:** Executar a Fase 1 da transformacao em Master Hardware Hub, eliminando codigo legado obsoleto, estancando fugas de memoria e implementando polling adaptativo diferenciado com supressao de redesenho em segundo plano.
+* **Acoes Efetuadas:**
+  - **Poda de Projetos Avalonia:** Remocao dos 5 projetos Avalonia (`LibreHardwareMonitor.Avalonia.*`) e pasta de solucao de `LibreHardwareMonitor.sln`, concentrando o pipeline exclusivamente em `LibreHardwareMonitor.Windows.Forms`, `LibreHardwareMonitorLib` e `Aga.Controls`.
+  - **Eliminacao de Ativos Web Obsoletos:** Remocao fisica de ficheiros jQuery 1.7, Knockout 2.1 e estilos de 2012 em `Resources/Web/` (`js/`, `css/`, `images/`), reduzindo centenas de kilobytes de ativos mortos.
+  - **Extirpacao do Subsistema Gadget:** Remocao de `Gadget.cs`, `GadgetWindow.cs`, `SensorGadget.cs`, `ShowDesktop.cs`, `gadget.png` e `gadget.xcf`, eliminando hooks de janelas GDI+ e referencias de menus em `MainForm.cs`, `MainForm.Designer.cs` e `MainForm.Tree.cs`.
+  - **Desacoplamento de `PawnIO_setup.exe`:** Realocacao do instalador binario de 3.22 MB de dentro dos recursos compilados para a pasta externa `tools/`, reduzindo o tamanho de `LibreHardwareMonitor.Windows.Forms.dll` de 4.56 MB para 472 KB (~90% de reducao).
+  - **Consolidacao de Scripts:** Remocao de ficheiros redundantes na raiz (`Configurar-Arranque-Rapido-Sem-UAC.bat`, `Fechar-LibreHardwareMonitor.bat`, `Iniciar-Elevado.cmd`, `launch.vbs`) e integracao direta de gestao de instancia unica via `Mutex`, argumentos de encerramento (`--exit`) e elevacao (`--elevate`) em `Program.cs`.
+  - **Polling Adaptativo por Tiers:** Refatoracao de `UpdateVisitor.cs` para segmentar o ciclo de leitura de hardware em 3 cadencias temporais (Tier Lento a 30s para Storage SMART e Bateria; Tier Normal a 2-5s para Memoria, Rede e PSU; Tier Critico a 800ms-2500ms para CPU, GPU e Ventoinhas).
+  - **Modo Baixo Consumo na System Tray e Supressao de UI:**
+    - Em `MainForm.cs` e `MainForm.Tray.cs`, suspensao total de `treeView.Invalidate()`, `UpdateShell()` e `_plotPanel.InvalidatePlot()` quando a janela esta oculta ou minimizada.
+    - Comutacao automatica do timer de leitura para 3000ms-5000ms quando minimizado na bandeja.
+    - Invocacao da API Win32 `EmptyWorkingSet` via `psapi.dll` associada a `GC.Collect()` na transicao para a bandeja do sistema, libertando memoria fisica nao utilizada.
+  - **Otimizacao de Alocacao de Historico de Sensores:** Em `MainForm.Plot.cs` e `MainForm.cs`, desativacao automatica de `ValuesTimeWindow` (`TimeSpan.Zero`) para todos os sensores quando o painel de graficos se encontra inativo, suprimindo alocacoes contínuas de series temporais.
+  - **Cache de Afinidade de Thread em MSRs:** Em `ThreadAffinity.cs`, introducao de cache local `[ThreadStatic]` para evitar chamadas de sistema `SetThreadGroupAffinity` redundantes para o mesmo grupo e mascara.

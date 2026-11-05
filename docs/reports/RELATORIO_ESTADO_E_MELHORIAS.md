@@ -110,3 +110,24 @@ LibreHardwareMonitor.Windows.Forms/UI/
 * **Problema:** Ao desligar a funcionalidade de Web Server ou fechar a janela, o programa paralisava durante 5 segundos antes de terminar.
 * **Causa Raiz:** O metodo `StopHttpListener()` aguardava ate 5 segundos por `_listenerTask` que se encontrava bloqueada em `GetContextAsync()`. Sem abortar o listener antes do `Wait`, a thread da interface de utilizador ficava bloqueada.
 * **Solucao:** A chamada a `_listener.Stop()` foi antecipada para encerrar imediatamente o socket HTTP de escuta, permitindo saida em 0 milissegundos sem congelamento visual.
+
+
+---
+
+## 8. Execucao da Fase 1: Limpeza da Codebase e Modo Zero-Overhead
+
+### 8.1 Poda de Divida Tecnica e Reducao de Binario em 90%
+1. **Consolidacao em Windows Forms:** Remocao dos projetos Avalonia de `LibreHardwareMonitor.sln`, concentrando recursos no ecossistema WinForms nativo de baixo consumo de memoria RAM (< 25 MB).
+2. **Extirpacao de Recursos Mortos:** Eliminacao definitiva de bibliotecas JavaScript/CSS de 2012 em `Resources/Web/` e do subsistema legado de Gadgets (`Gadget.cs`, `GadgetWindow.cs`, `SensorGadget.cs`, `ShowDesktop.cs`).
+3. **Desacoplamento de PawnIO_setup.exe:** O instalador de 3.22 MB foi transferido de recurso embutido para a pasta `tools/`. Como resultado, `LibreHardwareMonitor.Windows.Forms.dll` reduziu de 4.56 MB para 472 KB.
+
+### 8.2 Arquitetura de Polling Adaptativo por Tiers
+Em `UpdateVisitor.cs`, a atualizacao sincrona e indiferenciada foi substituta por um mecanismo de frequencia diferenciada:
+* **Tier Lento (30 segundos):** Leituras SMART de unidades de armazenamento (`StorageDevice.cs`) e telemetria de bateria (`Battery.cs`), cessando a execucao constante de IOCTLs de disco e ACPI a cada segundo.
+* **Tier Normal (2s ativo, 5s minimizado):** Estatisticas de Memoria RAM, contadores de adaptadores de rede e telemetria de fontes de alimentacao (PSU).
+* **Tier Critico (800ms ativo, 2.5s minimizado):** Temperaturas, tensoes, potencias e clocks de CPU, GPU, Motherboard e controladores de ventoinhas.
+
+### 8.3 Modo Baixo Consumo na System Tray e Otimizacao de Memoria
+* **Supressao de Pintura GDI+:** Quando a janela principal se encontra oculta ou minimizada, as chamadas a `treeView.Invalidate()`, `UpdateShell()` e `_plotPanel.InvalidatePlot()` sao suspensas, eliminando alocacoes de objetos de desenho GDI+.
+* **Esvaziamento de Working Set:** Na minimizacao para a bandeja, `TrimWorkingSet()` executa `GC.Collect()` e chama a API Win32 `EmptyWorkingSet`, devolvendo paginas de memoria fisica ao sistema operativo e garantindo uma pegada de RAM minima visivel no Gestor de Tarefas.
+* **Supressao de Historico Inativo:** Sensores agora apenas acumulam historico temporal (`ValuesTimeWindow`) quando o painel de graficos (`PlotPanel`) esta ativamente aberto pelo utilizador.

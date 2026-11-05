@@ -62,6 +62,13 @@ public sealed partial class MainForm
             if (WindowState == FormWindowState.Minimized)
                 WindowState = FormWindowState.Normal;
             Activate();
+            ApplyAdaptivePolling();
+            treeView.Invalidate();
+        }
+        else
+        {
+            ApplyAdaptivePolling();
+            TrimWorkingSet();
         }
     }
 
@@ -73,10 +80,32 @@ public sealed partial class MainForm
             Visible = false;
             if (!_systemTray.IsMainIconEnabled)
                 _systemTray.IsMainIconEnabled = true;
+            ApplyAdaptivePolling();
+            TrimWorkingSet();
             return;
         }
 
         base.OnFormClosing(e);
+    }
+
+    [DllImport("psapi.dll")]
+    private static extern int EmptyWorkingSet(IntPtr hwProc);
+
+    public static void TrimWorkingSet()
+    {
+        try
+        {
+            GC.Collect(2, GCCollectionMode.Forced, true, true);
+            GC.WaitForPendingFinalizers();
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+            {
+                using var process = System.Diagnostics.Process.GetCurrentProcess();
+                EmptyWorkingSet(process.Handle);
+            }
+        }
+        catch
+        {
+        }
     }
 
     protected override void WndProc(ref Message m)

@@ -39,7 +39,7 @@ LibreHardwareMonitor/
 │   │   ├── MainForm.WebServer.cs                  # Classe parcial: Controlo do servidor web e dialogos de porta/auth
 │   │   ├── MainForm.Plot.cs                       # Classe parcial: Painel de graficos, selecao e sincronizacao
 │   │   ├── MainForm.Tree.cs                       # Classe parcial: Gestao de TreeViewAdv, colunas e contexto
-│   │   ├── SensorGadget.cs                        # Gadget flutuante de sensores no ambiente de trabalho
+�   �   +-- UpdateVisitor.cs                       # Motor de polling adaptativo por tiers (Critico, Normal, Lento)
 │   │   ├── SystemTray.cs                          # Gestor de icones na area de notificacao do Windows
 │   │   ├── PlotPanel.cs                           # Painel de desenho com biblioteca OxyPlot
 │   │   ├── ScaledPlotModel.cs                     # Modelo escalonado para visualizacao temporal de sensores

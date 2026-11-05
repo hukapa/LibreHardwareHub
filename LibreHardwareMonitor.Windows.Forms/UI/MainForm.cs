@@ -27,7 +27,6 @@ public sealed partial class MainForm : Form
     private ToolStripMenuItem _autoThemeMenuItem;
     private readonly UserOption _autoStart;
     private readonly Computer _computer;
-    private readonly SensorGadget _gadget;
     private readonly Logger _logger;
     private readonly UserRadioGroup _loggingInterval;
     private readonly UserRadioGroup _smartUpdateCycle;
@@ -52,7 +51,6 @@ public sealed partial class MainForm : Form
     private readonly UserOption _runWebServer;
     private readonly UserRadioGroup _sensorValuesTimeWindow;
     private readonly PersistentSettings _settings;
-    private readonly UserOption _showGadget;
     private readonly StartupManager _startupManager = new();
     private readonly SystemTray _systemTray;
     private readonly UnitManager _unitManager;
@@ -145,7 +143,6 @@ public sealed partial class MainForm : Form
             splitContainer.SplitterWidth = 4;
             treeView.BorderStyle = BorderStyle.Fixed3D;
             _plotPanel.BorderStyle = BorderStyle.Fixed3D;
-            gadgetMenuItem.Visible = false;
             minCloseMenuItem.Visible = false;
             minTrayMenuItem.Visible = false;
             startMinMenuItem.Visible = false;
@@ -156,8 +153,6 @@ public sealed partial class MainForm : Form
             treeView.RowHeight = Math.Max(treeView.Font.Height + LogicalToDeviceUnits(10), LogicalToDeviceUnits(26));
             treeView.ShowLines = false;
             treeView.ColumnHeaderLogicalHeight = 30;
-            _gadget = new SensorGadget(_computer, _settings, _unitManager);
-            _gadget.HideShowCommand += HideShowClick;
         }
 
         treeView.ShowNodeToolTips = true;
@@ -317,8 +312,6 @@ public sealed partial class MainForm : Form
         _readBatterySensors = new UserOption("batteryMenuItem", true, batteryMenuItem, _settings);
         _readBatterySensors.Changed += delegate { _computer.IsBatteryEnabled = _readBatterySensors.Value; };
 
-        _showGadget = new UserOption("gadgetMenuItem", false, gadgetMenuItem, _settings);
-
         _forceDriveWakeup = new UserOption("forceDriveWakeupItem", false, forceDriveWakeupItem, _settings);
         _forceDriveWakeup.Changed += delegate
         {
@@ -334,11 +327,6 @@ public sealed partial class MainForm : Form
         // Prevent Menu From Closing When UnClicking Hardware Items
         menuItemFileHardware.DropDown.Closing += StopFileHardwareMenuFromClosing;
 
-        _showGadget.Changed += delegate
-        {
-            if (_gadget != null)
-                _gadget.Visible = _showGadget.Value;
-        };
 
         celsiusMenuItem.Checked = _unitManager.TemperatureUnit == TemperatureUnit.Celsius;
         fahrenheitMenuItem.Checked = !celsiusMenuItem.Checked;
@@ -449,30 +437,7 @@ public sealed partial class MainForm : Form
                                              },
                                              _settings);
 
-        _updateInterval.Changed += (sender, e) =>
-        {
-            switch (_updateInterval.Value)
-            {
-                case 0:
-                    timer.Interval = 250;
-                    break;
-                case 1:
-                    timer.Interval = 500;
-                    break;
-                case 2:
-                    timer.Interval = 1000;
-                    break;
-                case 3:
-                    timer.Interval = 2000;
-                    break;
-                case 4:
-                    timer.Interval = 5000;
-                    break;
-                case 5:
-                    timer.Interval = 10000;
-                    break;
-            }
-        };
+        _updateInterval.Changed += (sender, e) => { ApplyAdaptivePolling(); };
 
         _smartUpdateCycle = new UserRadioGroup("smartUpdateCycle",
                                                0,
@@ -519,52 +484,12 @@ public sealed partial class MainForm : Form
         perSessionFileRotationMenuItem.Checked = _logger.FileRotationMethod == LoggerFileRotation.PerSession;
         dailyFileRotationMenuItem.Checked = _logger.FileRotationMethod == LoggerFileRotation.Daily;
 
-        _sensorValuesTimeWindow.Changed += (sender, e) =>
-        {
-            TimeSpan timeWindow = TimeSpan.Zero;
-            switch (_sensorValuesTimeWindow.Value)
-            {
-                case 0:
-                    timeWindow = new TimeSpan(0, 0, 30);
-                    break;
-                case 1:
-                    timeWindow = new TimeSpan(0, 1, 0);
-                    break;
-                case 2:
-                    timeWindow = new TimeSpan(0, 2, 0);
-                    break;
-                case 3:
-                    timeWindow = new TimeSpan(0, 5, 0);
-                    break;
-                case 4:
-                    timeWindow = new TimeSpan(0, 10, 0);
-                    break;
-                case 5:
-                    timeWindow = new TimeSpan(0, 30, 0);
-                    break;
-                case 6:
-                    timeWindow = new TimeSpan(1, 0, 0);
-                    break;
-                case 7:
-                    timeWindow = new TimeSpan(2, 0, 0);
-                    break;
-                case 8:
-                    timeWindow = new TimeSpan(6, 0, 0);
-                    break;
-                case 9:
-                    timeWindow = new TimeSpan(12, 0, 0);
-                    break;
-                case 10:
-                    timeWindow = new TimeSpan(24, 0, 0);
-                    break;
-            }
-
-            _computer.Accept(new SensorVisitor(delegate(ISensor sensor) { sensor.ValuesTimeWindow = timeWindow; }));
-        };
+        _sensorValuesTimeWindow.Changed += (sender, e) => { SyncSensorHistoryTracking(); };
 
         InitializeTheme();
         InitializeTreeStyle();
         InitializePlotForm();
+        SyncSensorHistoryTracking();
         InitializeSplitter();
 
         startupMenuItem.Visible = _startupManager.IsAvailable;
@@ -607,7 +532,8 @@ public sealed partial class MainForm : Form
         if (_delayCount < 4)
             _delayCount++;
 
-        _plotPanel.InvalidatePlot();
+        if (Visible && WindowState != FormWindowState.Minimized && _showPlot != null && _showPlot.Value)
+            _plotPanel.InvalidatePlot();
     }
 
     private void PowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs eventArgs)
@@ -731,13 +657,85 @@ public sealed partial class MainForm : Form
 
     private void Timer_Tick(object sender, EventArgs e)
     {
-        treeView.Invalidate();
-        UpdateShell();
+        bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
+
+        if (isFormVisible)
+        {
+            treeView.Invalidate();
+            UpdateShell();
+        }
+
         _systemTray.Redraw();
-        _gadget?.Redraw();
 
         if (!backgroundUpdater.IsBusy)
             backgroundUpdater.RunWorkerAsync();
+    }
+
+    public int GetConfiguredInterval()
+    {
+        return _updateInterval.Value switch
+        {
+            0 => 250,
+            1 => 500,
+            2 => 1000,
+            3 => 2000,
+            4 => 5000,
+            5 => 10000,
+            _ => 1000
+        };
+    }
+
+    public void ApplyAdaptivePolling()
+    {
+        bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
+
+        if (isFormVisible)
+        {
+            _updateVisitor.LowPowerMode = false;
+            timer.Interval = GetConfiguredInterval();
+        }
+        else
+        {
+            _updateVisitor.LowPowerMode = true;
+            bool needsFrequentBackgroundUpdates = (_runWebServer != null && _runWebServer.Value) ||
+                                                  (_systemTray != null && _systemTray.HasSensors);
+            timer.Interval = needsFrequentBackgroundUpdates ? 3000 : 5000;
+        }
+    }
+
+    public TimeSpan GetSelectedValuesTimeWindow()
+    {
+        return _sensorValuesTimeWindow.Value switch
+        {
+            0 => new TimeSpan(0, 0, 30),
+            1 => new TimeSpan(0, 1, 0),
+            2 => new TimeSpan(0, 2, 0),
+            3 => new TimeSpan(0, 5, 0),
+            4 => new TimeSpan(0, 10, 0),
+            5 => new TimeSpan(0, 30, 0),
+            6 => new TimeSpan(1, 0, 0),
+            7 => new TimeSpan(2, 0, 0),
+            8 => new TimeSpan(6, 0, 0),
+            9 => new TimeSpan(12, 0, 0),
+            10 => new TimeSpan(24, 0, 0),
+            _ => new TimeSpan(24, 0, 0)
+        };
+    }
+
+    public void SyncSensorHistoryTracking()
+    {
+        TimeSpan timeWindow = (_showPlot != null && _showPlot.Value) ? GetSelectedValuesTimeWindow() : TimeSpan.Zero;
+        _computer.Accept(new SensorVisitor(sensor => sensor.ValuesTimeWindow = timeWindow));
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        ApplyAdaptivePolling();
+        if (WindowState == FormWindowState.Minimized)
+        {
+            TrimWorkingSet();
+        }
     }
 
     private void SaveConfiguration()

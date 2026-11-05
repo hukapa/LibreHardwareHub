@@ -141,23 +141,6 @@ public sealed partial class MainForm
                     treeContextMenu.Items.Add(item);
                 }
 
-                if (_gadget != null)
-                {
-                    ToolStripMenuItem item = new("Show in Gadget") { Checked = _gadget.Contains(node.Sensor) };
-                    item.Click += delegate
-                    {
-                        if (item.Checked)
-                        {
-                            _gadget.Remove(node.Sensor);
-                        }
-                        else
-                        {
-                            _gadget.Add(node.Sensor);
-                        }
-                    };
-
-                    treeContextMenu.Items.Add(item);
-                }
 
                 if (node.Sensor.Control != null)
                 {

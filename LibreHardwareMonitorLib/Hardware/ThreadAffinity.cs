@@ -14,6 +14,12 @@ namespace LibreHardwareMonitor.Hardware;
 
 internal static class ThreadAffinity
 {
+    [ThreadStatic]
+    private static GroupAffinity _currentThreadAffinity;
+
+    [ThreadStatic]
+    private static bool _isAffinityCached;
+
     /// <summary>
     /// Initializes static members of the <see cref="ThreadAffinity" /> class.
     /// </summary>
@@ -40,6 +46,10 @@ internal static class ThreadAffinity
         if (affinity == GroupAffinity.Undefined)
             return GroupAffinity.Undefined;
 
+        // Skip redundant context switch syscall if thread is already pinned to this group and mask
+        if (_isAffinityCached && _currentThreadAffinity == affinity)
+            return _currentThreadAffinity;
+
         if (Software.OperatingSystem.IsUnix)
         {
             if (affinity.Group > 0)
@@ -50,9 +60,12 @@ internal static class ThreadAffinity
                 return GroupAffinity.Undefined;
 
             ulong mask = affinity.Mask;
-            return LibC.sched_setaffinity(0, (IntPtr)8, ref mask) != 0
-                ? GroupAffinity.Undefined
-                : new GroupAffinity(0, result);
+            if (LibC.sched_setaffinity(0, (IntPtr)8, ref mask) != 0)
+                return GroupAffinity.Undefined;
+
+            _currentThreadAffinity = affinity;
+            _isAffinityCached = true;
+            return new GroupAffinity(0, result);
         }
 
         ulong maxValue = IntPtr.Size == 8 ? ulong.MaxValue : uint.MaxValue;
@@ -64,10 +77,15 @@ internal static class ThreadAffinity
 
         IntPtr currentThread = PInvoke.GetCurrentThread();
 
-        return PInvoke.SetThreadGroupAffinity(new HANDLE(currentThread),
+        if (PInvoke.SetThreadGroupAffinity(new HANDLE(currentThread),
                                               &groupAffinity,
-                                              &previousGroupAffinity)
-            ? new GroupAffinity(previousGroupAffinity.Group, previousGroupAffinity.Mask)
-            : GroupAffinity.Undefined;
+                                              &previousGroupAffinity))
+        {
+            _currentThreadAffinity = affinity;
+            _isAffinityCached = true;
+            return new GroupAffinity(previousGroupAffinity.Group, previousGroupAffinity.Mask);
+        }
+
+        return GroupAffinity.Undefined;
     }
 }
