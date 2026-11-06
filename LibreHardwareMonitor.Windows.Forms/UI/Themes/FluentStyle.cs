@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
 using Microsoft.Win32;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
@@ -118,6 +119,59 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
             using GraphicsPath path = RoundedRectangle(bounds, radius);
             using Pen pen = new(color, width);
             g.DrawPath(pen, path);
+        }
+
+        public static void StylePrimaryButton(Button btn, Theme theme)
+        {
+            if (btn == null) return;
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderSize = 0;
+            btn.BackColor = theme.AccentColor;
+            btn.ForeColor = theme.AccentForegroundColor;
+            btn.Font = UiFontSemibold;
+            btn.Cursor = Cursors.Hand;
+            btn.FlatAppearance.MouseOverBackColor = Blend(theme.AccentColor, Color.White, 0.15);
+            btn.FlatAppearance.MouseDownBackColor = Blend(theme.AccentColor, Color.Black, 0.15);
+        }
+
+        public static void StyleSecondaryButton(Button btn, Theme theme)
+        {
+            if (btn == null) return;
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderSize = 1;
+            btn.FlatAppearance.BorderColor = theme.SurfaceStrokeColor;
+            btn.BackColor = theme.SurfaceColor;
+            btn.ForeColor = theme.ForegroundColor;
+            btn.Font = UiFont;
+            btn.Cursor = Cursors.Hand;
+            btn.FlatAppearance.MouseOverBackColor = theme.HoverBackgroundColor;
+            btn.FlatAppearance.MouseDownBackColor = theme.SelectedBackgroundColor;
+        }
+
+        public static void StyleChipButton(Button btn, Theme theme, bool selected)
+        {
+            if (btn == null) return;
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.Cursor = Cursors.Hand;
+            if (selected)
+            {
+                btn.FlatAppearance.BorderSize = 0;
+                btn.BackColor = theme.AccentColor;
+                btn.ForeColor = theme.AccentForegroundColor;
+                btn.Font = UiFontSemibold;
+                btn.FlatAppearance.MouseOverBackColor = Blend(theme.AccentColor, Color.White, 0.15);
+                btn.FlatAppearance.MouseDownBackColor = Blend(theme.AccentColor, Color.Black, 0.15);
+            }
+            else
+            {
+                btn.FlatAppearance.BorderSize = 1;
+                btn.FlatAppearance.BorderColor = theme.SurfaceStrokeColor;
+                btn.BackColor = theme.SurfaceColor;
+                btn.ForeColor = theme.ForegroundColor;
+                btn.Font = UiFont;
+                btn.FlatAppearance.MouseOverBackColor = theme.HoverBackgroundColor;
+                btn.FlatAppearance.MouseDownBackColor = theme.SelectedBackgroundColor;
+            }
         }
 
         /// <summary>Asks DWM (Windows 11 build 22000+) to round the window corners and tint its border.</summary>

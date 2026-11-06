@@ -15,10 +15,13 @@ Este fork mantem o foco na modernizacao do ecossistema para .NET 8.0 LTS, melhor
 
 ### Capacidades Nucleares
 1. **Monitorizacao Abrangente de Sensores:** Leitura de temperaturas, tensoes, frequencias de relogio, potencias (Watts), percentagens de uso, taxas de fluxo e nivel de desgaste.
-2. **Minimizar para Segundo Plano ao Clicar no "X":** O encerramento no botao "X" da janela principal coloca a aplicacao em segundo plano na barra de tarefas (System Tray), mantendo a monitorizacao e o servidor web ativos sem interrupcao.
-3. **Dashboard Web Remoto Moderno:** Interface web zero-dependencies servida diretamente pelo executavel via HTTP (porta 8085 por omissao), com deteccao nativa de Dark/Light mode (`light-dark()`), cards responsivos e pesquisa instantanea em tempo real.
-4. **Resiliencia ao Windows 11 Smart App Control (SAC):** Isolamento de drivers de terceiros nao assinados com carregamento tardio protegido (`NoInlining`), assegurando que a aplicacao inicia mesmo em ambientes com politicas de seguranca empresariais ativas.
-5. **Arquitetura Modular em Classes Parciais:** Decomposicao de classes monoliticas (como `MainForm.cs`), respeitando o Principio da Responsabilidade Unica (SRP) e o limite de linhas.
+2. **Controlo Ativo de Ventoinhas (Fan Control):** Motor inteligente de controlo de ventilacao por curvas personalizadas com histerese assimetrica, suavizacao temporal e Hard Thermal Override de seguranca (>=90 C -> 100%).
+3. **Modulo de Hardware Tuning (GPU e CPU Tuning Seguro):** Afinacao e controlo de placas graficas e processadores com limites estritos (clamping), teste temporizado de 15 segundos (15s Watchdog) e protecao automatica contra falhas de arranque (Dirty-Boot Watchdog com janela de estabilidade de 120s).
+4. **Design System Fluent Unificado (`UI/Controls/`):** Componentes de alta performance (`FluentMetricCard`, `FluentBadge`, `FluentSectionCard`) integrados em Fan Control, CPU Tuning e GPU Tuning com tipografia Segoe UI, suporte nativo a temas (Dark/Light/Black) e desenho livre de cintilacao.
+4. **Minimizar para Segundo Plano ao Clicar no "X":** O encerramento no botao "X" da janela principal coloca a aplicacao em segundo plano na barra de tarefas (System Tray), mantendo a monitorizacao, curvas de ventilacao e servidor web ativos.
+5. **Dashboard Web Remoto Moderno:** Interface web zero-dependencies servida diretamente pelo executavel via HTTP (porta 8085 por omissao), com deteccao nativa de Dark/Light mode (`light-dark()`), cards responsivos e pesquisa instantanea em tempo real.
+6. **Resiliencia ao Windows 11 Smart App Control (SAC):** Isolamento de drivers de terceiros nao assinados com carregamento tardio protegido (`NoInlining`), assegurando que a aplicacao inicia mesmo em ambientes com politicas de seguranca empresariais ativas.
+7. **Arquitetura Modular em Classes Parciais:** Decomposicao de classes monoliticas (como `MainForm.cs`), respeitando o Principio da Responsabilidade Unica (SRP) e o limite de linhas.
 
 ---
 

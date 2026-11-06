@@ -20,6 +20,9 @@ public sealed class FanControlEngine
     private readonly IComputer _computer;
     private readonly PersistentSettings _settings;
     private readonly List<FanChannelRuntime> _channels = new();
+    private readonly Dictionary<string, ISensor> _tempSensorsById = new(StringComparer.OrdinalIgnoreCase);
+    private ISensor _primaryCpuTempSensor;
+    private ISensor _primaryGpuTempSensor;
     private long _lastUpdateTicks;
 
     public IReadOnlyList<FanChannelRuntime> Channels => _channels;
@@ -56,6 +59,13 @@ public sealed class FanControlEngine
     {
         AppDomain.CurrentDomain.ProcessExit += (_, _) => RestoreAllControlsToDefault();
         AppDomain.CurrentDomain.UnhandledException += (_, _) => RestoreAllControlsToDefault();
+        try
+        {
+            Microsoft.Win32.SystemEvents.SessionEnded += (_, _) => RestoreAllControlsToDefault();
+        }
+        catch
+        {
+        }
     }
 
     public static void RestoreAllControlsToDefault()
@@ -82,6 +92,10 @@ public sealed class FanControlEngine
             List<IControl> discoveredControls = new();
             List<ISensor> discoveredRpmSensors = new();
 
+            _tempSensorsById.Clear();
+            _primaryCpuTempSensor = null;
+            _primaryGpuTempSensor = null;
+
             void Collect(IHardware hardware)
             {
                 foreach (ISensor sensor in hardware.Sensors)
@@ -90,6 +104,28 @@ public sealed class FanControlEngine
                         discoveredControls.Add(sensor.Control);
                     else if (sensor.SensorType == SensorType.Fan)
                         discoveredRpmSensors.Add(sensor);
+                    else if (sensor.SensorType == SensorType.Temperature)
+                    {
+                        string sId = sensor.Identifier.ToString();
+                        _tempSensorsById[sId] = sensor;
+
+                        if (hardware.HardwareType == HardwareType.Cpu)
+                        {
+                            if (_primaryCpuTempSensor == null)
+                                _primaryCpuTempSensor = sensor;
+                            else if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                     sensor.Name.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0)
+                                _primaryCpuTempSensor = sensor;
+                        }
+                        else if (hardware.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
+                        {
+                            if (_primaryGpuTempSensor == null)
+                                _primaryGpuTempSensor = sensor;
+                            else if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                     sensor.Name.IndexOf("GPU", StringComparison.OrdinalIgnoreCase) >= 0)
+                                _primaryGpuTempSensor = sensor;
+                        }
+                    }
                 }
 
                 foreach (IHardware sub in hardware.SubHardware)
@@ -148,35 +184,11 @@ public sealed class FanControlEngine
 
     private void ResolveTemperatures()
     {
-        float? cpu = null;
-        float? gpu = null;
+        if (_primaryCpuTempSensor?.Value != null)
+            LastCpuTemp = _primaryCpuTempSensor.Value.Value;
 
-        foreach (IHardware hw in _computer.Hardware)
-        {
-            if (hw.HardwareType == HardwareType.Cpu)
-            {
-                ISensor pkg = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature &&
-                    (s.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 || s.Name.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0));
-                if (pkg?.Value != null)
-                    cpu = pkg.Value.Value;
-                else
-                {
-                    ISensor anyTemp = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature && s.Value != null);
-                    if (anyTemp?.Value != null)
-                        cpu = anyTemp.Value.Value;
-                }
-            }
-            else if (hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
-            {
-                ISensor core = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature &&
-                    (s.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 || s.Name.IndexOf("GPU", StringComparison.OrdinalIgnoreCase) >= 0));
-                if (core?.Value != null)
-                    gpu = core.Value.Value;
-            }
-        }
-
-        if (cpu.HasValue) LastCpuTemp = cpu.Value;
-        if (gpu.HasValue) LastGpuTemp = gpu.Value;
+        if (_primaryGpuTempSensor?.Value != null)
+            LastGpuTemp = _primaryGpuTempSensor.Value.Value;
     }
 
     public float? ResolveChannelTemperature(string source)
@@ -190,15 +202,8 @@ public sealed class FanControlEngine
         if (string.Equals(source, FanChannelConfig.SourceMaxCpuGpu, StringComparison.OrdinalIgnoreCase))
             return Math.Max(LastCpuTemp, LastGpuTemp);
 
-        // Pesquisa por identificador especifico
-        foreach (IHardware hw in _computer.Hardware)
-        {
-            foreach (ISensor s in hw.Sensors)
-            {
-                if (s.SensorType == SensorType.Temperature && s.Identifier.ToString() == source)
-                    return s.Value;
-            }
-        }
+        if (_tempSensorsById.TryGetValue(source, out ISensor s) && s.Value != null)
+            return s.Value.Value;
 
         return Math.Max(LastCpuTemp, LastGpuTemp);
     }

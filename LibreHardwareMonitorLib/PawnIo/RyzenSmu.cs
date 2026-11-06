@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using LibreHardwareMonitor.Hardware;
 
 namespace LibreHardwareMonitor.PawnIo;
@@ -80,6 +80,36 @@ public class RyzenSmu
             Mutexes.ReleasePciBus();
         }
     }
+
+    public bool SendSmuCommand(uint command, params uint[] args)
+    {
+        if (!Mutexes.WaitPciBus(5000))
+            return false;
+
+        try
+        {
+            long[] inArray = new long[1 + (args?.Length ?? 0)];
+            inArray[0] = command;
+            if (args != null)
+            {
+                for (int i = 0; i < args.Length; i++)
+                    inArray[1 + i] = args[i];
+            }
+
+            _pawnIO.Execute("ioctl_send_smu_command", inArray, 0);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Mutexes.ReleasePciBus();
+        }
+    }
+
+    public bool IsLoaded => _pawnIO.IsLoaded;
 
     public void Close() => _pawnIO.Close();
 }

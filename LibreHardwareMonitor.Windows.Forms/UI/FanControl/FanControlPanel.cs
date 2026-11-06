@@ -7,6 +7,9 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using LibreHardwareMonitor.Hardware;
+using LibreHardwareMonitor.Windows.Forms.UI.Controls;
+using LibreHardwareMonitor.Windows.Forms.UI.Icons;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.FanControl;
@@ -18,10 +21,22 @@ public sealed class FanControlPanel : UserControl, IThemedControl
 
     private readonly Panel _headerPanel;
     private readonly Label _titleLabel;
-    private readonly Label _tempLabel;
-    private readonly ComboBox _presetCombo;
+    private readonly Label _subtitleLabel;
+    private readonly Label _presetLabel;
+    private readonly FluentComboBox _presetCombo;
+    private readonly FluentBadge _profileBadge;
+
+    private readonly Panel _telemetryRow;
+    private readonly FluentMetricCard _cpuTempCard;
+    private readonly FluentMetricCard _gpuTempCard;
+    private readonly FluentMetricCard _activeFansCard;
+    private readonly FluentMetricCard _profileCard;
+
     private readonly Panel _cardContainer;
-    private readonly Label _emptyLabel;
+    private readonly Panel _emptyContainer;
+    private readonly FluentSectionCard _emptyCard;
+    private readonly Label _emptyTitleLabel;
+    private readonly Label _emptyDescLabel;
 
     public FanControlPanel() : this(null)
     {
@@ -33,56 +48,113 @@ public sealed class FanControlPanel : UserControl, IThemedControl
                  ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
 
         Dock = DockStyle.Fill;
-        Padding = new Padding(12);
+        Padding = new Padding(16);
 
-        _headerPanel = new Panel { Dock = DockStyle.Top, Height = 70, Padding = new Padding(4) };
+        int gap = LogicalToDeviceUnits(14);
 
+        // 1. Header
+        _headerPanel = new Panel { Dock = DockStyle.Top, Height = 80, Margin = new Padding(0) };
         _titleLabel = new Label
         {
-            Text = "Controlo de Ventoinhas",
-            Font = new Font(Font.FontFamily, 14f, FontStyle.Bold),
-            Location = new Point(4, 4),
+            Text = "Controlo de Ventilacao (Fan Control & Curvas)",
+            Font = FluentStyle.CreateUiFont(FontStyle.Bold, 13.5f),
+            Location = new Point(0, 0),
             AutoSize = true
         };
 
-        _tempLabel = new Label
+        _subtitleLabel = new Label
         {
-            Text = "Telemetria: CPU -- C  •  GPU -- C",
-            Font = new Font(Font.FontFamily, 9.5f, FontStyle.Regular),
-            Location = new Point(4, 34),
+            Text = "Curvas dinamicas de velocidade e gestao de ventiladores Super I/O e controladores.",
+            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f),
+            Location = new Point(0, 26),
             AutoSize = true
         };
 
-        Label presetLabel = new() { Text = "Perfil Global:", Location = new Point(420, 10), AutoSize = true };
-        _presetCombo = new ComboBox
+        _presetLabel = new Label
         {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Location = new Point(500, 6),
-            Width = 160
+            Text = "Perfil Global:",
+            Location = new Point(0, 52),
+            AutoSize = true,
+            Font = FluentStyle.UiFontSemibold
+        };
+
+        _presetCombo = new FluentComboBox
+        {
+            Location = new Point(84, 48),
+            Width = 170
         };
         _presetCombo.Items.AddRange(new object[] { "BIOS Padrao", "Silencioso", "Equilibrado", "Desempenho", "Personalizado" });
         _presetCombo.SelectedIndex = 0;
         _presetCombo.SelectedIndexChanged += PresetCombo_SelectedIndexChanged;
 
-        _headerPanel.Controls.Add(_titleLabel);
-        _headerPanel.Controls.Add(_tempLabel);
-        _headerPanel.Controls.Add(presetLabel);
-        _headerPanel.Controls.Add(_presetCombo);
-
-        _cardContainer = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(0, 8, 8, 8) };
-
-        _emptyLabel = new Label
+        _profileBadge = new FluentBadge
         {
-            Text = "Nenhum canal de controlo de ventiladores detectado (chips Super I/O ou controladores compativeis).",
-            Font = new Font(Font.FontFamily, 10f, FontStyle.Italic),
-            Dock = DockStyle.Top,
-            Height = 40,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Visible = true
+            Location = new Point(266, 48),
+            Height = 22,
+            Style = BadgeStyle.Neutral
         };
-        _cardContainer.Controls.Add(_emptyLabel);
+        _profileBadge.SetBadge("BIOS Padrao", BadgeStyle.Neutral);
+
+        _headerPanel.Controls.Add(_titleLabel);
+        _headerPanel.Controls.Add(_subtitleLabel);
+        _headerPanel.Controls.Add(_presetLabel);
+        _headerPanel.Controls.Add(_presetCombo);
+        _headerPanel.Controls.Add(_profileBadge);
+
+        // 2. Telemetria (4 cartoes Fluent Metric identicos ao SummaryPanel)
+        _telemetryRow = new Panel { Dock = DockStyle.Top, Height = 104 + gap, Padding = new Padding(0, 0, 0, gap) };
+        _cpuTempCard = new FluentMetricCard { Location = new Point(0, 0), Size = new Size(160, 104), Icon = FluentIcons.ForHardware(HardwareType.Cpu) };
+        _cpuTempCard.SetMetric("TEMP CPU", "--", "°C", "Sensor Package", MetricCardSeverity.Normal);
+
+        _gpuTempCard = new FluentMetricCard { Location = new Point(174, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Temperature) };
+        _gpuTempCard.SetMetric("TEMP GPU", "--", "°C", "Sensor do Nucleo", MetricCardSeverity.Normal);
+
+        _activeFansCard = new FluentMetricCard { Location = new Point(348, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Fan) };
+        _activeFansCard.SetMetric("CANAIS ATIVOS", "0", "canais", "Super I/O", MetricCardSeverity.Normal);
+
+        _profileCard = new FluentMetricCard { Location = new Point(522, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Control) };
+        _profileCard.SetMetric("PERFIL GLOBAL", "BIOS", "", "Modo Atual", MetricCardSeverity.Normal);
+
+        _telemetryRow.Controls.Add(_cpuTempCard);
+        _telemetryRow.Controls.Add(_gpuTempCard);
+        _telemetryRow.Controls.Add(_activeFansCard);
+        _telemetryRow.Controls.Add(_profileCard);
+
+        // 3. Container de Canais
+        _cardContainer = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(0, 4, 8, 4) };
+
+        // Empty State Card
+        _emptyContainer = new Panel { Dock = DockStyle.Top, Height = 110 + gap, Padding = new Padding(0, 0, 0, gap) };
+        _emptyCard = new FluentSectionCard
+        {
+            Dock = DockStyle.Fill,
+            Title = "Nenhum Canal de Ventilacao Detectado",
+            Subtitle = "O sistema nao encontrou controladores Super I/O ou dispositivos compativeis com escrita PWM."
+        };
+
+        _emptyTitleLabel = new Label
+        {
+            Text = "Controlos PWM requerem suporte no chip Super I/O (Nuvoton, ITE, Fintek) ou controladores dedicados (NZXT, Corsair, AquaComputer).",
+            Location = new Point(16, 56),
+            Size = new Size(620, 20),
+            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
+        };
+
+        _emptyDescLabel = new Label
+        {
+            Text = "Dica: Em portateis ou motherboards OEM com BIOS proprietaria, o controlo e gerido exclusivamente pelo firmware do fabricante.",
+            Location = new Point(16, 80),
+            Size = new Size(620, 20),
+            Font = FluentStyle.CreateUiFont(FontStyle.Italic, 8.0f)
+        };
+
+        _emptyCard.Controls.Add(_emptyTitleLabel);
+        _emptyCard.Controls.Add(_emptyDescLabel);
+        _emptyContainer.Controls.Add(_emptyCard);
+        _cardContainer.Controls.Add(_emptyContainer);
 
         Controls.Add(_cardContainer);
+        Controls.Add(_telemetryRow);
         Controls.Add(_headerPanel);
 
         if (engine != null)
@@ -107,6 +179,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _engine.PresetChanged += Engine_PresetChanged;
 
         _presetCombo.SelectedIndex = (int)_engine.ActivePreset;
+        UpdateProfileBadge();
         RefreshChannels();
     }
 
@@ -123,6 +196,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
             if (selected != _engine.ActivePreset)
             {
                 _engine.ApplyPreset(selected);
+                UpdateProfileBadge();
                 foreach (FanChannelCard card in _cards)
                     card.SyncUiWithConfig();
             }
@@ -133,6 +207,29 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     {
         if (_engine == null) return;
         _presetCombo.SelectedIndex = (int)_engine.ActivePreset;
+        UpdateProfileBadge();
+    }
+
+    private void UpdateProfileBadge()
+    {
+        if (_engine == null) return;
+        string text = _engine.ActivePreset switch
+        {
+            GlobalFanPreset.Silent => "Silencioso",
+            GlobalFanPreset.Balanced => "Equilibrado",
+            GlobalFanPreset.Performance => "Desempenho",
+            GlobalFanPreset.Custom => "Personalizado",
+            _ => "BIOS Padrao"
+        };
+        BadgeStyle style = _engine.ActivePreset switch
+        {
+            GlobalFanPreset.Performance => BadgeStyle.Accent,
+            GlobalFanPreset.Silent => BadgeStyle.Success,
+            GlobalFanPreset.Balanced => BadgeStyle.Neutral,
+            _ => BadgeStyle.Neutral
+        };
+        _profileBadge.SetBadge(text, style);
+        _profileCard.SetMetric("PERFIL GLOBAL", text, "", "Modo Atual", MetricCardSeverity.Normal);
     }
 
     public void RefreshChannels()
@@ -140,24 +237,39 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _cardContainer.SuspendLayout();
         foreach (FanChannelCard card in _cards)
         {
-            _cardContainer.Controls.Remove(card);
+            if (card.Parent != null)
+                _cardContainer.Controls.Remove(card.Parent);
             card.Dispose();
         }
         _cards.Clear();
 
+        int gap = LogicalToDeviceUnits(14);
+
         if (_engine == null || _engine.Channels.Count == 0)
         {
-            _emptyLabel.Visible = true;
+            _emptyContainer.Visible = true;
+            _activeFansCard.SetMetric("CANAIS ATIVOS", "0", "canais", "Nenhum Super I/O", MetricCardSeverity.Normal);
         }
         else
         {
-            _emptyLabel.Visible = false;
-            // Adicionar cartoes de tras para a frente para manter ordem natural com Dock = Top
+            _emptyContainer.Visible = false;
+            _activeFansCard.SetMetric("CANAIS ATIVOS", $"{_engine.Channels.Count}", "canais", "Super I/O Ativo", MetricCardSeverity.Cool);
+
+            // Adicionar cartoes de tras para a frente com wrapper de espacamento para manter ordem natural
             for (int i = _engine.Channels.Count - 1; i >= 0; i--)
             {
                 FanChannelCard card = new(_engine.Channels[i], _engine);
                 _cards.Add(card);
-                _cardContainer.Controls.Add(card);
+
+                Panel wrapper = new()
+                {
+                    Dock = DockStyle.Top,
+                    Height = card.Height + gap,
+                    Padding = new Padding(0, 0, 0, gap)
+                };
+                card.Dock = DockStyle.Fill;
+                wrapper.Controls.Add(card);
+                _cardContainer.Controls.Add(wrapper);
             }
         }
 
@@ -167,20 +279,33 @@ public sealed class FanControlPanel : UserControl, IThemedControl
 
     public void UpdateTelemetry()
     {
-        if (_engine == null) return;
+        if (_engine == null || !Visible) return;
 
-        _tempLabel.Text = $"Telemetria Termica: CPU {_engine.LastCpuTemp:F0} C  •  GPU {_engine.LastGpuTemp:F0} C";
-
-        if (_engine.HasEmergencyAlert)
+        // 1. CPU Temp
+        float cpu = _engine.LastCpuTemp;
+        if (cpu > 0f)
         {
-            _tempLabel.Text += "  [ALERTA DE EMERGENCIA TERMICA ATIVO]";
-            _tempLabel.ForeColor = Color.Crimson;
+            MetricCardSeverity sev = cpu >= 85f ? MetricCardSeverity.Hot : (cpu >= 75f ? MetricCardSeverity.Warm : (cpu <= 45f ? MetricCardSeverity.Cool : MetricCardSeverity.Normal));
+            _cpuTempCard.SetMetric("TEMP CPU", $"{cpu:F0}", "°C", "Sensor Package", sev, cpu / 100f);
         }
         else
         {
-            _tempLabel.ForeColor = Theme.Current.MutedForegroundColor;
+            _cpuTempCard.SetMetric("TEMP CPU", "--", "°C", "Sensor Package", MetricCardSeverity.Normal);
         }
 
+        // 2. GPU Temp
+        float gpu = _engine.LastGpuTemp;
+        if (gpu > 0f)
+        {
+            MetricCardSeverity sev = gpu >= 83f ? MetricCardSeverity.Hot : (gpu >= 72f ? MetricCardSeverity.Warm : (gpu <= 45f ? MetricCardSeverity.Cool : MetricCardSeverity.Normal));
+            _gpuTempCard.SetMetric("TEMP GPU", $"{gpu:F0}", "°C", "Sensor do Nucleo", sev, gpu / 100f);
+        }
+        else
+        {
+            _gpuTempCard.SetMetric("TEMP GPU", "--", "°C", "Sensor do Nucleo", MetricCardSeverity.Normal);
+        }
+
+        // 3. Atualizar cartoes individuais
         foreach (FanChannelCard card in _cards)
             card.UpdateTelemetry();
     }
@@ -189,12 +314,25 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     {
         BackColor = theme.BackgroundColor;
         ForeColor = theme.ForegroundColor;
-        _headerPanel.BackColor = theme.BackgroundColor;
+
         _titleLabel.ForeColor = theme.ForegroundColor;
-        _tempLabel.ForeColor = theme.MutedForegroundColor;
-        _emptyLabel.ForeColor = theme.MutedForegroundColor;
+        _subtitleLabel.ForeColor = theme.MutedForegroundColor;
+        _presetLabel.ForeColor = theme.ForegroundColor;
+
+        _presetCombo.ApplyTheme(theme);
+        _profileBadge.ApplyTheme(theme);
+        _cpuTempCard.ApplyTheme(theme);
+        _gpuTempCard.ApplyTheme(theme);
+        _activeFansCard.ApplyTheme(theme);
+        _profileCard.ApplyTheme(theme);
+
+        _emptyCard.ApplyTheme(theme);
+        _emptyTitleLabel.ForeColor = theme.ForegroundColor;
+        _emptyDescLabel.ForeColor = theme.MutedForegroundColor;
 
         foreach (FanChannelCard card in _cards)
             card.ApplyTheme(theme);
+
+        Invalidate();
     }
 }

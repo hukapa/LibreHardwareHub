@@ -164,3 +164,37 @@
     - Painel integrado `FanControlPanel.cs`: Seletor de perfil global, telemetria termica em tempo real e lista dinamica de canais.
     - Integracao com a barra lateral Fluent (`SidebarPanel.cs`): Item dedicado "Fan Control" com iconografia vetorial `FluentIcons.ForSensorType(SensorType.Fan)`.
     - Menu de contexto na System Tray: Submenu "Perfil de Ventoinhas" para troca instantanea de perfis sem abrir a janela principal.
+
+
+---
+
+## 13. Fase 13: Subfases 3A e 3B — Hardware Tuning (GPU/CPU), Fail-Safes Rigorosos e Design System Fluent
+
+* **Objetivo:** Implementar a Fase 3 da transformacao em Master Hardware Hub, introduzindo afinacao ativa de placas graficas (GPU Tuning) e processadores (CPU Tuning) com isolamento estrito contra BSoDs/bricking, seguidos da modernizacao visual dos componentes Fluent e eliminacao de alocacoes redundantes.
+* **Acoes Efetuadas:**
+  - **Otimizacoes de Performance e Refinamentos de Codigo (KISS, DRY e Zero-Allocation):**
+    - `ThreadAffinity.cs`: Eliminado o bypass estatico com cache; `SetThreadGroupAffinity` gere nativamente a afinidade e preenche `previousGroupAffinity`, assegurando que os blocos `finally` restauram 100% dos nucleos sem reter a thread num unico core logico.
+    - `UpdateVisitor.cs`: Leitura de timestamp concentrada uma unica vez no inicio de `VisitComputer` com `Environment.TickCount64` em .NET 8, evitando chamadas repetidas a `DateTime.UtcNow`.
+    - `FanChannelRuntime.cs`: Eliminadas alocacoes LINQ (`RemoveAll`, `Average`) no calculo da media movel, substituindo-as por iteracao imperativa sem alocacoes no Heap.
+    - `FanControlEngine.cs`: Criada indexacao O(1) de sensores de temperatura (`_tempSensorsById`) e cache direta dos sensores primarios de CPU e GPU.
+    - `FanControlEngine.RegisterDeadManSwitch()`: Integrada subscricao automatica de `SystemEvents.SessionEnded` para restauro de emergencia da BIOS em encerramentos de sessao.
+    - Suporte Multi-Runtime: Inclusao de `<RollForward>Major</RollForward>` em `Windows.Forms.csproj` e `<CsWin32PlatformTarget>x64</CsWin32PlatformTarget>` em `LibreHardwareMonitorLib.csproj`.
+    - Higienizacao: Remocao fisica definitiva do diretorio `LibreHardwareMonitor.Avalonia/`.
+  - **Subfase 3A — Modulo de GPU Tuning (`UI/Tuning/`):**
+    - Contratos `IGpuTuningDevice` e implementacao generica `GenericGpuTuningDevice.cs` com deteccao passiva de GPUs integradas.
+    - Especializacoes `NvidiaGpuTuningDevice.cs` (NVML nativo, clamping estrito) e `AmdGpuTuningDevice.cs` (AMD Overdrive).
+    - `GpuTuningEngine.cs`: Orquestrador central com duplo watchdog:
+      - *15s Test Watchdog:* Reverte automaticamente qualquer alteracao caso o utilizador nao confirme a estabilidade do ajuste no ecra.
+      - *120s Dirty-Boot Watchdog:* Cria marca de arranque e restaura imediatamente os valores de fabrica se o sistema reiniciar ou falhar no espaco de 120 segundos.
+    - `GpuTuningPanel.cs`: Interface Fluent com seletor de GPU, 4 cartoes KPI de telemetria em tempo real, sliders com duplo buffer e faixa animada de teste.
+  - **Subfase 3B — Modulo de CPU Tuning (`UI/Tuning/`):**
+    - `WindowsPowerPolicy.cs`: Camada universal compativel com todos os processadores (Intel, AMD Zen 1 a 5, Snapdragon ARM64) manipulando `ProcessorPerformanceBoostMode` e limites de estado de desempenho via `powrprof.dll`.
+    - `IntelRaplControl.cs`: Controlo direto de limites de potencia PL1 (Long Duration) e PL2 (Short Duration) via MSR `0x610` utilizando o driver PawnIO.
+    - `CpuTuningEngine.cs`: Motor central com deteccao automatica de suporte, aplicacao de perfis predefinidos (*Eco/Silencioso*, *Equilibrado Stock*, *Desempenho Maximo*) e integracao com Dirty-Boot Watchdog.
+    - `CpuTuningPanel.cs`: Painel Fluent com seletor de politicas, limites de TDP e faixas de telemetria.
+  - **Design System Fluent Unificado (`UI/Controls/`):**
+    - `FluentMetricCard.cs`: Cartao KPI de alta performance desenhado com GDI+ e duplo buffer para visualizacao sem cintilacao de temperaturas, frequencias, potencias e cargas.
+    - `FluentBadge.cs`: Indicador em pilula arredondada com temas semanticos (`Success`, `Warning`, `Danger`, `Accent`, `Neutral`).
+    - `FluentSectionCard.cs`: Painel de agrupamento com cantos arredondados e borda sutil.
+    - `FluentComboBox.cs`: Caixa de combinacao estilizada com cantos curvos e chevron vetorial.
+    - Atualizacao de `FanControlPanel.cs` e `FanChannelCard.cs` para utilizacao integral dos novos componentes Fluent.

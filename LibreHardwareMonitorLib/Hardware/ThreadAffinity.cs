@@ -14,12 +14,6 @@ namespace LibreHardwareMonitor.Hardware;
 
 internal static class ThreadAffinity
 {
-    [ThreadStatic]
-    private static GroupAffinity _currentThreadAffinity;
-
-    [ThreadStatic]
-    private static bool _isAffinityCached;
-
     /// <summary>
     /// Initializes static members of the <see cref="ThreadAffinity" /> class.
     /// </summary>
@@ -46,10 +40,6 @@ internal static class ThreadAffinity
         if (affinity == GroupAffinity.Undefined)
             return GroupAffinity.Undefined;
 
-        // Skip redundant context switch syscall if thread is already pinned to this group and mask
-        if (_isAffinityCached && _currentThreadAffinity == affinity)
-            return _currentThreadAffinity;
-
         if (Software.OperatingSystem.IsUnix)
         {
             if (affinity.Group > 0)
@@ -61,13 +51,8 @@ internal static class ThreadAffinity
 
             ulong mask = affinity.Mask;
             if (LibC.sched_setaffinity(0, (IntPtr)8, ref mask) != 0)
-            {
-                _isAffinityCached = false;
                 return GroupAffinity.Undefined;
-            }
 
-            _currentThreadAffinity = affinity;
-            _isAffinityCached = true;
             return new GroupAffinity(0, result);
         }
 
@@ -81,15 +66,12 @@ internal static class ThreadAffinity
         IntPtr currentThread = PInvoke.GetCurrentThread();
 
         if (PInvoke.SetThreadGroupAffinity(new HANDLE(currentThread),
-                                              &groupAffinity,
-                                              &previousGroupAffinity))
+                                           &groupAffinity,
+                                           &previousGroupAffinity))
         {
-            _currentThreadAffinity = affinity;
-            _isAffinityCached = true;
             return new GroupAffinity(previousGroupAffinity.Group, previousGroupAffinity.Mask);
         }
 
-        _isAffinityCached = false;
         return GroupAffinity.Undefined;
     }
 }

@@ -1,4 +1,4 @@
-﻿namespace LibreHardwareMonitor.PawnIo;
+namespace LibreHardwareMonitor.PawnIo;
 
 public class AmdFamily17
 {
@@ -47,6 +47,28 @@ public class AmdFamily17
 
         return true;
     }
+
+    public bool WriteMsr(uint index, ulong value)
+    {
+        try
+        {
+            long[] inArray = [(long)index, (long)value];
+            _pawnIo.Execute("ioctl_write_msr", inArray, 0);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public bool WriteMsr(uint index, uint eax, uint edx)
+    {
+        ulong value = ((ulong)edx << 32) | eax;
+        return WriteMsr(index, value);
+    }
+
+    public bool IsLoaded => _pawnIo.IsLoaded;
 
     public void Close() => _pawnIo.Close();
 }

@@ -1,4 +1,4 @@
-﻿using LibreHardwareMonitor.Hardware;
+using LibreHardwareMonitor.Hardware;
 
 namespace LibreHardwareMonitor.PawnIo;
 
@@ -50,6 +50,36 @@ public class IntelMsr
         ThreadAffinity.Set(previousAffinity);
         return result;
     }
+
+    public bool WriteMsr(uint index, ulong value)
+    {
+        try
+        {
+            long[] inArray = [(long)index, (long)value];
+            _pawnIO.Execute("ioctl_write_msr", inArray, 0);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public bool WriteMsr(uint index, uint eax, uint edx)
+    {
+        ulong value = ((ulong)edx << 32) | eax;
+        return WriteMsr(index, value);
+    }
+
+    public bool WriteMsr(uint index, ulong value, GroupAffinity affinity)
+    {
+        GroupAffinity previousAffinity = ThreadAffinity.Set(affinity);
+        bool result = WriteMsr(index, value);
+        ThreadAffinity.Set(previousAffinity);
+        return result;
+    }
+
+    public bool IsLoaded => _pawnIO.IsLoaded;
 
     public void Close() => _pawnIO.Close();
 }

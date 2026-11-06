@@ -43,6 +43,8 @@ public sealed partial class MainForm
             Server.Quit();
 
         _systemTray.Dispose();
+        _gpuTuningEngine?.Dispose();
+        _cpuTuningEngine?.Dispose();
         timer.Dispose();
         backgroundUpdater.Dispose();
 

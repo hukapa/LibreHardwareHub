@@ -19,6 +19,7 @@ using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Hardware.Storage;
 using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
+using LibreHardwareMonitor.Windows.Forms.UI.Tuning;
 using LibreHardwareMonitor.Windows.Forms.Utilities;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI;
@@ -57,6 +58,8 @@ public sealed partial class MainForm : Form
     private readonly UnitManager _unitManager;
     private readonly UpdateVisitor _updateVisitor = new();
     private readonly FanControlEngine _fanControlEngine;
+    private readonly GpuTuningEngine _gpuTuningEngine;
+    private readonly CpuTuningEngine _cpuTuningEngine;
     private bool _isWorkingSetTrimmed;
 
     private int _delayCount;
@@ -136,6 +139,12 @@ public sealed partial class MainForm : Form
 
         _fanControlEngine = new FanControlEngine(_computer, _settings);
         _fanControlPanel?.SetEngine(_fanControlEngine);
+
+        _gpuTuningEngine = new GpuTuningEngine(_computer, _settings);
+        _gpuTuningPanel?.SetEngine(_gpuTuningEngine);
+
+        _cpuTuningEngine = new CpuTuningEngine(_computer, _settings);
+        _cpuTuningPanel?.SetEngine(_cpuTuningEngine);
 
         _systemTray = new SystemTray(_computer, _settings, _unitManager);
         _systemTray.SetFanControlEngine(_fanControlEngine);
@@ -674,6 +683,10 @@ public sealed partial class MainForm : Form
             UpdateShell();
             if (_fanControlPanel != null && _fanControlPanel.Visible)
                 _fanControlPanel.UpdateTelemetry();
+            if (_cpuTuningPanel != null && _cpuTuningPanel.Visible)
+                _cpuTuningPanel.UpdateTelemetry();
+            if (_gpuTuningPanel != null && _gpuTuningPanel.Visible)
+                _gpuTuningPanel.UpdateTelemetry();
         }
 
         _systemTray.Redraw();

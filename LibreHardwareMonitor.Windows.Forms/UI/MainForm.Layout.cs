@@ -12,6 +12,7 @@ using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Controls;
 using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 using LibreHardwareMonitor.Windows.Forms.UI.Icons;
+using LibreHardwareMonitor.Windows.Forms.UI.Tuning;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI;
 
@@ -35,6 +36,8 @@ public sealed partial class MainForm
     private SearchBox _search;
     private Panel _toolbar;
     private FanControlPanel _fanControlPanel;
+    private GpuTuningPanel _gpuTuningPanel;
+    private CpuTuningPanel _cpuTuningPanel;
     private int _summaryResolveCountdown = SummaryResolveTicks;
 
     private void InitializeShell()
@@ -46,6 +49,8 @@ public sealed partial class MainForm
         _treeCard.Controls.Add(splitContainer);
 
         _fanControlPanel = new FanControlPanel { Dock = DockStyle.Fill, Visible = false };
+        _gpuTuningPanel = new GpuTuningPanel { Dock = DockStyle.Fill, Visible = false };
+        _cpuTuningPanel = new CpuTuningPanel { Dock = DockStyle.Fill, Visible = false };
 
         _summary = new SummaryPanel { Dock = DockStyle.Top, Visible = false };
         _summary.UseFahrenheit = () => _unitManager.TemperatureUnit == TemperatureUnit.Fahrenheit;
@@ -57,8 +62,10 @@ public sealed partial class MainForm
         _toolbar = new Panel { Dock = DockStyle.Top, Height = _search.Height + gutter, Padding = new Padding(0, 0, 0, gutter) };
         _toolbar.Controls.Add(_search);
 
-        // Docking runs from the back of the z-order: summary, then toolbar, then the tree card / fan panel.
+        // Docking runs from the back of the z-order: summary, then toolbar, then the tree card / fan panel / tuning panels.
         _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, LogicalToDeviceUnits(6), gutter, gutter) };
+        _content.Controls.Add(_cpuTuningPanel);
+        _content.Controls.Add(_gpuTuningPanel);
         _content.Controls.Add(_fanControlPanel);
         _content.Controls.Add(_treeCard);
         _content.Controls.Add(_toolbar);
@@ -102,7 +109,9 @@ public sealed partial class MainForm
         List<SidebarItem> items = new()
         {
             new SidebarItem("All devices", FluentIcons.Computer, null),
-            new SidebarItem("Fan Control", FluentIcons.ForSensorType(SensorType.Fan), "fan_control")
+            new SidebarItem("Fan Control", FluentIcons.ForSensorType(SensorType.Fan), "fan_control"),
+            new SidebarItem("CPU Tuning", FluentIcons.ForHardware(HardwareType.Cpu), "cpu_tuning"),
+            new SidebarItem("GPU Tuning", FluentIcons.ForSensorType(SensorType.Clock), "gpu_tuning")
         };
 
         foreach (HardwareNode node in _root.Nodes.OfType<HardwareNode>())
@@ -139,26 +148,62 @@ public sealed partial class MainForm
 
     private void Sidebar_SelectionChanged(object sender, EventArgs e)
     {
-        if (_sidebar.SelectedItem?.Tag is string tag && tag == "fan_control")
+        if (_sidebar.SelectedItem?.Tag is string tag)
         {
-            _treeCard.Visible = false;
-            if (_toolbar != null) _toolbar.Visible = false;
-            if (_summary != null) _summary.Visible = false;
-            if (_fanControlPanel != null)
+            if (tag == "fan_control")
             {
-                _fanControlPanel.Visible = true;
-                _fanControlPanel.BringToFront();
-                _fanControlPanel.RefreshChannels();
+                _treeCard.Visible = false;
+                if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = false;
+                if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = false;
+                if (_toolbar != null) _toolbar.Visible = false;
+                if (_summary != null) _summary.Visible = false;
+                if (_fanControlPanel != null)
+                {
+                    _fanControlPanel.Visible = true;
+                    _fanControlPanel.BringToFront();
+                    _fanControlPanel.RefreshChannels();
+                }
+                return;
+            }
+
+            if (tag == "cpu_tuning")
+            {
+                _treeCard.Visible = false;
+                if (_fanControlPanel != null) _fanControlPanel.Visible = false;
+                if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = false;
+                if (_toolbar != null) _toolbar.Visible = false;
+                if (_summary != null) _summary.Visible = false;
+                if (_cpuTuningPanel != null)
+                {
+                    _cpuTuningPanel.Visible = true;
+                    _cpuTuningPanel.BringToFront();
+                }
+                return;
+            }
+
+            if (tag == "gpu_tuning")
+            {
+                _treeCard.Visible = false;
+                if (_fanControlPanel != null) _fanControlPanel.Visible = false;
+                if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = false;
+                if (_toolbar != null) _toolbar.Visible = false;
+                if (_summary != null) _summary.Visible = false;
+                if (_gpuTuningPanel != null)
+                {
+                    _gpuTuningPanel.Visible = true;
+                    _gpuTuningPanel.BringToFront();
+                }
+                return;
             }
         }
-        else
-        {
-            if (_fanControlPanel != null) _fanControlPanel.Visible = false;
-            if (_toolbar != null) _toolbar.Visible = true;
-            if (_summary != null) _summary.Visible = _summary.HasMetrics;
-            _treeCard.Visible = true;
-            ApplyScope(_sidebar.SelectedItem?.Tag as HardwareNode, true);
-        }
+
+        if (_fanControlPanel != null) _fanControlPanel.Visible = false;
+        if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = false;
+        if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = false;
+        if (_toolbar != null) _toolbar.Visible = true;
+        if (_summary != null) _summary.Visible = _summary.HasMetrics;
+        _treeCard.Visible = true;
+        ApplyScope(_sidebar.SelectedItem?.Tag as HardwareNode, true);
     }
 
     private void Summary_CardClicked(object sender, IHardware hardware)

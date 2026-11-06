@@ -99,14 +99,19 @@ public sealed class FanChannelRuntime
 
     private void UpdateCurveMode(float currentTemp, long nowMs, float deltaSeconds)
     {
-        // 1. Manter janela de media movel para ignorar picos de boost
+        // 1. Manter janela de media movel para ignorar picos de boost (zero alocacoes)
         _tempHistory.Add((nowMs, currentTemp));
         long windowStart = nowMs - (long)(Math.Max(Config.ResponseTimeSeconds, 1.0f) * 1000f);
-        _tempHistory.RemoveAll(x => x.TimeMs < windowStart);
 
-        float avgTemp = _tempHistory.Count > 0
-            ? _tempHistory.Average(x => x.Temp)
-            : currentTemp;
+        while (_tempHistory.Count > 0 && _tempHistory[0].TimeMs < windowStart)
+            _tempHistory.RemoveAt(0);
+
+        float sum = 0f;
+        int count = _tempHistory.Count;
+        for (int i = 0; i < count; i++)
+            sum += _tempHistory[i].Temp;
+
+        float avgTemp = count > 0 ? sum / count : currentTemp;
 
         // 2. Histerese assimetrica (Up vs Down)
         if (avgTemp >= LastEffectiveTemp + Config.HysteresisUpC)
@@ -160,6 +165,7 @@ public sealed class FanChannelRuntime
             Control.SetDefault();
             InEmergencyOverride = false;
             LastAppliedPwm = 0f;
+            _tempHistory.Clear();
         }
         catch
         {

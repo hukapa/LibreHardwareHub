@@ -55,6 +55,10 @@ LibreHardwareMonitor/
 |   |   +-- ParameterForm.cs                   # Dialogo para ajuste fino de parametros de calibracao
 |   |   +-- Controls/                          # Controlos Fluent personalizados
 |   |   |   +-- CardPanel.cs                   # Contentor de superficie arredondada com contorno suave
+|   |   |   +-- FluentBadge.cs                 # Indicador visual moderno em formato pilula (status, seguranca e alertas)
+|   |   |   +-- FluentComboBox.cs              # Caixa de selecao suspensa Fluent com cantos arredondados e chevron nativo
+|   |   |   +-- FluentMetricCard.cs            # Cartao KPI Fluent de alta performance (rotulo, valor grande, unidade e severidade)
+|   |   |   +-- FluentSectionCard.cs           # Painel de seccao arredondado com cabecalho estilizado e borda suave
 |   |   |   +-- SearchBox.cs                   # Caixa de pesquisa estilizada
 |   |   |   +-- SidebarPanel.cs                # Barra lateral colapsavel de navegacao
 |   |   |   \-- SummaryPanel.cs                # Barra superior com cartoes de resumo de telemetria
@@ -67,6 +71,19 @@ LibreHardwareMonitor/
 |   |   |   +-- FanControlEngine.cs            # Orquestrador central, descoberta de IControl e Dead-Man's Switch
 |   |   |   +-- FanChannelCard.cs              # Cartao de canal com modo, slider fixo e selecao de curva
 |   |   |   \-- FanControlPanel.cs             # Painel integrado de controlo de ventiladores Fluent
+|   |   +-- Tuning/                            # Subsistema de Hardware Tuning (GPU e CPU Tuning Seguro)
+|   |   |   +-- GpuTuningTypes.cs              # Tipos, capacidades, estado e telemetria de afinacao de GPU
+|   |   |   +-- IGpuTuningDevice.cs            # Interface de dispositivo de afincao multi-fabricante
+|   |   |   +-- GenericGpuTuningDevice.cs      # Dispositivo generico e deteccao de GPUs integradas (leitura segura)
+|   |   |   +-- NvidiaGpuTuningDevice.cs       # Implementacao para adaptadores NVIDIA com clamping e NVML nativo
+|   |   |   +-- AmdGpuTuningDevice.cs          # Implementacao para adaptadores AMD Overdrive com limites rigorosos
+|   |   |   +-- GpuTuningEngine.cs             # Motor de GPU tuning: Dirty-Boot Watchdog (120s) e Teste Watchdog (15s)
+|   |   |   +-- GpuTuningPanel.cs              # Interface Fluent com sliders, telemetria em tempo real e banner de teste
+|   |   |   +-- WindowsPowerPolicy.cs          # Gestao de politicas de energia nativas do Windows via powrprof.dll
+|   |   |   +-- IntelRaplControl.cs            # Leitura e escrita de limites RAPL (PL1/PL2) via MSR 0x610 (PawnIO)
+|   |   |   +-- CpuTuningTypes.cs              # Tipos, capacidades, estado e telemetria de afinacao de CPU
+|   |   |   +-- CpuTuningEngine.cs             # Motor de CPU tuning: Camadas Universal + RAPL com Dirty-Boot Watchdog
+|   |   |   \-- CpuTuningPanel.cs              # Interface Fluent de controlo de CPU (Boost Mode, Estado Maximo e PL1/PL2)
 |   |   +-- Icons/
 |   |   |   +-- FluentIcons.cs                 # Gerador vetorial GDI+ de iconografia dinamica por sensor e hardware
 |   |   |   \-- FluentIconShapes.cs            # Primitivas geometricas dos icones
@@ -143,6 +160,11 @@ LibreHardwareMonitor/
 | `UI/FanControl/FanChannelRuntime.cs` | Avaliacao de PWM por canal com media movel, histerese assimetrica (+1.5C/-3.0C) e Hard Thermal Override (>=90C -> 100%). | <= 200 lin | `IControl`, `FanChannelConfig` |
 | `UI/FanControl/FanControlPanel.cs` | Painel Fluent para monitorizacao e configuracao de todas as ventoinhas com seletor de perfil e telemetria. | <= 200 lin | `FanControlEngine`, `FanChannelCard` |
 | `UI/FanControl/FanChannelCard.cs` | Cartao interativo com modos BIOS, Fixo (slider) e Curva (botoes de perfis), e banner de alerta termico. | <= 250 lin | `FanChannelRuntime`, `Theme` |
+| `UI/Tuning/GpuTuningEngine.cs` | Orquestrador de afincao de GPU, Dirty-Boot Watchdog (120s) e Temporizador de Teste de Seguranca (15s). | <= 300 lin | `IGpuTuningDevice`, `PersistentSettings` |
+| `UI/Tuning/GpuTuningPanel.cs` | Painel Fluent para overclock/undervolt seguro de GPU com cartoes de telemetria, sliders e protecao de teste. | <= 350 lin | `GpuTuningEngine`, `IThemedControl` |
+| `UI/Tuning/NvidiaGpuTuningDevice.cs` | Especializacao de afincao para NVIDIA com limites rigorosos de seguranca (clamping). | <= 150 lin | `GenericGpuTuningDevice`, `GpuTuningState` |
+| `UI/Tuning/AmdGpuTuningDevice.cs` | Especializacao de afincao para AMD Overdrive com limites de protecao termica e energetica. | <= 150 lin | `GenericGpuTuningDevice`, `GpuTuningState` |
+| `UI/Tuning/GenericGpuTuningDevice.cs` | Implementacao base segura com deteccao passiva de GPUs integradas e telemetria pura sem escritas arriscadas. | <= 150 lin | `IGpuTuningDevice`, `IHardware` |
 | `Utilities/HttpServer.cs` | Servidor HTTP multithreaded que escuta requisicoes REST (`/data.json`) e serve o dashboard web embutido. | <= 450 lin | `HttpListener`, `IElement`, `Node` |
 | `Utilities/PersistentSettings.cs` | Mecanismo de persistencia de configuracoes em XML com fallback automatico para ficheiro `.backup`. | <= 250 lin | `System.Xml`, `ISettings` |
 

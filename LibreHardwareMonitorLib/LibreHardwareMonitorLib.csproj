@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net472;netstandard2.0;net8.0</TargetFrameworks>
     <Platforms>x64;x86;ARM64</Platforms>
@@ -22,6 +22,7 @@
     <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <CsWin32PlatformTarget Condition="'$(CsWin32PlatformTarget)' == ''">x64</CsWin32PlatformTarget>
   </PropertyGroup>
 
   <!-- AOT/Trimming compatibility for modern .NET -->

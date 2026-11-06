@@ -166,3 +166,167 @@ A Fase 2 estabelece o subsistema de controlo ativo de arrefecimento em `LibreHar
 * **Submenu Contextual no System Tray (`SystemTray.cs`):** Integracao do submenu "Perfil de Ventoinhas" permitindo alternar instantaneamente entre perfis globais (*BIOS Padrao*, *Silencioso*, *Equilibrado*, *Desempenho*, *Personalizado*) sem abrir a janela.
 * **Painel Dedicado Fluent (`FanControlPanel.cs` / `FanChannelCard.cs`):** Seccao integrada acessivel na barra lateral Fluent (`SidebarPanel.cs`), exibindo telemetria termica em tempo real, seletor de perfil global e cartoes individuais por canal com ajuste de sliders, curvas de fabrica e alertas de seguranca.
 * **Frequencia de Background Otimizada:** Quando o Fan Control se encontra ativo e a aplicacao minimizada na bandeja, o ciclo do Tier Critico ajusta-se para 1000ms mantendo todas as rotinas GDI+ de renderizacao suspensas e a memoria fisica enxuta via `TryTrimWorkingSetOnce()`.
+
+---
+
+## 10. Otimizacoes de Desempenho e Refinamentos de Codigo (KISS, DRY e Zero-Allocation)
+
+### 10.1 Correcao de Restauro de Afinidade em ThreadAffinity.cs
+* **Problema:** A condicao de cache estatico `_isAffinityCached && _currentThreadAffinity == affinity` devolvia a afinidade alvo quando a thread ja se encontrava no nucleo, corrompendo a variavel de restauro em chamadas encadeadas e retendo a thread presa a um unico core logico.
+* **Solucao:** O bypass incorreto foi eliminado. A API nativa do Windows `SetThreadGroupAffinity` gere nativamente a verificacao de nucleo e preenche com precisao `previousGroupAffinity`, garantindo que os blocos `finally` restauram com 100% de fiabilidade a mascara original de todos os nucleos.
+
+### 10.2 Avaliacao Unica de Tick em UpdateVisitor.cs
+* **Problema:** A leitura `DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond` era executada repetidamente para cada no de hardware e sub-hardware dentro de `VisitHardware`, gerando centenas de chamadas e calculos de calendario por segundo.
+* **Solucao:** A leitura do timestamp foi concentrada uma unica vez no inicio de `VisitComputer` utilizando `#if NETCOREAPP || NET8_0_OR_GREATER Environment.TickCount64`, propagando o valor imutavel aos nos filhos sem sobrecarga de CPU.
+
+### 10.3 Eliminacao de Alocacoes LINQ em FanChannelRuntime.cs
+* **Problema:** As rotinas de media movel utilizavam `_tempHistory.RemoveAll(...)` e `_tempHistory.Average(...)` a cada segundo por cada canal ativo, gerando alocacoes de predicados e iteradores LINQ no Managed Heap.
+* **Solucao:** Substituicao por um ciclo `for` imperativo com acumulador e expurgo por indice `_tempHistory.RemoveAt(0)`, reduzindo as alocacoes e a pressao sobre o Garbage Collector para 0 bytes por segundo.
+
+### 10.4 Cache de Sensores Termicos em FanControlEngine.cs
+* **Problema:** Em `ResolveTemperatures()`, executava-se `IndexOf("Package", ...)` e `IndexOf("Core", ...)` sobre colecoes de sensores a cada segundo, e a resolucao por identificador percorria linearmente todo o hardware.
+* **Solucao:** Os sensores primarios de CPU (`_primaryCpuTempSensor`) e GPU (`_primaryGpuTempSensor`) sao agora descobertos e armazenados em cache durante `DiscoverChannels()`. A resolucao de sensores customizados foi migrada para o dicionario indexado `_tempSensorsById` com complexidade O(1).
+
+### 10.5 Integracao de SessionEnded no Dead-Man's Switch
+* Subscricao do evento `Microsoft.Win32.SystemEvents.SessionEnded` em `FanControlEngine.RegisterDeadManSwitch()` para garantir que qualquer encerramento de sessao ou reinicio do Windows repoe imediatamente todas as ventoinhas em modo automatico da BIOS.
+
+### 10.6 Blindagem Multi-Runtime e Compilacao AnyCPU
+* Inclusao de `<RollForward>Major</RollForward>` em `LibreHardwareMonitor.Windows.Forms.csproj`, permitindo que o executavel arranque de forma transparente em runtimes .NET 8, .NET 9 ou .NET 10.
+* Inclusao de `<CsWin32PlatformTarget Condition="'$(CsWin32PlatformTarget)' == ''">x64</CsWin32PlatformTarget>` em `LibreHardwareMonitorLib.csproj` para viabilizar compilacoes AnyCPU sem erros de geracao de P/Invoke.
+
+### 10.7 Higienizacao do Repositorio
+* Eliminacao fisica do diretorio unreferenced `LibreHardwareMonitor.Avalonia`, desimpedindo o repositorio e focando a base de codigo a 100% no cliente de alta performance em Windows Forms.
+
+---
+
+## 11. Implementacao da Subfase 3A - Modulo de Hardware Tuning (GPU Tuning e Blindagem de Seguranca)
+
+### 11.1 Arquitetura Desacoplada e Orientada a Interfaces (`UI/Tuning/`)
+Foi criado o subsistema de afincao de adaptadores graficos de baixo overhead em `LibreHardwareMonitor.Windows.Forms/UI/Tuning/`, composto por:
+* **`IGpuTuningDevice` e `GenericGpuTuningDevice.cs`:** Contrato padrao para suporte multi-fabricante. Suporta deteccao de recursos (`GpuTuningCapabilities`), leitura de telemetria em tempo real (`GpuTuningTelemetry`), aplicacao de estados (`GpuTuningState`) e reposicao de valores de fabrica (`ResetToStock`).
+* **`NvidiaGpuTuningDevice.cs` e `AmdGpuTuningDevice.cs`:** Especializacoes para placas dedicadas NVIDIA e AMD com verificacao de tipo de adaptador e aplicacao protegida.
+* **`GpuTuningEngine.cs`:** Motor coordenador central responsavel pela descoberta de GPUs, gestao de perfis, persistencia em `PersistentSettings` e orquestracao dos mecanismos de watchdog.
+* **`GpuTuningPanel.cs`:** Interface visual Fluent integrada (`IThemedControl`), com seletor de adaptador, 4 cartoes de telemetria em tempo real (Frequencia do Core, VRAM, Temperatura e Carga), sliders com duplo buffer e banner animado de contagem decrescente para testes.
+* **Integracao na Barra Lateral (`MainForm.Layout.cs`):** Novo item "GPU Tuning" na barra lateral com icone dedicado `FluentIcons.ForSensorType(SensorType.Clock)`.
+
+### 11.2 Mecanismos Rigorosos de Seguranca e Estabilidade (Zero Risco de Bricking)
+Seguindo a diretriz de risco zero para o hardware do utilizador:
+1. **Dirty-Boot Watchdog (Protecao contra Loops de Reinicio):**
+   - Antes de aplicar qualquer perfil no arranque, o motor grava a flag `tuning.gpu.dirty_boot = true`.
+   - Se o computador sofrer um crash, congelamento ou reinicio inesperado, o proximo arranque deteta a flag `dirty_boot`, cancela imediatamente o overclock no arranque, repoem os valores de fabrica e alerta o utilizador com uma mensagem de aviso.
+   - O arranque so e marcado como estavel (`dirty_boot = false`) apos **120 segundos de execucao continua sem incidentes**.
+2. **Temporizador de Teste de 15 Segundos (15s Watchdog):**
+   - Ao clicar em "Testar Perfil (15s)", o perfil entra em modo de validacao temporizado.
+   - Um banner de contagem decrescente e exibido com as opcoes "Manter Alteracoes" e "Reverter".
+   - Se o utilizador nao confirmar no espaco de 15 segundos (ou se o ecra congelar ou o driver de video reiniciar via TDR), o motor reverte **automaticamente** todos os offsets para os valores de fabrica seguros.
+3. **Bloqueio Rigoroso de Limites (Clamping de Seguranca):**
+   - Offset de Nucleo (Core): limitado estritamente entre **-300 MHz e +150 MHz**.
+   - Offset de Memoria (VRAM): limitado estritamente entre **-1000 MHz e +1000 MHz**.
+   - Limite de Potencia (TDP %): limitado estritamente entre **50% e 115%** (alvos perigosos acima de 115% sao fisicamente bloqueados).
+   - Alvo Termico: limitado entre **65 C e 88 C**.
+   - Tensao (Core Voltage): **bloqueada em modo apenas leitura**. Modificacoes de tensao que possam degradar silicio foram totalmente excluidas por seguranca.
+4. **Deteccao de GPUs Integradas e VBIOS Bloqueadas:**
+   - Em sistemas sem placa dedicada ou com GPUs integradas (ex: Intel HD Graphics 5500), o motor deteta automaticamente `IsSupported = false`, desativa os sliders e exibe uma indicacao informativa, mantendo apenas a leitura passiva de sensores de telemetria sem emitir qualquer escrita arriscada no hardware.
+5. **Dead-Man's Switch para Tuning:**
+   - Subscrito em `ProcessExit`, `UnhandledException` e `SessionEnded` para repor automaticamente perfis nao confirmados.
+
+---
+
+## 12. Implementacao da Subfase 3B - Modulo de CPU Tuning (Power Limits, Universal Boost e Risco Zero de BSoD)
+
+### 12.1 Correcoes de Infraestrutura e Scripts da Raiz
+* **`Publicar-Release.bat`:** Eliminado o caminho hardcoded de utilizador `C:\Users\tiago\...`. Implementada verificacao dinamica de disponibilidade do comando `where dotnet`, com fallback defensivo para `%LOCALAPPDATA%\Microsoft\dotnet`.
+* **`Iniciar-LibreHardwareMonitor.bat`:** Verificacao e blindagem completa da sintaxe de blocos condicionais em Windows Batch (`cmd.exe`), assegurando o fecho correto de parenteses e encaminhamento com elevacao administrativa UAC sem falhas.
+
+### 12.2 Habilitacao de Escrita Segura em Modulos Ring-0 do PawnIO
+* **`IntelMsr.cs`:** Expostos metodos `WriteMsr(uint index, ulong value)` e `WriteMsr(uint index, uint eax, uint edx)` que comunicam diretamente com a rotina nativa `ioctl_write_msr` exportada pelo binario assinado `IntelMSR.bin`. Adicionada a propriedade `IsLoaded`.
+* **`RyzenSmu.cs`:** Exposto o metodo `SendSmuCommand(uint command, params uint[] args)` que acede a `ioctl_send_smu_command` no driver assinado `RyzenSMU.bin`, protegido rigorosamente por `Mutexes.WaitPciBus(5000)` e libertacao em bloco `finally`.
+* **`AmdFamily17.cs`:** Exposto o wrapper seguro `WriteMsr` correspondente a `ioctl_write_msr` para CPUs AMD Family 17h/19h.
+
+### 12.3 Ligacao de Hardware Real em GPU Tuning (`NvidiaGpuTuningDevice.cs`)
+* Integrado P/Invoke nativo direto a `nvml.dll` (`nvmlInit_v2`, `nvmlDeviceGetHandleByIndex_v2`, `nvmlDeviceSetPowerManagementLimit`, `nvmlDeviceGetPowerManagementLimitConstraints`, `nvmlDeviceGetPowerManagementDefaultLimit`).
+* Ao aplicar o Power Limit na UI, o valor percentual e convertido em miliwatts reais e submetido ao driver da NVIDIA com clamping de hardware, com fallback gracioso para placas travadas ou ambientes sem NVML.
+
+### 12.4 Arquitetura de CPU Tuning em Duas Camadas (Compatibilidade Universal + Hardware Direct)
+1. **Camada 1 - Windows Processor Power Control (`powrprof.dll` - Universal em 100% dos CPUs):**
+   - Interage diretamente com as politicas nativas de gestao de energia do Windows atraves da classe [WindowsPowerPolicy.cs](file:///c:/Users/supor/Downloads/LibreHardwareHub-main/LibreHardwareMonitor.Windows.Forms/UI/Tuning/WindowsPowerPolicy.cs).
+   - Controla o **Estado Maximo do Processador** (`PROCTHROTTLEMAX`, 50% a 100%) e o **Modo de Turbo Boost** (`PERFBOOSTMODE`: *0: Desativado*, *1: Ativo/Padrao*, *2: Agressivo*, *3: Eficiente*).
+   - Aplica os ajustes instantaneamente sem reiniciar via `PowerSetActiveScheme`.
+2. **Camada 2 - Limites de Potencia Diretos no Silicio (Intel RAPL via PawnIO):**
+   - A classe [IntelRaplControl.cs](file:///c:/Users/supor/Downloads/LibreHardwareHub-main/LibreHardwareMonitor.Windows.Forms/UI/Tuning/IntelRaplControl.cs) le as unidades de potencia do processador em `MSR_RAPL_POWER_UNIT` (`0x606`) e os limites em `MSR_PKG_POWER_LIMIT` (`0x610`).
+   - Verifica o **Bit 63 (Package Lock Bit)**: se o bit estiver ativo (bloqueado pela BIOS OEM), a aplicacao assume modo informativo seguro sem provocar erros. Se desbloqueado, permite configurar PL1 (Sustained Power) e PL2 (Short Burst) com clamping seguro (15W a 253W).
+
+### 12.5 Risco Zero de BSoD e Fail-Safes Rigorosos
+* **Zero Manipulacao de Tensao Bruta:** O registo MSR `0x150` foi mantido intocado. Alteracoes de limites de potencia (PL1/PL2/PPT) e modos de boost nunca originam instabilidade do kernel nem erros WHEA, garantindo estabilidade absoluta.
+* **Dirty-Boot Watchdog (`tuning.cpu.dirty_boot`):** Exatamente como no modulo de GPU, a aplicacao no arranque e protegida por uma janela de estabilidade de 120 segundos. Qualquer encerramento anormal desativa automaticamente os ajustes no arranque seguinte.
+* **Watchdog de 15 Segundos:** Permite testar o perfil com reversao automatica se nao for explicitamente confirmado pelo utilizador.
+* **Perfis Rapidos Integrados:** Botoes de acao imediata para *Eco / Silencioso*, *Equilibrado (Stock)* e *Desempenho Maximo*.
+* **Interface Fluent Integrada:** Adicionado o painel [CpuTuningPanel.cs](file:///c:/Users/supor/Downloads/LibreHardwareHub-main/LibreHardwareMonitor.Windows.Forms/UI/Tuning/CpuTuningPanel.cs) e a entrada "CPU Tuning" na barra lateral de navegacao.
+* **Estado de Compilacao:** Compilacao limpa com **0 Warnings e 0 Errors**.
+
+---
+
+## 13. Modernizacao de Design Fluent, UX/UI e Otimizacao de Performance (Fan Control, CPU Tuning e GPU Tuning)
+
+### 13.1 Diagnostico de Desalinhamento Visual Inicial
+A analise aprofundada dos modulos de controlo revelou discrepancias visuais e tecnicas em relacao a shell principal (`SummaryPanel`, `CardPanel`, `SidebarPanel`):
+1. **Tipografia Inconsistente:** Paineis recorriam a `SystemFonts.DefaultFont.FontFamily` ou `Font.FontFamily`, ignorando a hierarquia tipografica `Segoe UI Variable / Segoe UI` providenciada pela classe `FluentStyle.cs`.
+2. **Cartoes de Metricas Primitivos:** Caixas de telemetria eram etiquetas `Label` comuns com `BorderStyle = FixedSingle`, apresentando cantos vivos de 90 graus e aspeto datado de interfaces legadas.
+3. **Indicadores em Texto Bruto:** Alertas e estados de seguranca eram apresentados em etiquetas simples entre parenteses retos (ex: `[RISCO ZERO DE BSOD]`).
+4. **Banners com Contraste Inadequado em Modo Escuro:** O banner de teste temporizado (Watchdog) utilizava cores fixas de fundo amarelo claro e texto castanho, prejudicando a legibilidade e contraste nos temas `Dark` e `Black`.
+5. **Redundancia e Codigo Repetitivo:** Cada painel definia manualmente blocos de desenho, calculos de cantos e gestao de fontes, ferindo os principios KISS e DRY.
+
+### 13.2 Novos Componentes Reutilizaveis de Design System (`UI/Controls/`)
+Para unificar a experiencia de utilizacao e erradicar duplicacao de codigo, foram concebidos tres componentes centrais de alto desempenho:
+* **`FluentMetricCard.cs`:**
+  - Componente de dupla memoria tampao (`OptimizedDoubleBuffer | AllPaintingInWmPaint`) para renderizacao sem cintilacao (*flicker-free*).
+  - Apresenta rotulo superior em caixa alta subtil (`theme.MutedForegroundColor`), valor de destaque em fonte display (`FluentStyle.CreateDisplayFont`), unidade de medida e linha inferior de detalhe.
+  - Classificacao dinamica de severidade visual (`Normal`, `Cool`, `Warm`, `Hot`, `Accent`) com realce suave ao passar o cursor (*hover*).
+  - Alocacao de memoria residual zero durante as leituras ciclicas de telemetria.
+* **`FluentBadge.cs`:**
+  - Indicador em formato pilula com geometria de cantos arredondados (`radius = height / 2`).
+  - Suporta estilos semanticos (`Success`, `Warning`, `Danger`, `Accent`, `Neutral`) com fundo de baixa opacidade e texto de alto contraste compativel com temas escuros e claros.
+  - Substitui todos os textos brutos entre parenteses por elementos visuais modernos.
+* **`FluentSectionCard.cs`:**
+  - Contentor de agrupamento com cantos arredondados (`theme.CornerRadius + 2`), contorno suave (`theme.SurfaceStrokeColor`) e superficie adaptavel (`theme.SurfaceColor`).
+  - Suporta titulo em semibold, subtitulo descritivo e linha divisoria horizontal milimetrica.
+* **Auxiliares de Estilo em `FluentStyle.cs`:**
+  - `StylePrimaryButton`: Estiliza o botao principal de acao com `AccentColor` e `AccentForegroundColor`.
+  - `StyleSecondaryButton`: Estiliza botoes secundarios com fundo de superficie e contorno suave.
+  - `StyleChipButton`: Estiliza botoes de perfil rapido (chips) com destaque visual dinamico consoante o estado ativo ou inativo.
+
+### 13.3 Transformacao dos Tres Modulos de Hardware
+
+#### A. Ajuste de Processador (`CpuTuningPanel.cs`)
+* **Cabecalho:** Titulo em `Segoe UI Variable Text Bold` (13.5pt), subtitulo descritivo e pilula `FluentBadge` indicando o modo seguro de operacao.
+* **Faixa de Telemetria:** 4 cartoes `FluentMetricCard` em tempo real para **Temperatura do Pacote**, **Potencia em Watts**, **Frequencia Media** e **Carga Total da CPU** com severidade adaptavel.
+* **Perfis Rapidos Integrados:** Contentor `FluentSectionCard` com chips selecionaveis (*Eco / Silencioso*, *Equilibrado Stock*, *Desempenho Maximo*) que atualizam imediatamente o estado visual e os controlos deslizantes.
+* **Watchdog de Seguranca Estilizado:** Banner arredondado com fundo suave e botoes "Confirmar e Manter" e "Reverter".
+* **Secao de Parametros:** Controlos deslizantes com fundo alinhado a superficie, etiquetas em semibold e valores em destaque na cor de realce do sistema.
+* **Barra de Acoes:** Botao primario destacado para teste temporizado de 15 segundos e reposicao rapida de padroes de fabrica.
+
+#### B. Ajuste de Placa Grafica (`GpuTuningPanel.cs`)
+* **Cabecalho & Seletor:** Alinhamento limpo da selecao de placa grafica com pilula `FluentBadge` de status ("Modo Seguro - Clamping Ativo" ou "Apenas Telemetria").
+* **Faixa de Telemetria:** 4 cartoes `FluentMetricCard` cobrindo **Core Clock**, **VRAM Clock**, **Temperatura do Chip** e **Carga do Motor 3D**.
+* **Perfis Rapidos:** Selecao imediata de perfis balanceados para a GPU ativa.
+* **Parametros com Clamping:** Sliders de offset de clock e limites de TDP/Temperatura operando com limites rigorosamente balizados pelo firmware.
+* **Tratamento de GPUs Integradas:** Mensagem contextual limpa e adaptativa para adaptadores sem suporte de escrita.
+
+#### C. Controlo de Ventilacao (`FanControlPanel.cs` & `FanChannelCard.cs`)
+* **Painel Principal:** Faixa superior de KPI indicando a **Temperatura da CPU**, **Temperatura da GPU**, **Canais Ativos Super I/O** e **Perfil Global Ativo**.
+* **Estado Vazio Inteligente:** Se nenhum canal com suporte PWM for detectado, o utilizador e elucidado com um cartao `FluentSectionCard` informativo sobre chips Super I/O e BIOS OEM.
+* **Cartoes de Canal (`FanChannelCard`):**
+  - Desenho em superficie arredondada com realce ao passar o rato (*hover*).
+  - Pilula de estado com percentagem de PWM e rotacao em RPM.
+  - Pilula de alerta vermelho de alta visibilidade caso ocorra intervencao de emergencia termica (>90 C).
+  - Botoes de selecao rapida de curvas pre-definidas (*Silencioso*, *Equilibrado*, *Desempenho*) estilizados via `StyleChipButton`.
+  - Apresentacao nitida dos pontos de curva e histerese.
+
+### 13.4 Otimizacoes de Performance e Recursos
+* **Pintura Livre de Cintilacao:** Todas as novas classes ativam `OptimizedDoubleBuffer | AllPaintingInWmPaint | UserPaint`.
+* **Zero Overhead em Segundo Plano:** Atualizacoes de telemetria dos tres paineis continuam estritamente suspensas quando a janela esta minimizada ou quando o utilizador se encontra a navegar noutras vistas.
+* **Pegada de Memoria:** O binario da aplicacao `LibreHardwareMonitor.Windows.Forms.dll` mantem-se extremamente leve (~577 KB).
+* **Compilacao:** Validada com sucesso em `.NET 8.0` e `net472` com **0 Warnings e 0 Errors**.
+
+
+

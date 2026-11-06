@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -14,7 +14,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
     /// Strip of Fluent KPI cards (title, headline value, detail line and progress bar) that
     /// adapts the number of visible cards to the available width.
     /// </summary>
-    public sealed class SummaryPanel : Control, IThemedControl
+    public sealed class SummaryPanel : System.Windows.Forms.Control, IThemedControl
     {
         private const int CardLogicalHeight = 104;
         private const int CardLogicalMinWidth = 150;

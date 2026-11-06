@@ -13,6 +13,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI;
 public class UpdateVisitor : IVisitor
 {
     private readonly Dictionary<IHardware, long> _lastUpdateTicks = new();
+    private long _currentTickMs;
 
     public bool LowPowerMode { get; set; }
 
@@ -20,17 +21,20 @@ public class UpdateVisitor : IVisitor
 
     public void VisitComputer(IComputer computer)
     {
+#if NETCOREAPP || NET8_0_OR_GREATER
+        _currentTickMs = Environment.TickCount64;
+#else
+        _currentTickMs = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
+#endif
         computer.Traverse(this);
     }
 
     public void VisitHardware(IHardware hardware)
     {
-        long now = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
-
-        if (ShouldUpdate(hardware, now))
+        if (ShouldUpdate(hardware, _currentTickMs))
         {
             hardware.Update();
-            _lastUpdateTicks[hardware] = now;
+            _lastUpdateTicks[hardware] = _currentTickMs;
         }
 
         foreach (IHardware subHardware in hardware.SubHardware)

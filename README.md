@@ -40,12 +40,12 @@ You can check if it works properly on your motherboard. For many manufacturers, 
 
 | Target | Library | Windows.Forms | Avalonia |
 | --- | --- | --- | --- |
-| .NET Framework 4.7.2 | ✅ | ✅ | ❌ |
-| .NET Framework 4.8.1 | ✅ | ✅ | ❌ |
-| .NET Standard 2.0 | ✅ | ✅ | ❌ |
-| .NET 8 | ✅ | ✅ | ❌ |
-| .NET 9 | ✅ | ✅ | ❌ |
-| .NET 10 | ✅ | ✅ | ✅ |
+| .NET Framework 4.7.2 | Sim | Sim | Nao |
+| .NET Framework 4.8.1 | Sim | Sim | Nao |
+| .NET Standard 2.0 | Sim | Sim | Nao |
+| .NET 8 | Sim | Sim | Nao |
+| .NET 9 | Sim | Sim | Nao |
+| .NET 10 | Sim | Sim | Sim |
 
 ## Developer information
 **Integrate the library in own application**

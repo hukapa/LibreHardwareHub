@@ -1,4 +1,4 @@
-﻿using OxyPlot;
+using OxyPlot;
 using OxyPlot.Legends;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI;
@@ -31,6 +31,7 @@ class ScaledPlotModel : PlotModel
         Legends.Add(legend);
     }
 
+#pragma warning disable CS0672, CS0618
     public override void HandleMouseDown(object sender, OxyMouseDownEventArgs e)
     {
         // With many unstacked axes the plot area can collapse to zero size, and hit testing
@@ -43,4 +44,5 @@ class ScaledPlotModel : PlotModel
 
         base.HandleMouseDown(sender, e);
     }
+#pragma warning restore CS0672, CS0618
 }
