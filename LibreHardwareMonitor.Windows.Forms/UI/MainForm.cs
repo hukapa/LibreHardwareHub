@@ -91,7 +91,7 @@ public sealed partial class MainForm : Form
 
         string exePath = Application.ExecutablePath;
         DateTime buildTime = File.Exists(exePath) ? File.GetLastWriteTime(exePath) : DateTime.Now;
-        Text = $"Libre Hardware Hub v0.9.6 [Build: {buildTime:yyyy-MM-dd HH:mm}]";
+        Text = $"LibreHardwareMonitor, LHM v0.9.6 [Build: {buildTime:yyyy-MM-dd HH:mm}]";
 
         Font = FluentStyle.UiFont;
         treeView.Font = FluentStyle.UiFont;

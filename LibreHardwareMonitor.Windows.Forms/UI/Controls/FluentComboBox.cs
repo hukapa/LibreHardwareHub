@@ -60,7 +60,7 @@ public class FluentComboBox : ComboBox, IThemedControl
 
         bool isSelected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
         Color bg = isSelected ? theme.HoverBackgroundColor : theme.SurfaceColor;
-        Color text = theme.ForegroundColor;
+        Color text = isSelected && !theme.IsDark ? theme.AccentColor : theme.ForegroundColor;
 
         using (SolidBrush brush = new(bg))
             g.FillRectangle(brush, e.Bounds);
@@ -75,14 +75,14 @@ public class FluentComboBox : ComboBox, IThemedControl
         TextRenderer.DrawText(
             g,
             itemText,
-            Font,
+            isSelected ? FluentStyle.UiFontSemibold : Font,
             textBounds,
             text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
         if (isSelected)
         {
-            using Pen focusPen = new(theme.SurfaceStrokeColor, 1f);
+            using Pen focusPen = new(theme.AccentColor, 1f);
             g.DrawRectangle(focusPen, e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
         }
     }
@@ -105,7 +105,6 @@ public class FluentComboBox : ComboBox, IThemedControl
         using Graphics g = Graphics.FromHwnd(Handle);
         Theme theme = Theme.Current;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.PixelOffsetMode = PixelOffsetMode.Default;
 
         Rectangle client = ClientRectangle;
         float radius = Math.Max(3f, LogicalToDeviceUnits(theme.CornerRadius));
@@ -115,7 +114,7 @@ public class FluentComboBox : ComboBox, IThemedControl
         Color border = Focused ? theme.AccentColor : (_isHovered ? theme.AccentColor : theme.SurfaceStrokeColor);
 
         FluentStyle.FillRounded(g, surface, bounds, radius);
-        FluentStyle.DrawRounded(g, border, bounds, radius, 1f);
+        FluentStyle.DrawRounded(g, border, bounds, radius, Focused ? 1.5f : 1f);
 
         // Draw selected text
         string selectedText = SelectedIndex >= 0 && SelectedIndex < Items.Count
@@ -123,7 +122,7 @@ public class FluentComboBox : ComboBox, IThemedControl
             : Text;
 
         int textPadX = LogicalToDeviceUnits(10);
-        int arrowWidth = LogicalToDeviceUnits(26);
+        int arrowWidth = LogicalToDeviceUnits(28);
         Rectangle textRect = new(textPadX, 0, Math.Max(10, client.Width - textPadX - arrowWidth), client.Height);
         TextRenderer.DrawText(
             g,

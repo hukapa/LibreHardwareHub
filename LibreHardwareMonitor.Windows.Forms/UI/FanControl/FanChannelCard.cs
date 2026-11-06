@@ -32,9 +32,9 @@ public sealed class FanChannelCard : Panel, IThemedControl
     private readonly Panel _curvePanel;
     private readonly Label _sourceCaption;
     private readonly FluentComboBox _sourceCombo;
-    private readonly Button _btnSilent;
-    private readonly Button _btnBalanced;
-    private readonly Button _btnPerf;
+    private readonly FluentButton _btnSilent;
+    private readonly FluentButton _btnBalanced;
+    private readonly FluentButton _btnPerf;
     private readonly Label _curveInfoLabel;
     private readonly Label _hystLabel;
 
@@ -126,13 +126,13 @@ public sealed class FanChannelCard : Panel, IThemedControl
         };
         _sourceCombo.SelectedIndexChanged += SourceCombo_SelectedIndexChanged;
 
-        _btnSilent = new Button { Text = "Silencioso", Location = new Point(252, 2), Width = 84, Height = 28 };
+        _btnSilent = new FluentButton { Text = "Silencioso", Location = new Point(252, 2), Width = 90, Height = 28 };
         _btnSilent.Click += (_, _) => ApplyCurve(FanCurve.CreateSilent(), 0);
 
-        _btnBalanced = new Button { Text = "Equilibrado", Location = new Point(342, 2), Width = 90, Height = 28 };
+        _btnBalanced = new FluentButton { Text = "Equilibrado", Location = new Point(348, 2), Width = 96, Height = 28 };
         _btnBalanced.Click += (_, _) => ApplyCurve(FanCurve.CreateBalanced(), 1);
 
-        _btnPerf = new Button { Text = "Desempenho", Location = new Point(438, 2), Width = 98, Height = 28 };
+        _btnPerf = new FluentButton { Text = "Desempenho", Location = new Point(450, 2), Width = 104, Height = 28 };
         _btnPerf.Click += (_, _) => ApplyCurve(FanCurve.CreatePerformance(), 2);
 
         _curveInfoLabel = new Label
@@ -212,10 +212,9 @@ public sealed class FanChannelCard : Panel, IThemedControl
         _curveInfoLabel.Text = $"Curva: {curve}";
         _engine.SetCustomMode();
 
-        Theme theme = Theme.Current;
-        FluentStyle.StyleChipButton(_btnSilent, theme, btnIndex == 0);
-        FluentStyle.StyleChipButton(_btnBalanced, theme, btnIndex == 1);
-        FluentStyle.StyleChipButton(_btnPerf, theme, btnIndex == 2);
+        _btnSilent.IsActive = (btnIndex == 0);
+        _btnBalanced.IsActive = (btnIndex == 1);
+        _btnPerf.IsActive = (btnIndex == 2);
     }
 
     private void UpdateModePanels()
@@ -269,9 +268,9 @@ public sealed class FanChannelCard : Panel, IThemedControl
 
         _fixedSlider.BackColor = theme.SurfaceColor;
 
-        FluentStyle.StyleChipButton(_btnSilent, theme, false);
-        FluentStyle.StyleChipButton(_btnBalanced, theme, false);
-        FluentStyle.StyleChipButton(_btnPerf, theme, false);
+        _btnSilent.ApplyTheme(theme);
+        _btnBalanced.ApplyTheme(theme);
+        _btnPerf.ApplyTheme(theme);
 
         _statusBadge.ApplyTheme(theme);
         _emergencyBadge.ApplyTheme(theme);

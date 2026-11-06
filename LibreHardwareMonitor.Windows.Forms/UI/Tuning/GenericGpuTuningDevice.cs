@@ -52,6 +52,9 @@ public class GenericGpuTuningDevice : IGpuTuningDevice
     {
         GpuTuningTelemetry telemetry = new();
 
+        if (_hardware != null)
+            _hardware.Update();
+
         foreach (ISensor sensor in _hardware.Sensors)
         {
             if (sensor.Value == null)

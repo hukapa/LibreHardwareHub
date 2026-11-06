@@ -33,22 +33,22 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
     private readonly FluentMetricCard _tempCard;
     private readonly FluentMetricCard _powerCard;
 
-    private readonly Panel _infoContainer;
-    private readonly FluentSectionCard _infoCard;
-    private readonly Label _infoTitleLabel;
-    private readonly Label _infoDescLabel;
+    private readonly Panel _safetyContainer;
+    private readonly FluentSectionCard _safetyCard;
+    private readonly Label _safetyDescLabel;
+    private readonly Label _safetyStockLabel;
 
     private readonly Panel _presetsContainer;
     private readonly FluentSectionCard _presetsCard;
-    private readonly Button _btnEco;
-    private readonly Button _btnBalanced;
-    private readonly Button _btnMaxPerf;
+    private readonly FluentButton _btnEco;
+    private readonly FluentButton _btnBalanced;
+    private readonly FluentButton _btnMaxPerf;
 
     private readonly Panel _watchdogContainer;
     private readonly WatchdogAlertPanel _watchdogBanner;
     private readonly Label _watchdogLabel;
-    private readonly Button _btnKeep;
-    private readonly Button _btnRevert;
+    private readonly FluentButton _btnKeep;
+    private readonly FluentButton _btnRevert;
 
     private readonly Panel _controlsContainer;
     private readonly FluentSectionCard _controlsCard;
@@ -70,8 +70,8 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
 
     private readonly Panel _actionContainer;
     private readonly Panel _actionBar;
-    private readonly Button _btnTest;
-    private readonly Button _btnResetStock;
+    private readonly FluentButton _btnTest;
+    private readonly FluentButton _btnResetStock;
     private readonly CheckBox _chkApplyStartup;
     private readonly Label _statusMessageLabel;
 
@@ -94,7 +94,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _headerPanel = new Panel { Dock = DockStyle.Top, Height = 80, Margin = new Padding(0) };
         _titleLabel = new Label
         {
-            Text = "Ajuste de Placa Grafica (GPU Tuning & Clamping)",
+            Text = "Ajuste de Placa Grafica (GPU Tuning)",
             Font = FluentStyle.CreateUiFont(FontStyle.Bold, 13.5f),
             Location = new Point(0, 0),
             AutoSize = true
@@ -102,7 +102,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
 
         _subtitleLabel = new Label
         {
-            Text = "Controlo seguro de frequencias e limites de potencia (TDP) balizado por hardware.",
+            Text = "Controlo de frequencias e limites de potencia (TDP) balizado pelas protecoes da VBIOS.",
             Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f),
             Location = new Point(0, 26),
             AutoSize = true
@@ -129,7 +129,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
             Height = 22,
             Style = BadgeStyle.Success
         };
-        _safetyBadge.SetBadge("Modo Seguro • Clamping Ativo", BadgeStyle.Success);
+        _safetyBadge.SetBadge("Protecao VBIOS Ativa • Duplo Watchdog", BadgeStyle.Success);
 
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_subtitleLabel);
@@ -137,7 +137,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _headerPanel.Controls.Add(_gpuCombo);
         _headerPanel.Controls.Add(_safetyBadge);
 
-        // 2. Telemetria (4 cartoes Fluent Metric identicos ao SummaryPanel)
+        // 2. Telemetria
         _telemetryRow = new Panel { Dock = DockStyle.Top, Height = 104 + gap, Padding = new Padding(0, 0, 0, gap) };
         _coreClockCard = new FluentMetricCard { Location = new Point(0, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Clock) };
         _coreClockCard.SetMetric("CORE CLOCK", "--", "MHz", "Frequencia GPU", MetricCardSeverity.Normal);
@@ -148,59 +148,56 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _tempCard = new FluentMetricCard { Location = new Point(348, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Temperature) };
         _tempCard.SetMetric("TEMPERATURA", "--", "°C", "Sensor do Nucleo", MetricCardSeverity.Normal);
 
-        _powerCard = new FluentMetricCard { Location = new Point(522, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Load) };
-        _powerCard.SetMetric("CARGA TOTAL", "--", "%", "Uso 3D", MetricCardSeverity.Normal);
+        _powerCard = new FluentMetricCard { Location = new Point(522, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Power) };
+        _powerCard.SetMetric("POTENCIA / TDP", "--", "W", "Consumo Atual", MetricCardSeverity.Normal);
 
         _telemetryRow.Controls.Add(_coreClockCard);
         _telemetryRow.Controls.Add(_memClockCard);
         _telemetryRow.Controls.Add(_tempCard);
         _telemetryRow.Controls.Add(_powerCard);
 
-        // 3. Card Informativo para GPUs Integradas (quando sem suporte a escrita de overclock)
-        _infoContainer = new Panel { Dock = DockStyle.Top, Height = 120 + gap, Padding = new Padding(0, 0, 0, gap), Visible = false };
-        _infoCard = new FluentSectionCard
+        // 3. Cartao de Seguranca de Hardware
+        _safetyContainer = new Panel { Dock = DockStyle.Top, Height = 84 + gap, Padding = new Padding(0, 0, 0, gap) };
+        _safetyCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
-            Title = "Dispositivo em Modo de Monitorizacao",
-            Subtitle = "Adaptador grafico integrado sem suporte a gravacao de frequencia/potencia por hardware."
+            Title = "Seguranca de Hardware e Protecao Termica",
+            Subtitle = "Ajustes balizados pelas tabelas internas de tensao e frequencia da fabricante."
         };
-
-        _infoTitleLabel = new Label
+        _safetyDescLabel = new Label
         {
-            Text = "Esta GPU opera exclusivamente com frequencias e tensoes geridas pela BIOS do sistema.",
-            Location = new Point(16, 56),
-            Size = new Size(620, 20),
-            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 9f)
+            Text = "O teste rapido reverte automaticamente em 15s. Se o computador desligar de forma anormal, o watchdog de arranque desativa o overclock.",
+            Location = new Point(16, 52),
+            AutoSize = true,
+            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
         };
-
-        _infoDescLabel = new Label
+        _safetyStockLabel = new Label
         {
-            Text = "A telemetria completa de clocks, carga e temperaturas continua em execucao em tempo real acima.",
-            Location = new Point(16, 80),
-            Size = new Size(620, 20),
-            Font = FluentStyle.CreateUiFont(FontStyle.Italic, 8.5f)
+            Text = "Valores de Fabrica: Core = +0 MHz | VRAM = +0 MHz | TDP = 100% | Limite Termico = 83 °C",
+            Location = new Point(16, 68),
+            AutoSize = true,
+            Font = FluentStyle.CreateUiFont(FontStyle.Bold, 8.5f)
         };
+        _safetyCard.Controls.Add(_safetyDescLabel);
+        _safetyCard.Controls.Add(_safetyStockLabel);
+        _safetyContainer.Controls.Add(_safetyCard);
 
-        _infoCard.Controls.Add(_infoTitleLabel);
-        _infoCard.Controls.Add(_infoDescLabel);
-        _infoContainer.Controls.Add(_infoCard);
-
-        // 4. Perfis Rapidos (FluentSectionCard envolto em espacador de respiro)
+        // 4. Perfis Rapidos
         _presetsContainer = new Panel { Dock = DockStyle.Top, Height = 96 + gap, Padding = new Padding(0, 0, 0, gap) };
         _presetsCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
-            Title = "Perfis Rapidos",
-            Subtitle = "Selecione uma configuracao balanceada para a placa grafica ativa."
+            Title = "Perfis Rapidos Recomendados",
+            Subtitle = "Selecione uma configuracao balanceada ou ajuste parametros individuais abaixo."
         };
 
-        _btnEco = new Button { Text = "Eco / Silencioso", Location = new Point(16, 54), Width = 140, Height = 30 };
+        _btnEco = new FluentButton { Text = "Modo Silencioso (Eco)", Location = new Point(16, 52), Width = 160, Height = 32 };
         _btnEco.Click += (_, _) => ApplyPreset(0);
 
-        _btnBalanced = new Button { Text = "Equilibrado (Stock)", Location = new Point(166, 54), Width = 150, Height = 30 };
+        _btnBalanced = new FluentButton { Text = "Padrao de Fabrica (Stock)", Location = new Point(186, 52), Width = 180, Height = 32, IsActive = true };
         _btnBalanced.Click += (_, _) => ApplyPreset(1);
 
-        _btnMaxPerf = new Button { Text = "Desempenho Seguro", Location = new Point(326, 54), Width = 160, Height = 30 };
+        _btnMaxPerf = new FluentButton { Text = "Desempenho Moderado", Location = new Point(376, 52), Width = 180, Height = 32 };
         _btnMaxPerf.Click += (_, _) => ApplyPreset(2);
 
         _presetsCard.Controls.Add(_btnEco);
@@ -208,7 +205,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _presetsCard.Controls.Add(_btnMaxPerf);
         _presetsContainer.Controls.Add(_presetsCard);
 
-        // 5. Banner de Watchdog (teste temporizado de 15s)
+        // 5. Watchdog Banner
         _watchdogContainer = new Panel { Dock = DockStyle.Top, Height = 48 + gap, Padding = new Padding(0, 0, 0, gap), Visible = false };
         _watchdogBanner = new WatchdogAlertPanel
         {
@@ -224,21 +221,23 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
             AutoSize = true
         };
 
-        _btnKeep = new Button
+        _btnKeep = new FluentButton
         {
             Text = "Confirmar e Manter",
-            Location = new Point(470, 9),
-            Width = 145,
-            Height = 28
+            Location = new Point(470, 8),
+            Width = 150,
+            Height = 32,
+            Variant = FluentButtonVariant.Accent
         };
         _btnKeep.Click += (_, _) => _engine?.ConfirmProfile();
 
-        _btnRevert = new Button
+        _btnRevert = new FluentButton
         {
             Text = "Reverter",
-            Location = new Point(625, 9),
-            Width = 90,
-            Height = 28
+            Location = new Point(630, 8),
+            Width = 100,
+            Height = 32,
+            Variant = FluentButtonVariant.Danger
         };
         _btnRevert.Click += (_, _) => _engine?.CancelTestAndRevert("Revertido manualmente pelo utilizador.");
 
@@ -247,64 +246,60 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _watchdogBanner.Controls.Add(_btnRevert);
         _watchdogContainer.Controls.Add(_watchdogBanner);
 
-        // 6. Cartao de Controlos e Sliders (FluentSectionCard)
-        _controlsContainer = new Panel { Dock = DockStyle.Top, Height = 250 + gap, Padding = new Padding(0, 0, 0, gap) };
+        // 6. Sliders de Ajuste Fino
+        _controlsContainer = new Panel { Dock = DockStyle.Top, Height = 280 + gap, Padding = new Padding(0, 0, 0, gap) };
         _controlsCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
-            Title = "Parametros de Operacao da GPU",
-            Subtitle = "Ajuste de offsets de clock e limites de potencia balizados por seguranca."
+            Title = "Parametros e Frequencias da Placa",
+            Subtitle = "Ajuste manual com intervalos balizados pela fabricante."
         };
 
-        int rowY = 58;
+        int rowY = 56;
         int lblX = 16;
-        int ctrlX = 220;
+        int ctrlX = 230;
         int sliderW = 320;
-        int valX = 552;
+        int valX = 562;
 
-        // Core Clock Slider
-        _coreLabel = new Label { Text = "Frequencia do Core (Offset):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _coreSlider = new TrackBar { Minimum = -300, Maximum = 150, Value = 0, TickFrequency = 50, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _coreValLabel = new Label { Text = "+0 MHz", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
+        _coreLabel = new Label { Text = "Offset de Clock do Nucleo:", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
+        _coreSlider = new TrackBar { Minimum = -200, Maximum = 200, Value = 0, TickFrequency = 25, Location = new Point(ctrlX, rowY), Width = sliderW };
+        _coreValLabel = new Label { Text = "+0 MHz (Padrao: +0 MHz)", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
         _coreSlider.Scroll += (_, _) =>
         {
-            _coreValLabel.Text = $"{(_coreSlider.Value >= 0 ? "+" : "")}{_coreSlider.Value} MHz";
+            _coreValLabel.Text = $"{FormatSigned(_coreSlider.Value)} MHz (Padrao: +0 MHz)";
             _selectedPresetIndex = -1;
             UpdatePresetButtonsHighlight();
         };
 
-        // Memory Clock Slider
-        rowY += 46;
-        _memLabel = new Label { Text = "Frequencia da VRAM (Offset):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _memSlider = new TrackBar { Minimum = -1000, Maximum = 1000, Value = 0, TickFrequency = 200, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _memValLabel = new Label { Text = "+0 MHz", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
+        rowY += 50;
+        _memLabel = new Label { Text = "Offset de Clock da VRAM:", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
+        _memSlider = new TrackBar { Minimum = -500, Maximum = 500, Value = 0, TickFrequency = 50, Location = new Point(ctrlX, rowY), Width = sliderW };
+        _memValLabel = new Label { Text = "+0 MHz (Padrao: +0 MHz)", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
         _memSlider.Scroll += (_, _) =>
         {
-            _memValLabel.Text = $"{(_memSlider.Value >= 0 ? "+" : "")}{_memSlider.Value} MHz";
+            _memValLabel.Text = $"{FormatSigned(_memSlider.Value)} MHz (Padrao: +0 MHz)";
             _selectedPresetIndex = -1;
             UpdatePresetButtonsHighlight();
         };
 
-        // Power Limit Slider
-        rowY += 46;
-        _powerLabel = new Label { Text = "Limite de Potencia (TDP):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _powerSlider = new TrackBar { Minimum = 50, Maximum = 115, Value = 100, TickFrequency = 10, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _powerValLabel = new Label { Text = "100%", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
+        rowY += 50;
+        _powerLabel = new Label { Text = "Limite de Potencia (TDP %):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
+        _powerSlider = new TrackBar { Minimum = 70, Maximum = 115, Value = 100, TickFrequency = 5, Location = new Point(ctrlX, rowY), Width = sliderW };
+        _powerValLabel = new Label { Text = "100% (Padrao: 100%)", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
         _powerSlider.Scroll += (_, _) =>
         {
-            _powerValLabel.Text = $"{_powerSlider.Value}%";
+            _powerValLabel.Text = $"{_powerSlider.Value}% (Padrao: 100%)";
             _selectedPresetIndex = -1;
             UpdatePresetButtonsHighlight();
         };
 
-        // Temp Limit Slider
-        rowY += 46;
-        _tempLimitLabel = new Label { Text = "Alvo Termico Maximo:", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
+        rowY += 50;
+        _tempLimitLabel = new Label { Text = "Limite Termico Alvo (°C):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
         _tempLimitSlider = new TrackBar { Minimum = 65, Maximum = 88, Value = 83, TickFrequency = 5, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _tempLimitValLabel = new Label { Text = "83 °C", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
+        _tempLimitValLabel = new Label { Text = "83 °C (Padrao: 83 °C)", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
         _tempLimitSlider.Scroll += (_, _) =>
         {
-            _tempLimitValLabel.Text = $"{_tempLimitSlider.Value} °C";
+            _tempLimitValLabel.Text = $"{_tempLimitSlider.Value} °C (Padrao: 83 °C)";
             _selectedPresetIndex = -1;
             UpdatePresetButtonsHighlight();
         };
@@ -323,31 +318,33 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _controlsCard.Controls.Add(_tempLimitValLabel);
         _controlsContainer.Controls.Add(_controlsCard);
 
-        // 7. Barra de Acoes (Inferior)
+        // 7. Barra de Acoes
         _actionContainer = new Panel { Dock = DockStyle.Top, Height = 64 + gap, Padding = new Padding(0, 0, 0, gap) };
         _actionBar = new Panel { Dock = DockStyle.Fill };
-        _btnTest = new Button
+        _btnTest = new FluentButton
         {
-            Text = "Testar Perfil (15s)",
+            Text = "Testar com Seguranca (15s)",
             Location = new Point(0, 4),
-            Width = 160,
-            Height = 34
+            Width = 190,
+            Height = 34,
+            Variant = FluentButtonVariant.Accent
         };
         _btnTest.Click += BtnTest_Click;
 
-        _btnResetStock = new Button
+        _btnResetStock = new FluentButton
         {
-            Text = "Restaurar Padroes (Stock)",
-            Location = new Point(172, 4),
+            Text = "Repor Valores da Placa",
+            Location = new Point(202, 4),
             Width = 190,
-            Height = 34
+            Height = 34,
+            Variant = FluentButtonVariant.Standard
         };
         _btnResetStock.Click += BtnResetStock_Click;
 
         _chkApplyStartup = new CheckBox
         {
             Text = "Aplicar perfil no arranque do Windows (protegido por watchdog de 120s)",
-            Location = new Point(378, 11),
+            Location = new Point(410, 11),
             AutoSize = true,
             Font = FluentStyle.UiFont
         };
@@ -374,12 +371,12 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _actionBar.Controls.Add(_statusMessageLabel);
         _actionContainer.Controls.Add(_actionBar);
 
-        // Ordem inversa de Dock para posicionamento natural vertical
+        // Ordem inversa de adicao para dock vertical
         Controls.Add(_actionContainer);
         Controls.Add(_controlsContainer);
         Controls.Add(_watchdogContainer);
         Controls.Add(_presetsContainer);
-        Controls.Add(_infoContainer);
+        Controls.Add(_safetyContainer);
         Controls.Add(_telemetryRow);
         Controls.Add(_headerPanel);
 
@@ -393,163 +390,151 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
     {
         if (_engine != null)
         {
+            _engine.DevicesChanged -= Engine_DevicesChanged;
             _engine.WatchdogTick -= Engine_WatchdogTick;
             _engine.WatchdogReverted -= Engine_WatchdogReverted;
             _engine.TestConfirmed -= Engine_TestConfirmed;
         }
 
         _engine = engine;
+        if (_engine == null)
+            return;
 
-        if (_engine != null)
-        {
-            _engine.WatchdogTick += Engine_WatchdogTick;
-            _engine.WatchdogReverted += Engine_WatchdogReverted;
-            _engine.TestConfirmed -= Engine_TestConfirmed;
+        _engine.DevicesChanged += Engine_DevicesChanged;
+        _engine.WatchdogTick += Engine_WatchdogTick;
+        _engine.WatchdogReverted += Engine_WatchdogReverted;
+        _engine.TestConfirmed += Engine_TestConfirmed;
 
-            PopulateDeviceList();
-
-            if (_engine.HadDirtyBoot)
-            {
-                _statusMessageLabel.Text = _engine.DirtyBootMessage;
-                _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
-            }
-        }
+        PopulateDevices();
+        UpdateTelemetry();
     }
 
-    private void PopulateDeviceList()
+    private void Engine_DevicesChanged(object sender, EventArgs e) => PopulateDevices();
+
+    private void PopulateDevices()
     {
         _gpuCombo.Items.Clear();
-        if (_engine == null) return;
-
-        foreach (IGpuTuningDevice dev in _engine.Devices)
-            _gpuCombo.Items.Add(dev.Name);
-
-        if (_gpuCombo.Items.Count > 0)
-        {
-            _gpuCombo.SelectedIndex = 0;
-            _selectedDevice = _engine.Devices[0];
-            UpdateUiFromDevice();
-        }
-        else
+        if (_engine == null || _engine.Devices.Count == 0)
         {
             _gpuCombo.Items.Add("Nenhuma GPU compativel detectada");
             _gpuCombo.SelectedIndex = 0;
             _selectedDevice = null;
-            UpdateUiFromDevice();
+            UpdateUiFromState();
+            return;
         }
+
+        foreach (IGpuTuningDevice dev in _engine.Devices)
+            _gpuCombo.Items.Add(dev.Name);
+
+        _gpuCombo.SelectedIndex = 0;
+        _selectedDevice = _engine.Devices[0];
+        UpdateUiFromState();
     }
 
     private void GpuCombo_SelectedIndexChanged(object sender, EventArgs e)
     {
-        if (_engine == null) return;
-        int idx = _gpuCombo.SelectedIndex;
-        if (idx >= 0 && idx < _engine.Devices.Count)
-        {
-            _selectedDevice = _engine.Devices[idx];
-            UpdateUiFromDevice();
-        }
+        if (_engine == null || _gpuCombo.SelectedIndex < 0 || _gpuCombo.SelectedIndex >= _engine.Devices.Count)
+            return;
+
+        _selectedDevice = _engine.Devices[_gpuCombo.SelectedIndex];
+        UpdateUiFromState();
+        UpdateTelemetry();
     }
 
-    private void UpdateUiFromDevice()
+    private void UpdateUiFromState()
     {
         if (_selectedDevice == null)
         {
-            _infoContainer.Visible = true;
-            _presetsContainer.Visible = false;
-            _controlsContainer.Visible = false;
-            _actionContainer.Visible = false;
-            _safetyBadge.SetBadge("Sem Placa Detectada", BadgeStyle.Neutral);
+            _coreSlider.Enabled = false;
+            _memSlider.Enabled = false;
+            _powerSlider.Enabled = false;
+            _tempLimitSlider.Enabled = false;
+            _btnTest.Enabled = false;
+            _btnResetStock.Enabled = false;
             return;
         }
 
-        bool supported = _selectedDevice.Capabilities.IsSupported;
+        GpuTuningState s = _selectedDevice.CurrentState;
+        GpuTuningCapabilities c = _selectedDevice.Capabilities;
 
-        if (supported)
-        {
-            _infoContainer.Visible = false;
-            _presetsContainer.Visible = true;
-            _controlsContainer.Visible = true;
-            _actionContainer.Visible = true;
+        _coreSlider.Enabled = c.CanAdjustCoreClock;
+        _coreSlider.Minimum = c.MinCoreOffsetMhz;
+        _coreSlider.Maximum = c.MaxCoreOffsetMhz;
+        _coreSlider.Value = Math.Max(c.MinCoreOffsetMhz, Math.Min(c.MaxCoreOffsetMhz, s.CoreClockOffsetMhz));
+        _coreValLabel.Text = $"{FormatSigned(_coreSlider.Value)} MHz (Padrao: +0 MHz)";
 
-            _safetyBadge.SetBadge("Modo Seguro • Clamping Ativo", BadgeStyle.Success);
-            GpuTuningCapabilities lim = _selectedDevice.Capabilities;
-            _coreSlider.Minimum = lim.MinCoreOffsetMhz;
-            _coreSlider.Maximum = lim.MaxCoreOffsetMhz;
-            _memSlider.Minimum = lim.MinMemoryOffsetMhz;
-            _memSlider.Maximum = lim.MaxMemoryOffsetMhz;
-            _powerSlider.Minimum = lim.MinPowerLimitPercent;
-            _powerSlider.Maximum = lim.MaxPowerLimitPercent;
-            _tempLimitSlider.Minimum = lim.MinTempLimitC;
-            _tempLimitSlider.Maximum = lim.MaxTempLimitC;
+        _memSlider.Enabled = c.CanAdjustMemoryClock;
+        _memSlider.Minimum = c.MinMemoryOffsetMhz;
+        _memSlider.Maximum = c.MaxMemoryOffsetMhz;
+        _memSlider.Value = Math.Max(c.MinMemoryOffsetMhz, Math.Min(c.MaxMemoryOffsetMhz, s.MemoryClockOffsetMhz));
+        _memValLabel.Text = $"{FormatSigned(_memSlider.Value)} MHz (Padrao: +0 MHz)";
 
-            GpuTuningState state = _selectedDevice.CurrentState;
-            _coreSlider.Value = Clamp(state.CoreClockOffsetMhz, _coreSlider.Minimum, _coreSlider.Maximum);
-            _coreValLabel.Text = $"{(_coreSlider.Value >= 0 ? "+" : "")}{_coreSlider.Value} MHz";
+        _powerSlider.Enabled = c.CanAdjustPowerLimit;
+        _powerSlider.Minimum = c.MinPowerLimitPercent;
+        _powerSlider.Maximum = c.MaxPowerLimitPercent;
+        _powerSlider.Value = Math.Max(c.MinPowerLimitPercent, Math.Min(c.MaxPowerLimitPercent, s.PowerLimitPercent));
+        _powerValLabel.Text = $"{_powerSlider.Value}% (Padrao: 100%)";
 
-            _memSlider.Value = Clamp(state.MemoryClockOffsetMhz, _memSlider.Minimum, _memSlider.Maximum);
-            _memValLabel.Text = $"{(_memSlider.Value >= 0 ? "+" : "")}{_memSlider.Value} MHz";
+        _tempLimitSlider.Enabled = c.CanAdjustTempLimit;
+        _tempLimitSlider.Minimum = c.MinTempLimitC;
+        _tempLimitSlider.Maximum = c.MaxTempLimitC;
+        _tempLimitSlider.Value = Math.Max(c.MinTempLimitC, Math.Min(c.MaxTempLimitC, s.TempLimitC));
+        _tempLimitValLabel.Text = $"{_tempLimitSlider.Value} °C (Padrao: 83 °C)";
 
-            _powerSlider.Value = Clamp(state.PowerLimitPercent, _powerSlider.Minimum, _powerSlider.Maximum);
-            _powerValLabel.Text = $"{_powerSlider.Value}%";
+        _chkApplyStartup.Checked = s.ApplyOnStartup;
+        _btnTest.Enabled = true;
+        _btnResetStock.Enabled = true;
 
-            _tempLimitSlider.Value = Clamp(state.TempLimitC, _tempLimitSlider.Minimum, _tempLimitSlider.Maximum);
-            _tempLimitValLabel.Text = $"{_tempLimitSlider.Value} °C";
-
-            _chkApplyStartup.Checked = state.ApplyOnStartup;
-            UpdatePresetButtonsHighlight();
-        }
-        else
-        {
-            // GPU integrada: esconde controlos travados e apresenta cartao informativo limpo de alta legibilidade
-            _infoContainer.Visible = true;
-            _presetsContainer.Visible = false;
-            _controlsContainer.Visible = false;
-            _actionContainer.Visible = false;
-            _safetyBadge.SetBadge("Apenas Telemetria", BadgeStyle.Neutral);
-        }
+        UpdatePresetButtonsHighlight();
     }
 
-    private void ApplyPreset(int presetIndex)
+    private void ApplyPreset(int index)
     {
-        if (_selectedDevice == null || !_selectedDevice.Capabilities.IsSupported)
-            return;
+        if (_selectedDevice == null) return;
+        _selectedPresetIndex = index;
 
-        _selectedPresetIndex = presetIndex;
-        GpuTuningState preset = presetIndex switch
+        switch (index)
         {
-            0 => new GpuTuningState { CoreClockOffsetMhz = 0, MemoryClockOffsetMhz = 0, PowerLimitPercent = 80, TempLimitC = 75 },
-            2 => new GpuTuningState { CoreClockOffsetMhz = 50, MemoryClockOffsetMhz = 150, PowerLimitPercent = 110, TempLimitC = 86 },
-            _ => new GpuTuningState { CoreClockOffsetMhz = 0, MemoryClockOffsetMhz = 0, PowerLimitPercent = 100, TempLimitC = 83 }
-        };
+            case 0: // Eco
+                _coreSlider.Value = Math.Max(_coreSlider.Minimum, -50);
+                _memSlider.Value = 0;
+                _powerSlider.Value = Math.Max(_powerSlider.Minimum, 85);
+                _tempLimitSlider.Value = Math.Max(_tempLimitSlider.Minimum, 75);
+                break;
 
-        _coreSlider.Value = Clamp(preset.CoreClockOffsetMhz, _coreSlider.Minimum, _coreSlider.Maximum);
-        _coreValLabel.Text = $"{(_coreSlider.Value >= 0 ? "+" : "")}{_coreSlider.Value} MHz";
+            case 1: // Stock
+                _coreSlider.Value = 0;
+                _memSlider.Value = 0;
+                _powerSlider.Value = 100;
+                _tempLimitSlider.Value = 83;
+                break;
 
-        _memSlider.Value = Clamp(preset.MemoryClockOffsetMhz, _memSlider.Minimum, _memSlider.Maximum);
-        _memValLabel.Text = $"{(_memSlider.Value >= 0 ? "+" : "")}{_memSlider.Value} MHz";
+            case 2: // Moderate Perf
+                _coreSlider.Value = Math.Min(_coreSlider.Maximum, 60);
+                _memSlider.Value = Math.Min(_memSlider.Maximum, 150);
+                _powerSlider.Value = Math.Min(_powerSlider.Maximum, 105);
+                _tempLimitSlider.Value = Math.Min(_tempLimitSlider.Maximum, 85);
+                break;
+        }
 
-        _powerSlider.Value = Clamp(preset.PowerLimitPercent, _powerSlider.Minimum, _powerSlider.Maximum);
-        _powerValLabel.Text = $"{_powerSlider.Value}%";
+        _coreValLabel.Text = $"{FormatSigned(_coreSlider.Value)} MHz (Padrao: +0 MHz)";
+        _memValLabel.Text = $"{FormatSigned(_memSlider.Value)} MHz (Padrao: +0 MHz)";
+        _powerValLabel.Text = $"{_powerSlider.Value}% (Padrao: 100%)";
+        _tempLimitValLabel.Text = $"{_tempLimitSlider.Value} °C (Padrao: 83 °C)";
 
-        _tempLimitSlider.Value = Clamp(preset.TempLimitC, _tempLimitSlider.Minimum, _tempLimitSlider.Maximum);
-        _tempLimitValLabel.Text = $"{_tempLimitSlider.Value} °C";
-
-        _statusMessageLabel.Text = "Preset selecionado. Carregue em 'Testar Perfil (15s)' para validar estabilidade.";
-        _statusMessageLabel.ForeColor = Theme.Current.StateWarmColor;
         UpdatePresetButtonsHighlight();
     }
 
     private void UpdatePresetButtonsHighlight()
     {
-        Theme theme = Theme.Current;
-        FluentStyle.StyleChipButton(_btnEco, theme, _selectedPresetIndex == 0);
-        FluentStyle.StyleChipButton(_btnBalanced, theme, _selectedPresetIndex == 1);
-        FluentStyle.StyleChipButton(_btnMaxPerf, theme, _selectedPresetIndex == 2);
+        _btnEco.IsActive = _selectedPresetIndex == 0;
+        _btnBalanced.IsActive = _selectedPresetIndex == 1;
+        _btnMaxPerf.IsActive = _selectedPresetIndex == 2;
     }
 
     private void BtnTest_Click(object sender, EventArgs e)
     {
-        if (_engine == null || _selectedDevice == null) return;
+        if (_selectedDevice == null || _engine == null) return;
 
         GpuTuningState newState = new()
         {
@@ -563,32 +548,31 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         if (_engine.StartWatchdogTest(_selectedDevice, newState, out string error))
         {
             _watchdogContainer.Visible = true;
-            _statusMessageLabel.Text = "Teste de GPU em execucao. Valide a estabilidade do ecra.";
-            _statusMessageLabel.ForeColor = Theme.Current.StateWarmColor;
+            _statusMessageLabel.Text = "Teste de seguranca iniciado. Confirme para manter.";
+            _statusMessageLabel.ForeColor = Theme.Current.AccentColor;
         }
         else
         {
-            _statusMessageLabel.Text = error ?? "Falha ao aplicar configuracao.";
+            _statusMessageLabel.Text = error ?? "Erro ao iniciar teste de GPU.";
             _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
         }
     }
 
     private void BtnResetStock_Click(object sender, EventArgs e)
     {
-        if (_engine == null || _selectedDevice == null) return;
+        if (_selectedDevice == null || _engine == null) return;
 
-        if (_selectedDevice.ResetToStock(out string error))
+        if (_engine.ResetDeviceToStock(_selectedDevice, out string error))
         {
-            _engine.SaveSettings(_selectedDevice);
-            _watchdogContainer.Visible = false;
             _selectedPresetIndex = 1;
-            UpdateUiFromDevice();
-            _statusMessageLabel.Text = "Valores padrao (stock) da placa grafica restaurados.";
+            UpdateUiFromState();
+            _watchdogContainer.Visible = false;
+            _statusMessageLabel.Text = "Valores de fabrica da placa gráfica repostos com sucesso.";
             _statusMessageLabel.ForeColor = Theme.Current.StateCoolColor;
         }
         else
         {
-            _statusMessageLabel.Text = error ?? "Erro ao repor padroes.";
+            _statusMessageLabel.Text = error ?? "Erro ao repor valores.";
             _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
         }
     }
@@ -613,7 +597,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         }
 
         _watchdogContainer.Visible = false;
-        UpdateUiFromDevice();
+        UpdateUiFromState();
         _statusMessageLabel.Text = reason;
         _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
     }
@@ -652,7 +636,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         if (telem.MemoryClockMhz.HasValue)
         {
             float mem = telem.MemoryClockMhz.Value;
-            _memClockCard.SetMetric("VRAM CLOCK", $"{mem:F0}", "MHz", "Memoria de Video", MetricCardSeverity.Normal, mem / 3000f);
+            _memClockCard.SetMetric("VRAM CLOCK", $"{mem:F0}", "MHz", "Memoria de Video", MetricCardSeverity.Normal, mem / 10000f);
         }
         else
         {
@@ -671,18 +655,24 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
             _tempCard.SetMetric("TEMPERATURA", "--", "°C", "Sensor do Nucleo", MetricCardSeverity.Normal);
         }
 
-        // 4. Carga
-        if (telem.LoadPercent.HasValue)
+        // 4. Power
+        if (telem.PowerWatts.HasValue)
         {
-            float load = telem.LoadPercent.Value;
-            MetricCardSeverity sev = load >= 85f ? MetricCardSeverity.Warm : (load <= 5f ? MetricCardSeverity.Cool : MetricCardSeverity.Normal);
-            _powerCard.SetMetric("CARGA TOTAL", $"{load:F0}", "%", "Uso 3D", sev, load / 100f);
+            float power = telem.PowerWatts.Value;
+            _powerCard.SetMetric("POTENCIA", $"{power:F1}", "W", "Consumo Atual", power > 250f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal, power / 350f);
+        }
+        else if (telem.PowerPercent.HasValue)
+        {
+            float pct = telem.PowerPercent.Value;
+            _powerCard.SetMetric("TDP %", $"{pct:F0}", "%", "Limite TDP", pct > 100f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal, pct / 120f);
         }
         else
         {
-            _powerCard.SetMetric("CARGA TOTAL", "--", "%", "Uso 3D", MetricCardSeverity.Normal);
+            _powerCard.SetMetric("POTENCIA", "--", "W", "Consumo Atual", MetricCardSeverity.Normal);
         }
     }
+
+    private static string FormatSigned(int value) => value > 0 ? $"+{value}" : value.ToString();
 
     public void ApplyTheme(Theme theme)
     {
@@ -692,73 +682,42 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _titleLabel.ForeColor = theme.ForegroundColor;
         _subtitleLabel.ForeColor = theme.MutedForegroundColor;
         _gpuSelectLabel.ForeColor = theme.ForegroundColor;
-
-        _infoTitleLabel.ForeColor = theme.ForegroundColor;
-        _infoDescLabel.ForeColor = theme.MutedForegroundColor;
-
-        _coreLabel.ForeColor = theme.ForegroundColor;
-        _memLabel.ForeColor = theme.ForegroundColor;
-        _powerLabel.ForeColor = theme.ForegroundColor;
-        _tempLimitLabel.ForeColor = theme.ForegroundColor;
-        _chkApplyStartup.ForeColor = theme.ForegroundColor;
-
-        _coreValLabel.ForeColor = theme.AccentColor;
-        _memValLabel.ForeColor = theme.AccentColor;
-        _powerValLabel.ForeColor = theme.AccentColor;
-        _tempLimitValLabel.ForeColor = theme.AccentColor;
-
-        _coreSlider.BackColor = theme.SurfaceColor;
-        _memSlider.BackColor = theme.SurfaceColor;
-        _powerSlider.BackColor = theme.SurfaceColor;
-        _tempLimitSlider.BackColor = theme.SurfaceColor;
-
         _gpuCombo.ApplyTheme(theme);
-
-        FluentStyle.StylePrimaryButton(_btnTest, theme);
-        FluentStyle.StyleSecondaryButton(_btnResetStock, theme);
-        FluentStyle.StylePrimaryButton(_btnKeep, theme);
-        FluentStyle.StyleSecondaryButton(_btnRevert, theme);
-
         _safetyBadge.ApplyTheme(theme);
+
         _coreClockCard.ApplyTheme(theme);
         _memClockCard.ApplyTheme(theme);
         _tempCard.ApplyTheme(theme);
         _powerCard.ApplyTheme(theme);
-        _infoCard.ApplyTheme(theme);
+
+        _safetyCard.ApplyTheme(theme);
+        _safetyDescLabel.ForeColor = theme.ForegroundColor;
+        _safetyStockLabel.ForeColor = theme.AccentColor;
+
         _presetsCard.ApplyTheme(theme);
+        _btnEco.ApplyTheme(theme);
+        _btnBalanced.ApplyTheme(theme);
+        _btnMaxPerf.ApplyTheme(theme);
+
+        _watchdogBanner.ApplyTheme(theme);
+        _watchdogLabel.ForeColor = theme.ForegroundColor;
+        _btnKeep.ApplyTheme(theme);
+        _btnRevert.ApplyTheme(theme);
+
         _controlsCard.ApplyTheme(theme);
+        _coreLabel.ForeColor = theme.ForegroundColor;
+        _coreValLabel.ForeColor = theme.ForegroundColor;
+        _memLabel.ForeColor = theme.ForegroundColor;
+        _memValLabel.ForeColor = theme.ForegroundColor;
+        _powerLabel.ForeColor = theme.ForegroundColor;
+        _powerValLabel.ForeColor = theme.ForegroundColor;
+        _tempLimitLabel.ForeColor = theme.ForegroundColor;
+        _tempLimitValLabel.ForeColor = theme.ForegroundColor;
 
-        UpdatePresetButtonsHighlight();
+        _btnTest.ApplyTheme(theme);
+        _btnResetStock.ApplyTheme(theme);
+        _chkApplyStartup.ForeColor = theme.ForegroundColor;
+
         Invalidate();
-    }
-
-    private static int Clamp(int value, int min, int max)
-    {
-        return value < min ? min : (value > max ? max : value);
-    }
-
-    public sealed class WatchdogAlertPanel : Panel
-    {
-        public WatchdogAlertPanel()
-        {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
-                     ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
-        }
-
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            Theme theme = Theme.Current;
-            e.Graphics.Clear(Parent?.BackColor ?? theme.BackgroundColor);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
-            float radius = Math.Max(4f, LogicalToDeviceUnits(theme.CornerRadius + 2));
-            RectangleF bounds = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-
-            Color bg = FluentStyle.Blend(theme.SurfaceColor, theme.StateWarmColor, theme.IsDark ? 0.25 : 0.14);
-            Color border = FluentStyle.Blend(theme.SurfaceStrokeColor, theme.StateWarmColor, 0.6);
-
-            FluentStyle.FillRounded(e.Graphics, bg, bounds, radius);
-            FluentStyle.DrawRounded(e.Graphics, border, bounds, radius);
-        }
     }
 }

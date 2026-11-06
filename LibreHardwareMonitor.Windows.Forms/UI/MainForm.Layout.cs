@@ -162,6 +162,7 @@ public sealed partial class MainForm
                     _fanControlPanel.Visible = true;
                     _fanControlPanel.BringToFront();
                     _fanControlPanel.RefreshChannels();
+                    _fanControlPanel.UpdateTelemetry();
                 }
                 return;
             }
@@ -177,6 +178,7 @@ public sealed partial class MainForm
                 {
                     _cpuTuningPanel.Visible = true;
                     _cpuTuningPanel.BringToFront();
+                    _cpuTuningPanel.UpdateTelemetry();
                 }
                 return;
             }
@@ -192,6 +194,7 @@ public sealed partial class MainForm
                 {
                     _gpuTuningPanel.Visible = true;
                     _gpuTuningPanel.BringToFront();
+                    _gpuTuningPanel.UpdateTelemetry();
                 }
                 return;
             }

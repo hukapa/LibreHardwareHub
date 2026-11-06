@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Controls;
@@ -25,6 +26,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     private readonly Label _presetLabel;
     private readonly FluentComboBox _presetCombo;
     private readonly FluentBadge _profileBadge;
+    private readonly FluentBadge _safetyBadge;
 
     private readonly Panel _telemetryRow;
     private readonly FluentMetricCard _cpuTempCard;
@@ -95,11 +97,20 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         };
         _profileBadge.SetBadge("BIOS Padrao", BadgeStyle.Neutral);
 
+        _safetyBadge = new FluentBadge
+        {
+            Location = new Point(410, 48),
+            Height = 22,
+            Style = BadgeStyle.Success
+        };
+        _safetyBadge.SetBadge("Protecao Termica Ativa (>90 C 100% Forcado)", BadgeStyle.Success);
+
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_subtitleLabel);
         _headerPanel.Controls.Add(_presetLabel);
         _headerPanel.Controls.Add(_presetCombo);
         _headerPanel.Controls.Add(_profileBadge);
+        _headerPanel.Controls.Add(_safetyBadge);
 
         // 2. Telemetria (4 cartoes Fluent Metric identicos ao SummaryPanel)
         _telemetryRow = new Panel { Dock = DockStyle.Top, Height = 104 + gap, Padding = new Padding(0, 0, 0, gap) };
@@ -283,6 +294,16 @@ public sealed class FanControlPanel : UserControl, IThemedControl
 
         // 1. CPU Temp
         float cpu = _engine.LastCpuTemp;
+        if (cpu <= 0f && _engine.Computer != null)
+        {
+            IHardware cpuHw = _engine.Computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
+            if (cpuHw != null)
+            {
+                cpuHw.Update();
+                ISensor s = cpuHw.Sensors.FirstOrDefault(sn => sn.SensorType == SensorType.Temperature);
+                if (s?.Value != null) cpu = s.Value.Value;
+            }
+        }
         if (cpu > 0f)
         {
             MetricCardSeverity sev = cpu >= 85f ? MetricCardSeverity.Hot : (cpu >= 75f ? MetricCardSeverity.Warm : (cpu <= 45f ? MetricCardSeverity.Cool : MetricCardSeverity.Normal));
@@ -295,6 +316,16 @@ public sealed class FanControlPanel : UserControl, IThemedControl
 
         // 2. GPU Temp
         float gpu = _engine.LastGpuTemp;
+        if (gpu <= 0f && _engine.Computer != null)
+        {
+            IHardware gpuHw = _engine.Computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.GpuNvidia || h.HardwareType == HardwareType.GpuAmd || h.HardwareType == HardwareType.GpuIntel);
+            if (gpuHw != null)
+            {
+                gpuHw.Update();
+                ISensor s = gpuHw.Sensors.FirstOrDefault(sn => sn.SensorType == SensorType.Temperature);
+                if (s?.Value != null) gpu = s.Value.Value;
+            }
+        }
         if (gpu > 0f)
         {
             MetricCardSeverity sev = gpu >= 83f ? MetricCardSeverity.Hot : (gpu >= 72f ? MetricCardSeverity.Warm : (gpu <= 45f ? MetricCardSeverity.Cool : MetricCardSeverity.Normal));
@@ -321,6 +352,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
 
         _presetCombo.ApplyTheme(theme);
         _profileBadge.ApplyTheme(theme);
+        _safetyBadge?.ApplyTheme(theme);
         _cpuTempCard.ApplyTheme(theme);
         _gpuTempCard.ApplyTheme(theme);
         _activeFansCard.ApplyTheme(theme);

@@ -27,6 +27,8 @@ public sealed class FanControlEngine
 
     public IReadOnlyList<FanChannelRuntime> Channels => _channels;
 
+    public IComputer Computer => _computer;
+
     public GlobalFanPreset ActivePreset { get; private set; } = GlobalFanPreset.DefaultBios;
 
     public bool HasActiveControls => _channels.Any(c => c.Config.Mode != FanChannelMode.DefaultBios || c.InEmergencyOverride);

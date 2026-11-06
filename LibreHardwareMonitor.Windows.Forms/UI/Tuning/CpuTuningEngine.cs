@@ -65,6 +65,8 @@ public sealed class CpuTuningEngine : IDisposable
 
         RegisterSafetyEvents();
         DiscoverCpu();
+        _computer.HardwareAdded += _ => DiscoverCpu();
+        _computer.HardwareRemoved += _ => DiscoverCpu();
         CheckDirtyBoot();
         LoadSettings();
     }
@@ -310,8 +312,11 @@ public sealed class CpuTuningEngine : IDisposable
     {
         CpuTuningTelemetry telem = new();
 
+        _cpuHardware ??= _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
         if (_cpuHardware == null)
             return telem;
+
+        _cpuHardware.Update();
 
         foreach (ISensor sensor in _cpuHardware.Sensors)
         {

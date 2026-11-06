@@ -1,13 +1,13 @@
 @echo off
 setlocal
-title LibreHardwareHub
+title LibreHardwareMonitor, LHM
 cd /d "%~dp0"
 
 set "EXE=%~dp0bin\Publish-SingleFile\LibreHardwareMonitor.Windows.Forms.exe"
 if not exist "%EXE%" set "EXE=%~dp0bin\Publish-Test\LibreHardwareMonitor.Windows.Forms.exe"
 
 echo ==========================================================
-echo                   LibreHardwareHub
+echo                LibreHardwareMonitor, LHM
 echo ==========================================================
 echo  1. Iniciar Aplicacao (Auto-arranque em 3s)
 echo  2. Compilar e Publicar Nova Versao

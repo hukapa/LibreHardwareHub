@@ -30,17 +30,22 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
     private readonly FluentMetricCard _clockCard;
     private readonly FluentMetricCard _loadCard;
 
+    private readonly Panel _safetyContainer;
+    private readonly FluentSectionCard _safetyCard;
+    private readonly Label _safetyDescLabel;
+    private readonly Label _safetyStockLabel;
+
     private readonly Panel _presetsContainer;
     private readonly FluentSectionCard _presetsCard;
-    private readonly Button _btnEco;
-    private readonly Button _btnBalanced;
-    private readonly Button _btnMaxPerf;
+    private readonly FluentButton _btnEco;
+    private readonly FluentButton _btnBalanced;
+    private readonly FluentButton _btnMaxPerf;
 
     private readonly Panel _watchdogContainer;
     private readonly WatchdogAlertPanel _watchdogBanner;
     private readonly Label _watchdogLabel;
-    private readonly Button _btnKeep;
-    private readonly Button _btnRevert;
+    private readonly FluentButton _btnKeep;
+    private readonly FluentButton _btnRevert;
 
     private readonly Panel _controlsContainer;
     private readonly FluentSectionCard _controlsCard;
@@ -64,8 +69,8 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
 
     private readonly Panel _actionContainer;
     private readonly Panel _actionBar;
-    private readonly Button _btnTest;
-    private readonly Button _btnResetStock;
+    private readonly FluentButton _btnTest;
+    private readonly FluentButton _btnResetStock;
     private readonly CheckBox _chkApplyStartup;
     private readonly Label _statusMessageLabel;
 
@@ -88,7 +93,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _headerPanel = new Panel { Dock = DockStyle.Top, Height = 80, Margin = new Padding(0) };
         _titleLabel = new Label
         {
-            Text = "Ajuste de Processador (CPU Tuning & Power Limits)",
+            Text = "Ajuste de Processador (CPU Tuning)",
             Font = FluentStyle.CreateUiFont(FontStyle.Bold, 13.5f),
             Location = new Point(0, 0),
             AutoSize = true
@@ -96,7 +101,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
 
         _subtitleLabel = new Label
         {
-            Text = "Controlo de limites de potencia e politicas energeticas do processador.",
+            Text = "Controlo de limites de potencia e politicas energeticas balizadas pelo processador.",
             Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f),
             Location = new Point(0, 26),
             AutoSize = true
@@ -108,16 +113,16 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
             Height = 22,
             Style = BadgeStyle.Success
         };
-        _safetyBadge.SetBadge("Risco Zero • Safe Clamping", BadgeStyle.Success);
+        _safetyBadge.SetBadge("Protecao de Hardware Ativa • Risco Zero", BadgeStyle.Success);
 
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_subtitleLabel);
         _headerPanel.Controls.Add(_safetyBadge);
 
-        // 2. Telemetria (4 cartoes Fluent Metric identicos ao SummaryPanel)
+        // 2. Telemetria
         _telemetryRow = new Panel { Dock = DockStyle.Top, Height = 104 + gap, Padding = new Padding(0, 0, 0, gap) };
         _tempCard = new FluentMetricCard { Location = new Point(0, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Temperature) };
-        _tempCard.SetMetric("TEMPERATURA", "--", "°C", "Package Sensor", MetricCardSeverity.Normal);
+        _tempCard.SetMetric("TEMPERATURA", "--", "°C", "Sensor Package", MetricCardSeverity.Normal);
 
         _powerCard = new FluentMetricCard { Location = new Point(174, 0), Size = new Size(160, 104), Icon = FluentIcons.ForSensorType(SensorType.Power) };
         _powerCard.SetMetric("POTENCIA", "--", "W", "Package Power", MetricCardSeverity.Normal);
@@ -133,22 +138,48 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _telemetryRow.Controls.Add(_clockCard);
         _telemetryRow.Controls.Add(_loadCard);
 
-        // 3. Perfis Rapidos (FluentSectionCard envolto em espacador de respiro)
+        // 3. Cartao de Seguranca e Garantias
+        _safetyContainer = new Panel { Dock = DockStyle.Top, Height = 84 + gap, Padding = new Padding(0, 0, 0, gap) };
+        _safetyCard = new FluentSectionCard
+        {
+            Dock = DockStyle.Fill,
+            Title = "Seguranca e Limites de Hardware Protegidos",
+            Subtitle = "Todas as alteracoes respeitam as protecoes termicas e eletricas de fabrica do fabricante."
+        };
+        _safetyDescLabel = new Label
+        {
+            Text = "O sistema aplica clamping automatico. Se algum teste for instavel, o watchdog repoe os valores de fabrica em 15 segundos.",
+            Location = new Point(16, 52),
+            AutoSize = true,
+            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
+        };
+        _safetyStockLabel = new Label
+        {
+            Text = "Valores de Fabrica: A carregar...",
+            Location = new Point(16, 68),
+            AutoSize = true,
+            Font = FluentStyle.CreateUiFont(FontStyle.Bold, 8.5f)
+        };
+        _safetyCard.Controls.Add(_safetyDescLabel);
+        _safetyCard.Controls.Add(_safetyStockLabel);
+        _safetyContainer.Controls.Add(_safetyCard);
+
+        // 4. Perfis Rapidos
         _presetsContainer = new Panel { Dock = DockStyle.Top, Height = 96 + gap, Padding = new Padding(0, 0, 0, gap) };
         _presetsCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
-            Title = "Perfis Rapidos",
-            Subtitle = "Selecione uma configuracao balanceada ou personalize os limites abaixo."
+            Title = "Perfis Rapidos Recomendados",
+            Subtitle = "Selecione uma configuracao balanceada ou ajuste parametros individuais abaixo."
         };
 
-        _btnEco = new Button { Text = "Eco / Silencioso", Location = new Point(16, 54), Width = 140, Height = 30 };
+        _btnEco = new FluentButton { Text = "Eco / Silencioso", Location = new Point(16, 52), Width = 150, Height = 32 };
         _btnEco.Click += (_, _) => ApplyPreset(0);
 
-        _btnBalanced = new Button { Text = "Equilibrado (Stock)", Location = new Point(166, 54), Width = 150, Height = 30 };
+        _btnBalanced = new FluentButton { Text = "Equilibrado (Fabrica)", Location = new Point(176, 52), Width = 170, Height = 32, IsActive = true };
         _btnBalanced.Click += (_, _) => ApplyPreset(1);
 
-        _btnMaxPerf = new Button { Text = "Desempenho Maximo", Location = new Point(326, 54), Width = 160, Height = 30 };
+        _btnMaxPerf = new FluentButton { Text = "Desempenho Maximo", Location = new Point(356, 52), Width = 170, Height = 32 };
         _btnMaxPerf.Click += (_, _) => ApplyPreset(2);
 
         _presetsCard.Controls.Add(_btnEco);
@@ -156,7 +187,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _presetsCard.Controls.Add(_btnMaxPerf);
         _presetsContainer.Controls.Add(_presetsCard);
 
-        // 4. Banner de Watchdog (teste temporizado de 15s)
+        // 5. Banner de Watchdog (teste de 15s)
         _watchdogContainer = new Panel { Dock = DockStyle.Top, Height = 48 + gap, Padding = new Padding(0, 0, 0, gap), Visible = false };
         _watchdogBanner = new WatchdogAlertPanel
         {
@@ -172,21 +203,23 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
             AutoSize = true
         };
 
-        _btnKeep = new Button
+        _btnKeep = new FluentButton
         {
             Text = "Confirmar e Manter",
-            Location = new Point(470, 9),
-            Width = 145,
-            Height = 28
+            Location = new Point(470, 8),
+            Width = 150,
+            Height = 32,
+            Variant = FluentButtonVariant.Accent
         };
         _btnKeep.Click += (_, _) => _engine?.ConfirmProfile();
 
-        _btnRevert = new Button
+        _btnRevert = new FluentButton
         {
             Text = "Reverter",
-            Location = new Point(625, 9),
-            Width = 90,
-            Height = 28
+            Location = new Point(630, 8),
+            Width = 100,
+            Height = 32,
+            Variant = FluentButtonVariant.Danger
         };
         _btnRevert.Click += (_, _) => _engine?.CancelTestAndRevert("Revertido manualmente pelo utilizador.");
 
@@ -195,28 +228,23 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _watchdogBanner.Controls.Add(_btnRevert);
         _watchdogContainer.Controls.Add(_watchdogBanner);
 
-        // 5. Cartao de Controlos e Sliders (FluentSectionCard)
+        // 6. Parametros e Sliders
         _controlsContainer = new Panel { Dock = DockStyle.Top, Height = 280 + gap, Padding = new Padding(0, 0, 0, gap) };
         _controlsCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
             Title = "Parametros de Energia e Frequencia",
-            Subtitle = "Ajuste de throttling do Windows e limites sustentados PL1/PL2 de hardware."
+            Subtitle = "Ajuste fino de throttling do Windows e limites sustentados PL1/PL2 de hardware."
         };
 
-        int rowY = 60;
+        int rowY = 56;
         int lblX = 16;
-        int ctrlX = 220;
+        int ctrlX = 230;
         int sliderW = 320;
-        int valX = 552;
+        int valX = 562;
 
-        // Turbo Boost Mode ComboBox
         _boostLabel = new Label { Text = "Modo de Turbo Boost:", Location = new Point(lblX, rowY + 3), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _boostCombo = new FluentComboBox
-        {
-            Location = new Point(ctrlX, rowY),
-            Width = 280
-        };
+        _boostCombo = new FluentComboBox { Location = new Point(ctrlX, rowY), Width = 280 };
         _boostCombo.Items.AddRange(new object[]
         {
             "0: Desativado (Silencio e Frio)",
@@ -229,49 +257,47 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
 
         _boostHelpLabel = new Label
         {
-            Text = "Controla a rapidez e frequencia com que os nucleos elevam o clock sob carga.",
+            Text = "Velocidade com que os nucleos elevam o clock sob carga.",
             Location = new Point(ctrlX + 290, rowY + 5),
             AutoSize = true,
             Font = FluentStyle.CreateUiFont(FontStyle.Italic, 8f)
         };
 
-        // Throttle Max (Estado Maximo %)
         rowY += 48;
         _throttleMaxLabel = new Label { Text = "Estado Maximo da CPU (%):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
         _throttleMaxSlider = new TrackBar { Minimum = 50, Maximum = 100, Value = 100, TickFrequency = 5, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _throttleMaxValLabel = new Label { Text = "100%", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
+        _throttleMaxValLabel = new Label { Text = "100% (Padrao: 100%)", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
         _throttleMaxSlider.Scroll += (_, _) =>
         {
-            _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}%";
+            _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}% (Padrao: 100%)";
             _selectedPresetIndex = -1;
             UpdatePresetButtonsHighlight();
         };
 
-        // PL1 Sustained Power Limit
         rowY += 50;
         _pl1Label = new Label { Text = "Limite Sustentado PL1 (Watts):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
         _pl1Slider = new TrackBar { Minimum = 15, Maximum = 253, Value = 65, TickFrequency = 15, Location = new Point(ctrlX, rowY), Width = sliderW };
         _pl1ValLabel = new Label { Text = "65 W", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
         _pl1Slider.Scroll += (_, _) =>
         {
-            _pl1ValLabel.Text = $"{_pl1Slider.Value} W";
+            int def = _engine?.Capabilities.DefaultPl1Watts ?? 65;
+            _pl1ValLabel.Text = $"{_pl1Slider.Value} W (Padrao: {def} W)";
             _selectedPresetIndex = -1;
             UpdatePresetButtonsHighlight();
         };
 
-        // PL2 Short Burst Power Limit
         rowY += 50;
         _pl2Label = new Label { Text = "Limite de Rajada PL2 (Watts):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
         _pl2Slider = new TrackBar { Minimum = 15, Maximum = 253, Value = 125, TickFrequency = 15, Location = new Point(ctrlX, rowY), Width = sliderW };
         _pl2ValLabel = new Label { Text = "125 W", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
         _pl2Slider.Scroll += (_, _) =>
         {
-            _pl2ValLabel.Text = $"{_pl2Slider.Value} W";
+            int def = _engine?.Capabilities.DefaultPl2Watts ?? 125;
+            _pl2ValLabel.Text = $"{_pl2Slider.Value} W (Padrao: {def} W)";
             _selectedPresetIndex = -1;
             UpdatePresetButtonsHighlight();
         };
 
-        // Nota sobre estado RAPL
         rowY += 42;
         _raplInfoLabel = new Label
         {
@@ -296,31 +322,33 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _controlsCard.Controls.Add(_raplInfoLabel);
         _controlsContainer.Controls.Add(_controlsCard);
 
-        // 6. Barra de Acoes (Inferior)
+        // 7. Barra de Acoes
         _actionContainer = new Panel { Dock = DockStyle.Top, Height = 64 + gap, Padding = new Padding(0, 0, 0, gap) };
         _actionBar = new Panel { Dock = DockStyle.Fill };
-        _btnTest = new Button
+        _btnTest = new FluentButton
         {
-            Text = "Testar Perfil (15s)",
+            Text = "Testar com Seguranca (15s)",
             Location = new Point(0, 4),
-            Width = 160,
-            Height = 34
+            Width = 190,
+            Height = 34,
+            Variant = FluentButtonVariant.Accent
         };
         _btnTest.Click += BtnTest_Click;
 
-        _btnResetStock = new Button
+        _btnResetStock = new FluentButton
         {
-            Text = "Restaurar Padroes (Stock)",
-            Location = new Point(172, 4),
+            Text = "Repor Valores de Fabrica",
+            Location = new Point(202, 4),
             Width = 190,
-            Height = 34
+            Height = 34,
+            Variant = FluentButtonVariant.Standard
         };
         _btnResetStock.Click += BtnResetStock_Click;
 
         _chkApplyStartup = new CheckBox
         {
             Text = "Aplicar perfil no arranque do Windows (protegido por watchdog de 120s)",
-            Location = new Point(378, 11),
+            Location = new Point(410, 11),
             AutoSize = true,
             Font = FluentStyle.UiFont
         };
@@ -347,11 +375,12 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _actionBar.Controls.Add(_statusMessageLabel);
         _actionContainer.Controls.Add(_actionBar);
 
-        // Ordem inversa de Dock para layout natural vertical
+        // Ordem inversa de adicao para dock vertical correto
         Controls.Add(_actionContainer);
         Controls.Add(_controlsContainer);
         Controls.Add(_watchdogContainer);
         Controls.Add(_presetsContainer);
+        Controls.Add(_safetyContainer);
         Controls.Add(_telemetryRow);
         Controls.Add(_headerPanel);
 
@@ -372,101 +401,104 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         }
 
         _engine = engine;
+        if (_engine == null)
+            return;
 
-        if (_engine != null)
-        {
-            _engine.WatchdogTick += Engine_WatchdogTick;
-            _engine.WatchdogReverted += Engine_WatchdogReverted;
-            _engine.TestConfirmed += Engine_TestConfirmed;
-            _engine.StateChanged += Engine_StateChanged;
+        _engine.WatchdogTick += Engine_WatchdogTick;
+        _engine.WatchdogReverted += Engine_WatchdogReverted;
+        _engine.TestConfirmed += Engine_TestConfirmed;
+        _engine.StateChanged += Engine_StateChanged;
 
-            UpdateUiFromState();
+        UpdateUiFromState();
+        UpdateStockLabels();
+        UpdateTelemetry();
+    }
 
-            if (_engine.HadDirtyBoot)
-            {
-                _statusMessageLabel.Text = _engine.DirtyBootMessage;
-                _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
-            }
-        }
+    private void UpdateStockLabels()
+    {
+        if (_engine == null) return;
+        int defPl1 = _engine.Capabilities.DefaultPl1Watts;
+        int defPl2 = _engine.Capabilities.DefaultPl2Watts;
+        _safetyStockLabel.Text = $"Valores de Fabrica: PL1 = {defPl1} W | PL2 = {defPl2} W | Estado Maximo = 100% | Turbo Boost = Ativo";
+        _pl1ValLabel.Text = $"{_pl1Slider.Value} W (Padrao: {defPl1} W)";
+        _pl2ValLabel.Text = $"{_pl2Slider.Value} W (Padrao: {defPl2} W)";
+        _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}% (Padrao: 100%)";
     }
 
     private void UpdateUiFromState()
     {
-        if (_engine == null)
-            return;
+        if (_engine == null) return;
 
-        CpuTuningCapabilities cap = _engine.Capabilities;
-        CpuTuningState state = _engine.CurrentState;
+        CpuTuningState s = _engine.CurrentState;
+        _throttleMaxSlider.Value = Math.Max(_throttleMaxSlider.Minimum, Math.Min(_throttleMaxSlider.Maximum, s.MaxProcessorStatePercent));
+        _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}% (Padrao: 100%)";
 
-        _boostCombo.SelectedIndex = Clamp(state.TurboBoostMode, 0, 3);
+        _pl1Slider.Value = Math.Max(_pl1Slider.Minimum, Math.Min(_pl1Slider.Maximum, s.Pl1Watts));
+        _pl1ValLabel.Text = $"{_pl1Slider.Value} W (Padrao: {_engine.Capabilities.DefaultPl1Watts} W)";
 
-        _throttleMaxSlider.Value = Clamp(state.MaxProcessorStatePercent, 50, 100);
-        _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}%";
+        _pl2Slider.Value = Math.Max(_pl2Slider.Minimum, Math.Min(_pl2Slider.Maximum, s.Pl2Watts));
+        _pl2ValLabel.Text = $"{_pl2Slider.Value} W (Padrao: {_engine.Capabilities.DefaultPl2Watts} W)";
 
-        _pl1Slider.Value = Clamp(state.Pl1Watts, 15, 253);
-        _pl1ValLabel.Text = $"{_pl1Slider.Value} W";
+        _boostCombo.SelectedIndex = Math.Max(0, Math.Min(3, s.TurboBoostMode));
+        _chkApplyStartup.Checked = s.ApplyOnStartup;
 
-        _pl2Slider.Value = Clamp(state.Pl2Watts, 15, 253);
-        _pl2ValLabel.Text = $"{_pl2Slider.Value} W";
+        _pl1Slider.Enabled = _engine.Capabilities.CanAdjustRapl;
+        _pl2Slider.Enabled = _engine.Capabilities.CanAdjustRapl;
+        _raplInfoLabel.Text = $"Estado: {_engine.Capabilities.RaplStatusMessage}";
 
-        _pl1Slider.Enabled = cap.CanAdjustRapl;
-        _pl2Slider.Enabled = cap.CanAdjustRapl;
-
-        _raplInfoLabel.Text = cap.RaplStatusMessage;
-        _safetyBadge.SetBadge(
-            cap.CanAdjustRapl ? "RAPL Desbloqueado • Modo Seguro" : "Controlo Universal • Modo Seguro",
-            cap.CanAdjustRapl ? BadgeStyle.Success : BadgeStyle.Accent);
-
-        _chkApplyStartup.Checked = state.ApplyOnStartup;
         UpdatePresetButtonsHighlight();
     }
 
-    private void ApplyPreset(int presetIndex)
+    private void ApplyPreset(int index)
     {
-        if (_engine == null)
-            return;
-
-        _selectedPresetIndex = presetIndex;
+        if (_engine == null) return;
+        _selectedPresetIndex = index;
         int defPl1 = _engine.Capabilities.DefaultPl1Watts;
         int defPl2 = _engine.Capabilities.DefaultPl2Watts;
 
-        CpuTuningState preset = presetIndex switch
+        switch (index)
         {
-            0 => CpuTuningState.CreateEco(defPl1),
-            2 => CpuTuningState.CreateMaxPerformance(defPl1, defPl2),
-            _ => CpuTuningState.CreateBalanced(defPl1, defPl2)
-        };
+            case 0: // Eco
+                _throttleMaxSlider.Value = 90;
+                _boostCombo.SelectedIndex = 0; // Desativado
+                _pl1Slider.Value = Math.Max(15, (int)(defPl1 * 0.70f));
+                _pl2Slider.Value = Math.Max(15, (int)(defPl2 * 0.70f));
+                break;
 
-        _boostCombo.SelectedIndex = preset.TurboBoostMode;
-        _throttleMaxSlider.Value = preset.MaxProcessorStatePercent;
-        _throttleMaxValLabel.Text = $"{preset.MaxProcessorStatePercent}%";
-        _pl1Slider.Value = preset.Pl1Watts;
-        _pl1ValLabel.Text = $"{preset.Pl1Watts} W";
-        _pl2Slider.Value = preset.Pl2Watts;
-        _pl2ValLabel.Text = $"{preset.Pl2Watts} W";
+            case 1: // Balanced / Stock
+                _throttleMaxSlider.Value = 100;
+                _boostCombo.SelectedIndex = 1; // Ativo
+                _pl1Slider.Value = defPl1;
+                _pl2Slider.Value = defPl2;
+                break;
 
-        _statusMessageLabel.Text = "Preset selecionado. Carregue em 'Testar Perfil (15s)' para validar estabilidade.";
-        _statusMessageLabel.ForeColor = Theme.Current.StateWarmColor;
+            case 2: // Max Perf
+                _throttleMaxSlider.Value = 100;
+                _boostCombo.SelectedIndex = 2; // Agressivo
+                _pl1Slider.Value = Math.Min(253, (int)(defPl1 * 1.25f));
+                _pl2Slider.Value = Math.Min(253, (int)(defPl2 * 1.25f));
+                break;
+        }
+
+        UpdateStockLabels();
         UpdatePresetButtonsHighlight();
     }
 
     private void UpdatePresetButtonsHighlight()
     {
-        Theme theme = Theme.Current;
-        FluentStyle.StyleChipButton(_btnEco, theme, _selectedPresetIndex == 0);
-        FluentStyle.StyleChipButton(_btnBalanced, theme, _selectedPresetIndex == 1);
-        FluentStyle.StyleChipButton(_btnMaxPerf, theme, _selectedPresetIndex == 2);
+        _btnEco.IsActive = _selectedPresetIndex == 0;
+        _btnBalanced.IsActive = _selectedPresetIndex == 1;
+        _btnMaxPerf.IsActive = _selectedPresetIndex == 2;
     }
 
     private void BtnTest_Click(object sender, EventArgs e)
     {
-        if (_engine == null)
-            return;
+        if (_engine == null) return;
 
         CpuTuningState newState = new()
         {
-            TurboBoostMode = _boostCombo.SelectedIndex,
             MaxProcessorStatePercent = _throttleMaxSlider.Value,
+            TurboBoostMode = _boostCombo.SelectedIndex,
             Pl1Watts = _pl1Slider.Value,
             Pl2Watts = _pl2Slider.Value,
             ApplyOnStartup = _chkApplyStartup.Checked
@@ -475,27 +507,26 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         if (_engine.StartWatchdogTest(newState, out string error))
         {
             _watchdogContainer.Visible = true;
-            _statusMessageLabel.Text = "Teste de CPU em execucao. Confirme para tornar as alteracoes persistentes.";
-            _statusMessageLabel.ForeColor = Theme.Current.StateWarmColor;
+            _statusMessageLabel.Text = "Teste de seguranca iniciado. Confirme para manter.";
+            _statusMessageLabel.ForeColor = Theme.Current.AccentColor;
         }
         else
         {
-            _statusMessageLabel.Text = error ?? "Falha ao aplicar configuracao.";
+            _statusMessageLabel.Text = error ?? "Erro ao iniciar teste.";
             _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
         }
     }
 
     private void BtnResetStock_Click(object sender, EventArgs e)
     {
-        if (_engine == null)
-            return;
+        if (_engine == null) return;
 
         if (_engine.ResetToStock(out string error))
         {
-            _watchdogContainer.Visible = false;
             _selectedPresetIndex = 1;
             UpdateUiFromState();
-            _statusMessageLabel.Text = "Valores padrao do processador restaurados.";
+            _watchdogContainer.Visible = false;
+            _statusMessageLabel.Text = "Valores de fabrica (stock) repostos com sucesso.";
             _statusMessageLabel.ForeColor = Theme.Current.StateCoolColor;
         }
         else
@@ -599,8 +630,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         if (telem.TotalLoadPercent.HasValue)
         {
             float load = telem.TotalLoadPercent.Value;
-            MetricCardSeverity sev = load >= 80f ? MetricCardSeverity.Warm : (load <= 10f ? MetricCardSeverity.Cool : MetricCardSeverity.Normal);
-            _loadCard.SetMetric("CARGA TOTAL", $"{load:F0}", "%", "Uso de CPU", sev, load / 100f);
+            _loadCard.SetMetric("CARGA TOTAL", $"{load:F0}", "%", "Uso de CPU", load > 85f ? MetricCardSeverity.Hot : MetricCardSeverity.Normal, load / 100f);
         }
         else
         {
@@ -615,69 +645,44 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
 
         _titleLabel.ForeColor = theme.ForegroundColor;
         _subtitleLabel.ForeColor = theme.MutedForegroundColor;
-        _boostHelpLabel.ForeColor = theme.MutedForegroundColor;
-        _raplInfoLabel.ForeColor = theme.MutedForegroundColor;
-
-        _boostLabel.ForeColor = theme.ForegroundColor;
-        _throttleMaxLabel.ForeColor = theme.ForegroundColor;
-        _pl1Label.ForeColor = theme.ForegroundColor;
-        _pl2Label.ForeColor = theme.ForegroundColor;
-        _chkApplyStartup.ForeColor = theme.ForegroundColor;
-
-        _throttleMaxValLabel.ForeColor = theme.AccentColor;
-        _pl1ValLabel.ForeColor = theme.AccentColor;
-        _pl2ValLabel.ForeColor = theme.AccentColor;
-
-        _throttleMaxSlider.BackColor = theme.SurfaceColor;
-        _pl1Slider.BackColor = theme.SurfaceColor;
-        _pl2Slider.BackColor = theme.SurfaceColor;
-
-        _boostCombo.ApplyTheme(theme);
-
-        FluentStyle.StylePrimaryButton(_btnTest, theme);
-        FluentStyle.StyleSecondaryButton(_btnResetStock, theme);
-        FluentStyle.StylePrimaryButton(_btnKeep, theme);
-        FluentStyle.StyleSecondaryButton(_btnRevert, theme);
-
         _safetyBadge.ApplyTheme(theme);
+
         _tempCard.ApplyTheme(theme);
         _powerCard.ApplyTheme(theme);
         _clockCard.ApplyTheme(theme);
         _loadCard.ApplyTheme(theme);
+
+        _safetyCard.ApplyTheme(theme);
+        _safetyDescLabel.ForeColor = theme.ForegroundColor;
+        _safetyStockLabel.ForeColor = theme.AccentColor;
+
         _presetsCard.ApplyTheme(theme);
+        _btnEco.ApplyTheme(theme);
+        _btnBalanced.ApplyTheme(theme);
+        _btnMaxPerf.ApplyTheme(theme);
+
+        _watchdogBanner.ApplyTheme(theme);
+        _watchdogLabel.ForeColor = theme.ForegroundColor;
+        _btnKeep.ApplyTheme(theme);
+        _btnRevert.ApplyTheme(theme);
+
         _controlsCard.ApplyTheme(theme);
+        _boostLabel.ForeColor = theme.ForegroundColor;
+        _boostCombo.ApplyTheme(theme);
+        _boostHelpLabel.ForeColor = theme.MutedForegroundColor;
 
-        UpdatePresetButtonsHighlight();
+        _throttleMaxLabel.ForeColor = theme.ForegroundColor;
+        _throttleMaxValLabel.ForeColor = theme.ForegroundColor;
+        _pl1Label.ForeColor = theme.ForegroundColor;
+        _pl1ValLabel.ForeColor = theme.ForegroundColor;
+        _pl2Label.ForeColor = theme.ForegroundColor;
+        _pl2ValLabel.ForeColor = theme.ForegroundColor;
+        _raplInfoLabel.ForeColor = theme.MutedForegroundColor;
+
+        _btnTest.ApplyTheme(theme);
+        _btnResetStock.ApplyTheme(theme);
+        _chkApplyStartup.ForeColor = theme.ForegroundColor;
+
         Invalidate();
-    }
-
-    private static int Clamp(int value, int min, int max)
-    {
-        return value < min ? min : (value > max ? max : value);
-    }
-
-    public sealed class WatchdogAlertPanel : Panel
-    {
-        public WatchdogAlertPanel()
-        {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
-                     ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
-        }
-
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            Theme theme = Theme.Current;
-            e.Graphics.Clear(Parent?.BackColor ?? theme.BackgroundColor);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
-            float radius = Math.Max(4f, LogicalToDeviceUnits(theme.CornerRadius + 2));
-            RectangleF bounds = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-
-            Color bg = FluentStyle.Blend(theme.SurfaceColor, theme.StateWarmColor, theme.IsDark ? 0.25 : 0.14);
-            Color border = FluentStyle.Blend(theme.SurfaceStrokeColor, theme.StateWarmColor, 0.6);
-
-            FluentStyle.FillRounded(e.Graphics, bg, bounds, radius);
-            FluentStyle.DrawRounded(e.Graphics, border, bounds, radius);
-        }
     }
 }
