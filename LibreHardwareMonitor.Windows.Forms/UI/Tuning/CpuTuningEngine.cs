@@ -327,6 +327,20 @@ public sealed class CpuTuningEngine : IDisposable
         // O ciclo do BackgroundUpdater encarrega-se de atualizar o hardware com cadencia estavel.
         ReadSensorsRecursive(_cpuHardware, telem);
 
+        // Fallback para voltagem VCore da Motherboard / Super I/O caso a CPU nao exponha sensor de tensao direto
+        if (telem.VoltageV == null && _computer != null)
+        {
+            foreach (IHardware hw in _computer.Hardware)
+            {
+                if (hw.HardwareType == HardwareType.Motherboard || hw.HardwareType == HardwareType.SuperIO)
+                {
+                    ReadMotherboardVoltage(hw, telem);
+                    if (telem.VoltageV != null)
+                        break;
+                }
+            }
+        }
+
         // Manter ultimos valores validos conhecidos para estabilidade total do utilizador
         if (telem.PackageTemperatureC.HasValue && telem.PackageTemperatureC.Value > 0f)
             _lastTemp = telem.PackageTemperatureC;
@@ -411,6 +425,29 @@ public sealed class CpuTuningEngine : IDisposable
 
         foreach (IHardware sub in hw.SubHardware)
             ReadSensorsRecursive(sub, telem);
+    }
+
+    private static void ReadMotherboardVoltage(IHardware hw, CpuTuningTelemetry telem)
+    {
+        foreach (ISensor sensor in hw.Sensors)
+        {
+            if (sensor.SensorType == SensorType.Voltage && sensor.Value.HasValue)
+            {
+                if (sensor.Name.IndexOf("VCore", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    sensor.Name.IndexOf("CPU", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    telem.VoltageV = sensor.Value.Value;
+                    return;
+                }
+            }
+        }
+
+        foreach (IHardware sub in hw.SubHardware)
+        {
+            ReadMotherboardVoltage(sub, telem);
+            if (telem.VoltageV != null)
+                return;
+        }
     }
 
     public void Dispose()

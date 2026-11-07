@@ -253,7 +253,9 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         else
         {
             _emptyContainer.Visible = false;
-            _activeFansCard.SetMetric("CANAIS ATIVOS", $"{_engine.Channels.Count}", "canais", "Super I/O Ativo", MetricCardSeverity.Cool);
+            int count = _engine.Channels.Count;
+            string fanUnit = count == 1 ? "canal" : "canais";
+            _activeFansCard.SetMetric("CANAIS ATIVOS", count.ToString(), fanUnit, "Super I/O Ativo", MetricCardSeverity.Cool);
 
             // Adicionar cartões de trás para a frente com wrapper de espaçamento para manter ordem natural
             for (int i = _engine.Channels.Count - 1; i >= 0; i--)

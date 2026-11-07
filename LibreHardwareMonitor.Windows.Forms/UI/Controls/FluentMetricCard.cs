@@ -39,6 +39,7 @@ public sealed class FluentMetricCard : Control, IThemedControl
     private bool _isHovered;
 
     private Font _valueFont;
+    private Font _compactValueFont;
     private Font _detailFont;
 
     public FluentMetricCard()
@@ -237,8 +238,14 @@ public sealed class FluentMetricCard : Control, IThemedControl
 
         y += iconSize + LogicalToDeviceUnits(6);
         string formattedValue = string.IsNullOrEmpty(_unitText) ? _valueText : $"{_valueText} {_unitText}";
+        Font valFont = _valueFont;
+        if (formattedValue.Length > 8)
+        {
+            _compactValueFont ??= FluentStyle.CreateDisplayFont(12.5f);
+            valFont = _compactValueFont;
+        }
         Rectangle valueRect = new(x - LogicalToDeviceUnits(1), y, innerWidth, _valueFont.Height + LogicalToDeviceUnits(2));
-        TextRenderer.DrawText(g, formattedValue, _valueFont, valueRect, valColor, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(g, formattedValue, valFont, valueRect, valColor, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.EndEllipsis);
 
         // 3. Detail line
         y = valueRect.Bottom + LogicalToDeviceUnits(2);

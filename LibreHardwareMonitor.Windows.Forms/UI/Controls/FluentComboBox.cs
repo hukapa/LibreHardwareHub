@@ -20,11 +20,14 @@ public class FluentComboBox : ComboBox, IThemedControl
     private const int WM_PAINT = 0x000F;
     private bool _isHovered;
 
+    protected override bool ShowFocusCues => false;
+
     public FluentComboBox()
     {
+        FlatStyle = FlatStyle.Flat;
         DrawMode = DrawMode.OwnerDrawFixed;
         DropDownStyle = ComboBoxStyle.DropDownList;
-        ItemHeight = LogicalToDeviceUnits(24);
+        ItemHeight = LogicalToDeviceUnits(26);
         Font = FluentStyle.UiFont;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
@@ -33,6 +36,18 @@ public class FluentComboBox : ComboBox, IThemedControl
     {
         BackColor = theme.SurfaceColor;
         ForeColor = theme.ForegroundColor;
+        Invalidate();
+    }
+
+    protected override void OnGotFocus(EventArgs e)
+    {
+        base.OnGotFocus(e);
+        Invalidate();
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        base.OnLostFocus(e);
         Invalidate();
     }
 
@@ -79,12 +94,6 @@ public class FluentComboBox : ComboBox, IThemedControl
             textBounds,
             text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-
-        if (isSelected)
-        {
-            using Pen focusPen = new(theme.AccentColor, 1f);
-            g.DrawRectangle(focusPen, e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
-        }
     }
 
     protected override void WndProc(ref Message m)
@@ -107,8 +116,12 @@ public class FluentComboBox : ComboBox, IThemedControl
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         Rectangle client = ClientRectangle;
+        Color parentBg = Parent?.BackColor ?? theme.BackgroundColor;
+        using (SolidBrush bgBrush = new(parentBg))
+            g.FillRectangle(bgBrush, client);
+
         float radius = Math.Max(3f, LogicalToDeviceUnits(theme.CornerRadius));
-        RectangleF bounds = new(1f, 1f, client.Width - 2f, client.Height - 2f);
+        RectangleF bounds = new(0.5f, 0.5f, client.Width - 1f, client.Height - 1f);
 
         Color surface = _isHovered ? theme.HoverBackgroundColor : theme.SurfaceColor;
         Color border = Focused ? theme.AccentColor : (_isHovered ? theme.AccentColor : theme.SurfaceStrokeColor);
@@ -133,7 +146,7 @@ public class FluentComboBox : ComboBox, IThemedControl
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
         // Draw Fluent chevron down arrow
-        float chevronX = client.Width - LogicalToDeviceUnits(16);
+        float chevronX = client.Width - LogicalToDeviceUnits(14);
         float chevronY = (client.Height / 2f) - LogicalToDeviceUnits(2);
         float arrowSize = LogicalToDeviceUnits(4);
         using Pen arrowPen = new(theme.MutedForegroundColor, 1.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };

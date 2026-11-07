@@ -1,12 +1,12 @@
 @echo off
 setlocal
 
-set "EXE_PATH=%~dp0bin\Publish-SingleFile\LibreHardwareMonitor.Windows.Forms.exe"
-set "WORK_DIR=%~dp0bin\Publish-SingleFile"
+set "EXE_PATH=%~dp0..\bin\Publish-SingleFile\LibreHardwareMonitor.Windows.Forms.exe"
+set "WORK_DIR=%~dp0..\bin\Publish-SingleFile"
 
 if not exist "%EXE_PATH%" (
-    set "EXE_PATH=%~dp0bin\Release\net8.0-windows\LibreHardwareMonitor.Windows.Forms.exe"
-    set "WORK_DIR=%~dp0bin\Release\net8.0-windows"
+    set "EXE_PATH=%~dp0..\bin\Release\net8.0-windows\LibreHardwareMonitor.Windows.Forms.exe"
+    set "WORK_DIR=%~dp0..\bin\Release\net8.0-windows"
 )
 
 if not exist "%EXE_PATH%" (

@@ -75,6 +75,13 @@ public static class Program
             }
         }
 
+        // Exigir privilegios administrativos para acesso a sensores de hardware de baixo nivel (MSR, PawnIO, Super I/O)
+        if (!IsElevated())
+        {
+            RestartElevated();
+            return;
+        }
+
         // Blindagem contra execucao concorrente para prevenir colisoes de barramento LPC/SMBus
         using Mutex mutex = new(true, SingleInstanceMutexName, out bool isNewInstance);
         if (!isNewInstance)
