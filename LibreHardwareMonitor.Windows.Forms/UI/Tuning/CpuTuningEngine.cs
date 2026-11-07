@@ -318,7 +318,20 @@ public sealed class CpuTuningEngine : IDisposable
 
         _cpuHardware.Update();
 
-        foreach (ISensor sensor in _cpuHardware.Sensors)
+        // Iterar sensores do hardware principal e sub-hardware (ex: núcleos individuais)
+        ReadSensorsInto(_cpuHardware, telem);
+        foreach (IHardware sub in _cpuHardware.SubHardware)
+        {
+            sub.Update();
+            ReadSensorsInto(sub, telem);
+        }
+
+        return telem;
+    }
+
+    private static void ReadSensorsInto(IHardware hw, CpuTuningTelemetry telem)
+    {
+        foreach (ISensor sensor in hw.Sensors)
         {
             if (sensor.Value == null)
                 continue;
@@ -353,8 +366,6 @@ public sealed class CpuTuningEngine : IDisposable
                     break;
             }
         }
-
-        return telem;
     }
 
     public void Dispose()

@@ -157,7 +157,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _telemetryRow.Controls.Add(_powerCard);
 
         // 3. Cartao de Seguranca de Hardware
-        _safetyContainer = new Panel { Dock = DockStyle.Top, Height = 84 + gap, Padding = new Padding(0, 0, 0, gap) };
+        _safetyContainer = new Panel { Dock = DockStyle.Top, Height = 94 + gap, Padding = new Padding(0, 0, 0, gap) };
         _safetyCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
@@ -166,15 +166,15 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         };
         _safetyDescLabel = new Label
         {
-            Text = "O teste rapido reverte automaticamente em 15s. Se o computador desligar de forma anormal, o watchdog de arranque desativa o overclock.",
-            Location = new Point(16, 52),
+            Text = "Teste rapido reverte em 15s. Se desligar de forma anormal, o watchdog de arranque desativa o overclock.",
+            Location = new Point(16, 56),
             AutoSize = true,
             Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
         };
         _safetyStockLabel = new Label
         {
             Text = "Valores de Fabrica: Core = +0 MHz | VRAM = +0 MHz | TDP = 100% | Limite Termico = 83 °C",
-            Location = new Point(16, 68),
+            Location = new Point(16, 74),
             AutoSize = true,
             Font = FluentStyle.CreateUiFont(FontStyle.Bold, 8.5f)
         };
@@ -182,22 +182,23 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _safetyCard.Controls.Add(_safetyStockLabel);
         _safetyContainer.Controls.Add(_safetyCard);
 
-        // 4. Perfis Rapidos
-        _presetsContainer = new Panel { Dock = DockStyle.Top, Height = 96 + gap, Padding = new Padding(0, 0, 0, gap) };
+        // 4. Perfis Rapidos — hierarquia visual: Stock=Success, Eco=Standard, Perf=Accent
+        _presetsContainer = new Panel { Dock = DockStyle.Top, Height = 100 + gap, Padding = new Padding(0, 0, 0, gap) };
         _presetsCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
             Title = "Perfis Rapidos Recomendados",
-            Subtitle = "Selecione uma configuracao balanceada ou ajuste parametros individuais abaixo."
+            Subtitle = "Escolha um ponto de partida seguro. Pode ajustar individualmente abaixo."
         };
 
-        _btnEco = new FluentButton { Text = "Modo Silencioso (Eco)", Location = new Point(16, 52), Width = 160, Height = 32 };
+        // Stock=Success (recomendado/seguro), Eco=Standard, Perf=Accent
+        _btnEco = new FluentButton { Text = "Modo Silencioso (Eco)", Location = new Point(16, 56), Width = 165, Height = 34, Variant = FluentButtonVariant.Standard };
         _btnEco.Click += (_, _) => ApplyPreset(0);
 
-        _btnBalanced = new FluentButton { Text = "Padrao de Fabrica (Stock)", Location = new Point(186, 52), Width = 180, Height = 32, IsActive = true };
+        _btnBalanced = new FluentButton { Text = "Padrao de Fabrica (Stock)", Location = new Point(191, 56), Width = 190, Height = 34, Variant = FluentButtonVariant.Success };
         _btnBalanced.Click += (_, _) => ApplyPreset(1);
 
-        _btnMaxPerf = new FluentButton { Text = "Desempenho Moderado", Location = new Point(376, 52), Width = 180, Height = 32 };
+        _btnMaxPerf = new FluentButton { Text = "Desempenho Moderado", Location = new Point(391, 56), Width = 180, Height = 34, Variant = FluentButtonVariant.Standard };
         _btnMaxPerf.Click += (_, _) => ApplyPreset(2);
 
         _presetsCard.Controls.Add(_btnEco);
@@ -325,16 +326,16 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         {
             Text = "Testar com Seguranca (15s)",
             Location = new Point(0, 4),
-            Width = 190,
+            Width = 196,
             Height = 34,
-            Variant = FluentButtonVariant.Accent
+            Variant = FluentButtonVariant.Success  // Verde = acao segura com watchdog
         };
         _btnTest.Click += BtnTest_Click;
 
         _btnResetStock = new FluentButton
         {
             Text = "Repor Valores da Placa",
-            Location = new Point(202, 4),
+            Location = new Point(208, 4),
             Width = 190,
             Height = 34,
             Variant = FluentButtonVariant.Standard
@@ -344,7 +345,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _chkApplyStartup = new CheckBox
         {
             Text = "Aplicar perfil no arranque do Windows (protegido por watchdog de 120s)",
-            Location = new Point(410, 11),
+            Location = new Point(416, 11),
             AutoSize = true,
             Font = FluentStyle.UiFont
         };
@@ -528,8 +529,15 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
     private void UpdatePresetButtonsHighlight()
     {
         _btnEco.IsActive = _selectedPresetIndex == 0;
+        _btnEco.Variant = FluentButtonVariant.Standard;
+
+        // Stock: sempre Success para comunicar "seguro/padrao"
         _btnBalanced.IsActive = _selectedPresetIndex == 1;
+        _btnBalanced.Variant = _selectedPresetIndex == 1 ? FluentButtonVariant.Success : FluentButtonVariant.Standard;
+
+        // Desempenho: selecionado=Accent, nao selecionado=Standard
         _btnMaxPerf.IsActive = _selectedPresetIndex == 2;
+        _btnMaxPerf.Variant = _selectedPresetIndex == 2 ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
     }
 
     private void BtnTest_Click(object sender, EventArgs e)

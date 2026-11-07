@@ -75,35 +75,37 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _presetLabel = new Label
         {
             Text = "Perfil Global:",
-            Location = new Point(0, 52),
+            Location = new Point(0, 54),
             AutoSize = true,
             Font = FluentStyle.UiFontSemibold
         };
 
         _presetCombo = new FluentComboBox
         {
-            Location = new Point(84, 48),
-            Width = 170
+            Location = new Point(84, 50),
+            Width = 180
         };
         _presetCombo.Items.AddRange(new object[] { "BIOS Padrao", "Silencioso", "Equilibrado", "Desempenho", "Personalizado" });
         _presetCombo.SelectedIndex = 0;
         _presetCombo.SelectedIndexChanged += PresetCombo_SelectedIndexChanged;
 
+        // Badge de perfil atual — confirmacao visual do modo activo
         _profileBadge = new FluentBadge
         {
-            Location = new Point(266, 48),
+            Location = new Point(276, 50),
             Height = 22,
             Style = BadgeStyle.Neutral
         };
         _profileBadge.SetBadge("BIOS Padrao", BadgeStyle.Neutral);
 
+        // Badge de seguranca termica
         _safetyBadge = new FluentBadge
         {
-            Location = new Point(410, 48),
+            Location = new Point(276 + 110, 50),
             Height = 22,
             Style = BadgeStyle.Success
         };
-        _safetyBadge.SetBadge("Protecao Termica Ativa (>90 C 100% Forcado)", BadgeStyle.Success);
+        _safetyBadge.SetBadge("Protecao Termica (>90 C → 100%)", BadgeStyle.Success);
 
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_subtitleLabel);

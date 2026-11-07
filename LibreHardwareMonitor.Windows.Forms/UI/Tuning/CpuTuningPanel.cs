@@ -139,7 +139,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _telemetryRow.Controls.Add(_loadCard);
 
         // 3. Cartao de Seguranca e Garantias
-        _safetyContainer = new Panel { Dock = DockStyle.Top, Height = 84 + gap, Padding = new Padding(0, 0, 0, gap) };
+        _safetyContainer = new Panel { Dock = DockStyle.Top, Height = 94 + gap, Padding = new Padding(0, 0, 0, gap) };
         _safetyCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
@@ -148,15 +148,15 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         };
         _safetyDescLabel = new Label
         {
-            Text = "O sistema aplica clamping automatico. Se algum teste for instavel, o watchdog repoe os valores de fabrica em 15 segundos.",
-            Location = new Point(16, 52),
+            Text = "Clamping automatico ativo. Se o teste for instavel, o watchdog repoe os valores de fabrica em 15 segundos.",
+            Location = new Point(16, 56),
             AutoSize = true,
             Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
         };
         _safetyStockLabel = new Label
         {
             Text = "Valores de Fabrica: A carregar...",
-            Location = new Point(16, 68),
+            Location = new Point(16, 74),
             AutoSize = true,
             Font = FluentStyle.CreateUiFont(FontStyle.Bold, 8.5f)
         };
@@ -164,22 +164,23 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _safetyCard.Controls.Add(_safetyStockLabel);
         _safetyContainer.Controls.Add(_safetyCard);
 
-        // 4. Perfis Rapidos
-        _presetsContainer = new Panel { Dock = DockStyle.Top, Height = 96 + gap, Padding = new Padding(0, 0, 0, gap) };
+        // 4. Perfis Rapidos — hierarquia visual clara: Stock=Success, Eco=Standard, MaxPerf=Accent
+        _presetsContainer = new Panel { Dock = DockStyle.Top, Height = 100 + gap, Padding = new Padding(0, 0, 0, gap) };
         _presetsCard = new FluentSectionCard
         {
             Dock = DockStyle.Fill,
             Title = "Perfis Rapidos Recomendados",
-            Subtitle = "Selecione uma configuracao balanceada ou ajuste parametros individuais abaixo."
+            Subtitle = "Escolha um ponto de partida seguro. Pode ajustar individualmente abaixo."
         };
 
-        _btnEco = new FluentButton { Text = "Eco / Silencioso", Location = new Point(16, 52), Width = 150, Height = 32 };
+        _btnEco = new FluentButton { Text = "Eco / Silencioso", Location = new Point(16, 56), Width = 155, Height = 34, Variant = FluentButtonVariant.Standard };
         _btnEco.Click += (_, _) => ApplyPreset(0);
 
-        _btnBalanced = new FluentButton { Text = "Equilibrado (Fabrica)", Location = new Point(176, 52), Width = 170, Height = 32, IsActive = true };
+        // Equilibrado/Fabrica parte como variante Success (seguro e recomendado)
+        _btnBalanced = new FluentButton { Text = "Equilibrado (Fabrica)", Location = new Point(181, 56), Width = 185, Height = 34, Variant = FluentButtonVariant.Success };
         _btnBalanced.Click += (_, _) => ApplyPreset(1);
 
-        _btnMaxPerf = new FluentButton { Text = "Desempenho Maximo", Location = new Point(356, 52), Width = 170, Height = 32 };
+        _btnMaxPerf = new FluentButton { Text = "Desempenho Maximo", Location = new Point(376, 56), Width = 170, Height = 34, Variant = FluentButtonVariant.Standard };
         _btnMaxPerf.Click += (_, _) => ApplyPreset(2);
 
         _presetsCard.Controls.Add(_btnEco);
@@ -329,16 +330,16 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         {
             Text = "Testar com Seguranca (15s)",
             Location = new Point(0, 4),
-            Width = 190,
+            Width = 196,
             Height = 34,
-            Variant = FluentButtonVariant.Accent
+            Variant = FluentButtonVariant.Success  // Verde = acao segura com watchdog
         };
         _btnTest.Click += BtnTest_Click;
 
         _btnResetStock = new FluentButton
         {
             Text = "Repor Valores de Fabrica",
-            Location = new Point(202, 4),
+            Location = new Point(208, 4),
             Width = 190,
             Height = 34,
             Variant = FluentButtonVariant.Standard
@@ -348,7 +349,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _chkApplyStartup = new CheckBox
         {
             Text = "Aplicar perfil no arranque do Windows (protegido por watchdog de 120s)",
-            Location = new Point(410, 11),
+            Location = new Point(416, 11),
             AutoSize = true,
             Font = FluentStyle.UiFont
         };
@@ -486,9 +487,17 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
 
     private void UpdatePresetButtonsHighlight()
     {
+        // Eco: selecionado=Standard+Active, nao selecionado=Standard
         _btnEco.IsActive = _selectedPresetIndex == 0;
+        _btnEco.Variant = FluentButtonVariant.Standard;
+
+        // Balanced / Stock: cor fixa Success para sempre comunicar "seguro/recomendado"
         _btnBalanced.IsActive = _selectedPresetIndex == 1;
+        _btnBalanced.Variant = _selectedPresetIndex == 1 ? FluentButtonVariant.Success : FluentButtonVariant.Standard;
+
+        // Max Perf: selecionado=Accent, nao selecionado=Standard
         _btnMaxPerf.IsActive = _selectedPresetIndex == 2;
+        _btnMaxPerf.Variant = _selectedPresetIndex == 2 ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
     }
 
     private void BtnTest_Click(object sender, EventArgs e)
