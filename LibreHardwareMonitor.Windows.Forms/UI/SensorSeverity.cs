@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
@@ -29,6 +29,7 @@ public static class SensorSeverity
         {
             SensorType.Temperature => v >= 85 ? SeverityLevel.Hot : v >= 70 ? SeverityLevel.Warm : SeverityLevel.Normal,
             SensorType.Load => v >= 90 ? SeverityLevel.Hot : v >= 75 ? SeverityLevel.Warm : SeverityLevel.Normal,
+            SensorType.Voltage => v >= 1.45f ? SeverityLevel.Hot : v >= 1.35f ? SeverityLevel.Warm : SeverityLevel.Normal,
             _ => SeverityLevel.None
         };
     }
@@ -48,6 +49,7 @@ public static class SensorSeverity
         {
             SensorType.Load or SensorType.Level or SensorType.Control or SensorType.Humidity => value.Value / 100f,
             SensorType.Temperature => value.Value / 100f,
+            SensorType.Voltage => value.Value / 1.5f,
             _ => float.NaN
         };
 

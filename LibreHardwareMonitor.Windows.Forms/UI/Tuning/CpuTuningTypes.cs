@@ -122,4 +122,6 @@ public sealed class CpuTuningTelemetry
     public float? CoreClockMhz { get; set; }
 
     public float? TotalLoadPercent { get; set; }
+
+    public float? VoltageV { get; set; }
 }

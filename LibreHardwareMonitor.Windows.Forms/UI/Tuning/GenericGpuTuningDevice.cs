@@ -48,12 +48,18 @@ public class GenericGpuTuningDevice : IGpuTuningDevice
         };
     }
 
+    private float? _lastCoreClock;
+    private float? _lastMemoryClock;
+    private float? _lastTemperature;
+    private float? _lastPower;
+    private float? _lastLoad;
+
     public virtual GpuTuningTelemetry ReadTelemetry()
     {
         GpuTuningTelemetry telemetry = new();
 
-        if (_hardware != null)
-            _hardware.Update();
+        if (_hardware == null)
+            return telemetry;
 
         foreach (ISensor sensor in _hardware.Sensors)
         {
@@ -90,6 +96,31 @@ public class GenericGpuTuningDevice : IGpuTuningDevice
                     break;
             }
         }
+
+        if (telemetry.CoreClockMhz.HasValue && telemetry.CoreClockMhz.Value > 0f)
+            _lastCoreClock = telemetry.CoreClockMhz;
+        else if (_lastCoreClock.HasValue)
+            telemetry.CoreClockMhz = _lastCoreClock;
+
+        if (telemetry.MemoryClockMhz.HasValue && telemetry.MemoryClockMhz.Value > 0f)
+            _lastMemoryClock = telemetry.MemoryClockMhz;
+        else if (_lastMemoryClock.HasValue)
+            telemetry.MemoryClockMhz = _lastMemoryClock;
+
+        if (telemetry.TemperatureC.HasValue && telemetry.TemperatureC.Value > 0f)
+            _lastTemperature = telemetry.TemperatureC;
+        else if (_lastTemperature.HasValue)
+            telemetry.TemperatureC = _lastTemperature;
+
+        if (telemetry.PowerWatts.HasValue && telemetry.PowerWatts.Value > 0f)
+            _lastPower = telemetry.PowerWatts;
+        else if (_lastPower.HasValue)
+            telemetry.PowerWatts = _lastPower;
+
+        if (telemetry.LoadPercent.HasValue)
+            _lastLoad = telemetry.LoadPercent;
+        else if (_lastLoad.HasValue)
+            telemetry.LoadPercent = _lastLoad;
 
         return telemetry;
     }

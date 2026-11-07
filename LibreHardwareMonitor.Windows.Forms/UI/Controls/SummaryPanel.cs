@@ -130,7 +130,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
 
         private static Image IconFor(SummaryMetric metric)
         {
-            return metric.Sensor.SensorType is SensorType.Temperature or SensorType.Power
+            return metric.Sensor.SensorType is SensorType.Temperature or SensorType.Power or SensorType.Voltage
                 ? FluentIcons.ForSensorType(metric.Sensor.SensorType)
                 : FluentIcons.ForHardware(metric.Hardware.HardwareType);
         }
@@ -148,6 +148,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
                 SensorType.Temperature when UseFahrenheit() => string.Format(culture, "{0:F0} °F", (v * 1.8f) + 32f),
                 SensorType.Temperature => string.Format(culture, "{0:F0} °C", v),
                 SensorType.Power => string.Format(culture, "{0:F1} W", v),
+                SensorType.Voltage => string.Format(culture, "{0:F3} V", v),
                 _ => string.Format(culture, "{0:F1}", v)
             };
         }

@@ -25,14 +25,14 @@ taskkill /f /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
 taskkill /f /im LibreHardwareMonitor.exe >nul 2>&1
 
 rem 3. Limpeza previa do executavel antigo
-set "TARGET_EXE=bin\Publish-SingleFile\LibreHardwareMonitor.Windows.Forms.exe"
+set "TARGET_DIR=%~dp0..\bin\Publish-SingleFile"
+set "TARGET_EXE=%TARGET_DIR%\LibreHardwareMonitor.Windows.Forms.exe"
 if exist "%TARGET_EXE%" (
     del /f /q "%TARGET_EXE%" >nul 2>&1
     if exist "%TARGET_EXE%" (
         echo.
         echo [AVISO] O programa ainda esta aberto em segundo plano e bloqueia o ficheiro.
-        echo Por favor feche o LibreHardwareMonitor no tabuleiro do sistema (relogio)
-        echo ou termine o processo no Gestor de Tarefas antes de compilar.
+        echo Por favor termine o processo no Gestor de Tarefas antes de compilar.
         echo.
         pause
         exit /b 1
@@ -41,7 +41,7 @@ if exist "%TARGET_EXE%" (
 
 rem 4. Compilar com dotnet publish
 echo [BUILD] A compilar e gerar pacote de ficheiro unico...
-dotnet publish LibreHardwareMonitor.Windows.Forms\LibreHardwareMonitor.Windows.Forms.csproj -c Release -f net8.0-windows -r win-x64 --self-contained false -p:PublishSingleFile=true -p:Platform=x64 -o "bin\Publish-SingleFile"
+dotnet publish LibreHardwareMonitor.Windows.Forms\LibreHardwareMonitor.Windows.Forms.csproj -c Release -f net8.0-windows -r win-x64 --self-contained false -p:PublishSingleFile=true -p:Platform=x64 -o "%TARGET_DIR%"
 if %errorlevel% neq 0 (
     echo.
     echo [ERRO] Falha durante o processo de publicacao.
@@ -52,13 +52,16 @@ if %errorlevel% neq 0 (
 rem 5. Copiar instalador do driver PawnIO
 if exist "tools\PawnIO_setup.exe" (
     echo [INFO] A copiar instalador PawnIO para o diretorio de distribuicao...
-    copy /y "tools\PawnIO_setup.exe" "bin\Publish-SingleFile\PawnIO_setup.exe" >nul
+    copy /y "tools\PawnIO_setup.exe" "%TARGET_DIR%\PawnIO_setup.exe" >nul
 )
 
 echo.
 echo ==========================================================
 echo  SUCESSO: Nova versao compilada e pronta a usar!
-echo  Destino: %~dp0..\bin\Publish-SingleFile\LibreHardwareMonitor.Windows.Forms.exe
+echo  Destino: %TARGET_EXE%
 echo ==========================================================
 echo.
-pause
+choice /C SN /N /T 5 /D S /M "Pretende iniciar a aplicacao agora? [S/N] (Auto em 5s): "
+if %errorlevel% equ 1 (
+    start "" /D "%TARGET_DIR%" "%TARGET_EXE%"
+)

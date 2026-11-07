@@ -21,6 +21,13 @@ public sealed class CpuTuningEngine : IDisposable
     private readonly IntelRaplControl _rapl;
     private IHardware _cpuHardware;
 
+    // Cache de ultimos valores validos para evitar cintilacoes e garantir leituras estaveis
+    private float? _lastTemp;
+    private float? _lastPower;
+    private float? _lastClock;
+    private float? _lastLoad;
+    private float? _lastVoltage;
+
     private readonly Timer _watchdogTimer;
     private readonly Timer _stabilityTimer;
     private CpuTuningState _preTestState;
@@ -316,20 +323,40 @@ public sealed class CpuTuningEngine : IDisposable
         if (_cpuHardware == null)
             return telem;
 
-        _cpuHardware.Update();
+        // Leitura recursiva direta dos sensores sem invocar Update() na thread de interface.
+        // O ciclo do BackgroundUpdater encarrega-se de atualizar o hardware com cadencia estavel.
+        ReadSensorsRecursive(_cpuHardware, telem);
 
-        // Iterar sensores do hardware principal e sub-hardware (ex: núcleos individuais)
-        ReadSensorsInto(_cpuHardware, telem);
-        foreach (IHardware sub in _cpuHardware.SubHardware)
-        {
-            sub.Update();
-            ReadSensorsInto(sub, telem);
-        }
+        // Manter ultimos valores validos conhecidos para estabilidade total do utilizador
+        if (telem.PackageTemperatureC.HasValue && telem.PackageTemperatureC.Value > 0f)
+            _lastTemp = telem.PackageTemperatureC;
+        else if (_lastTemp.HasValue)
+            telem.PackageTemperatureC = _lastTemp;
+
+        if (telem.PackagePowerWatts.HasValue && telem.PackagePowerWatts.Value > 0f)
+            _lastPower = telem.PackagePowerWatts;
+        else if (_lastPower.HasValue)
+            telem.PackagePowerWatts = _lastPower;
+
+        if (telem.CoreClockMhz.HasValue && telem.CoreClockMhz.Value > 0f)
+            _lastClock = telem.CoreClockMhz;
+        else if (_lastClock.HasValue)
+            telem.CoreClockMhz = _lastClock;
+
+        if (telem.TotalLoadPercent.HasValue)
+            _lastLoad = telem.TotalLoadPercent;
+        else if (_lastLoad.HasValue)
+            telem.TotalLoadPercent = _lastLoad;
+
+        if (telem.VoltageV.HasValue && telem.VoltageV.Value > 0f)
+            _lastVoltage = telem.VoltageV;
+        else if (_lastVoltage.HasValue)
+            telem.VoltageV = _lastVoltage;
 
         return telem;
     }
 
-    private static void ReadSensorsInto(IHardware hw, CpuTuningTelemetry telem)
+    private static void ReadSensorsRecursive(IHardware hw, CpuTuningTelemetry telem)
     {
         foreach (ISensor sensor in hw.Sensors)
         {
@@ -341,31 +368,49 @@ public sealed class CpuTuningEngine : IDisposable
             switch (sensor.SensorType)
             {
                 case SensorType.Temperature:
-                    if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        sensor.Name.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        sensor.Name.IndexOf("Tctl", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        telem.PackageTemperatureC == null)
-                    {
+                    if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0)
                         telem.PackageTemperatureC = val;
-                    }
+                    else if (sensor.Name.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0 && telem.PackageTemperatureC == null)
+                        telem.PackageTemperatureC = val;
+                    else if (sensor.Name.IndexOf("Tctl", StringComparison.OrdinalIgnoreCase) >= 0 && telem.PackageTemperatureC == null)
+                        telem.PackageTemperatureC = val;
+                    else if (telem.PackageTemperatureC == null && val > 0f)
+                        telem.PackageTemperatureC = val;
                     break;
 
                 case SensorType.Power:
-                    if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 || telem.PackagePowerWatts == null)
+                    if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0)
+                        telem.PackagePowerWatts = val;
+                    else if (telem.PackagePowerWatts == null && val > 0f)
                         telem.PackagePowerWatts = val;
                     break;
 
                 case SensorType.Clock:
-                    if (val > (telem.CoreClockMhz ?? 0f))
-                        telem.CoreClockMhz = val;
+                    if (sensor.Name.IndexOf("Bus", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        if (val > (telem.CoreClockMhz ?? 0f))
+                            telem.CoreClockMhz = val;
+                    }
                     break;
 
                 case SensorType.Load:
-                    if (sensor.Name.IndexOf("Total", StringComparison.OrdinalIgnoreCase) >= 0 || telem.TotalLoadPercent == null)
+                    if (sensor.Name.IndexOf("Total", StringComparison.OrdinalIgnoreCase) >= 0)
                         telem.TotalLoadPercent = val;
+                    else if (telem.TotalLoadPercent == null)
+                        telem.TotalLoadPercent = val;
+                    break;
+
+                case SensorType.Voltage:
+                    if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0)
+                        telem.VoltageV = val;
+                    else if (telem.VoltageV == null && val > 0f)
+                        telem.VoltageV = val;
                     break;
             }
         }
+
+        foreach (IHardware sub in hw.SubHardware)
+            ReadSensorsRecursive(sub, telem);
     }
 
     public void Dispose()

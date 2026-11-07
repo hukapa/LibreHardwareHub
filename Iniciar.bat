@@ -1,41 +1,88 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 title LibreHardwareMonitor, LHM
 cd /d "%~dp0"
 
-set "EXE=%~dp0bin\Publish-SingleFile\LibreHardwareMonitor.Windows.Forms.exe"
-if not exist "%EXE%" set "EXE=%~dp0bin\Publish-Test\LibreHardwareMonitor.Windows.Forms.exe"
+set "TARGET_DIR=%~dp0bin\Publish-SingleFile"
+set "TARGET_EXE=%TARGET_DIR%\LibreHardwareMonitor.Windows.Forms.exe"
+
+if exist "%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe" (
+    set "DOTNET_ROOT=%LOCALAPPDATA%\Microsoft\dotnet"
+    set "PATH=%LOCALAPPDATA%\Microsoft\dotnet;!PATH!"
+)
 
 echo ==========================================================
 echo                LibreHardwareMonitor, LHM
 echo ==========================================================
-echo  1. Iniciar Aplicacao (Auto-arranque em 3s)
-echo  2. Compilar e Publicar Nova Versao
+echo  [1] Compilar e Iniciar (Garante todas as alteracoes)
+echo  [2] Iniciar Rapido (Sem compilar)
+echo  [3] Apenas Publicar Release
 echo ==========================================================
+echo  A arrancar a opcao [1] automaticamente em 3 segundos...
+echo.
 
-choice /C 12 /N /T 3 /D 1 /M "Prima [1] para Iniciar ou [2] para Compilar: "
-if %errorlevel% equ 2 goto BUILD
-goto RUN
+choice /C 123 /N /T 3 /D 1 /M "Escolha [1, 2 ou 3]: "
+set "CHOICE_VAL=!errorlevel!"
 
-:BUILD
+if "!CHOICE_VAL!"=="2" goto RUN_FAST
+if "!CHOICE_VAL!"=="3" goto BUILD_ONLY
+goto BUILD_AND_RUN
+
+:BUILD_AND_RUN
+echo.
+echo ==========================================================
+echo  [1/3] A fechar instancias anteriores em segundo plano...
+echo ==========================================================
+taskkill /f /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
+taskkill /f /im LibreHardwareMonitor.exe >nul 2>&1
+
+echo.
+echo ==========================================================
+echo  [2/3] A compilar e publicar a versao mais recente (.NET 8.0)...
+echo ==========================================================
+dotnet publish LibreHardwareMonitor.Windows.Forms\LibreHardwareMonitor.Windows.Forms.csproj -c Release -f net8.0-windows -r win-x64 --self-contained false -p:PublishSingleFile=true -p:Platform=x64 -o "bin\Publish-SingleFile"
+if !errorlevel! neq 0 (
+    echo.
+    echo [ERRO] Falha na compilacao. Verifique as mensagens de erro acima.
+    pause
+    exit /b !errorlevel!
+)
+
+if exist "tools\PawnIO_setup.exe" (
+    copy /y "tools\PawnIO_setup.exe" "bin\Publish-SingleFile\PawnIO_setup.exe" >nul 2>&1
+)
+
+echo.
+echo ==========================================================
+echo  [3/3] A iniciar aplicacao atualizada com sucesso!
+echo ==========================================================
+goto LAUNCH_APP
+
+:RUN_FAST
+echo.
+echo [INFO] A fechar instancias anteriores...
+taskkill /f /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
+if not exist "%TARGET_EXE%" (
+    echo [INFO] Executavel nao encontrado. A compilar primeiro...
+    goto BUILD_AND_RUN
+)
+echo [INFO] A iniciar aplicacao existente...
+goto LAUNCH_APP
+
+:BUILD_ONLY
+echo.
+echo [INFO] A compilar release...
 call "scripts\Publicar-Release.bat"
 goto END
 
-:RUN
-if not exist "%EXE%" (
-    echo [INFO] Binario nao encontrado. A compilar nova versao...
-    call "scripts\Publicar-Release.bat"
-    set "EXE=%~dp0bin\Publish-SingleFile\LibreHardwareMonitor.Windows.Forms.exe"
-)
-
-if exist "%EXE%" (
-    echo [INFO] A iniciar aplicacao...
-    start "" "%EXE%"
+:LAUNCH_APP
+if exist "%TARGET_EXE%" (
+    start "" /D "%TARGET_DIR%" "%TARGET_EXE%"
     exit /b 0
 ) else (
-    echo [ERRO] O executavel nao foi encontrado.
+    echo [ERRO] O executavel nao foi encontrado em "%TARGET_EXE%".
     pause
+    exit /b 1
 )
-goto END
 
 :END

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using LibreHardwareMonitor.Hardware;
@@ -23,7 +23,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
     }
 
     /// <summary>
-    /// Picks the most representative sensors (CPU, GPU, memory, power) from the detected hardware,
+    /// Picks the most representative sensors (CPU, GPU, memory, power, voltage) from the detected hardware,
     /// using well known sensor names with sensible fallbacks.
     /// </summary>
     public static class SummaryMetrics
@@ -41,6 +41,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             {
                 Add(metrics, "CPU Load", cpu, Find(cpu, SensorType.Load, "CPU Total"));
                 Add(metrics, "CPU Temperature", cpu, Find(cpu, SensorType.Temperature, CpuTemperatureNames));
+                Add(metrics, "CPU Voltage", cpu, Find(cpu, SensorType.Voltage, "CPU Core", "Core", "VCore"));
             }
 
             IHardware gpu = all.FirstOrDefault(h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd)
