@@ -3,15 +3,6 @@ setlocal
 title Publicar LibreHardwareHub (.NET 8.0 x64)
 cd /d "%~dp0.."
 
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ==========================================================
-    echo  A solicitar privilegios de Administrador...
-    echo ==========================================================
-    powershell -Command "Start-Process cmd -ArgumentList '/c `"%~f0`"' -Verb RunAs"
-    exit /b 0
-)
-
 echo ==========================================================
 echo      LibreHardwareHub - Publicacao Standalone Release     
 echo ==========================================================

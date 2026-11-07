@@ -3,16 +3,6 @@ setlocal EnableDelayedExpansion
 title LibreHardwareMonitor, LHM
 cd /d "%~dp0"
 
-:: 1. Garantir Privilégios de Administrador para leitura direta de hardware (Ring 0 / MSR / PawnIO)
-net session >nul 2>&1
-if !errorlevel! neq 0 (
-    echo ==========================================================
-    echo  A solicitar privilegios de Administrador...
-    echo ==========================================================
-    powershell -Command "Start-Process cmd -ArgumentList '/c `"%~f0`"' -Verb RunAs"
-    exit /b 0
-)
-
 set "TARGET_DIR=%~dp0bin\Publish-SingleFile"
 set "TARGET_EXE=%TARGET_DIR%\LibreHardwareMonitor.Windows.Forms.exe"
 
@@ -50,7 +40,7 @@ taskkill /f /im LibreHardwareMonitor.exe >nul 2>&1
 if exist "%TARGET_EXE%" (
     del /f /q "%TARGET_EXE%" >nul 2>&1
     if exist "%TARGET_EXE%" (
-        echo [AVISO] A aguardar libertacao do executavel...
+        powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardwareMonitor.Windows.Forms.exe' -Verb RunAs -Wait" >nul 2>&1
         timeout /t 1 /nobreak >nul 2>&1
         del /f /q "%TARGET_EXE%" >nul 2>&1
     )
@@ -74,7 +64,7 @@ if exist "tools\PawnIO_setup.exe" (
 
 echo.
 echo ==========================================================
-echo  [3/3] Aplicacao compilada e iniciada com sucesso!
+echo  [3/3] Aplicacao compilada e pronta!
 echo ==========================================================
 goto LAUNCH_APP
 
@@ -98,8 +88,8 @@ goto END
 
 :LAUNCH_APP
 if exist "%TARGET_EXE%" (
+    echo [INFO] A iniciar LibreHardwareMonitor com permissoes de Administrador...
     start "" /D "%TARGET_DIR%" "%TARGET_EXE%"
-    timeout /t 2 /nobreak >nul 2>&1
     exit /b 0
 ) else (
     echo [ERRO] O executavel nao foi encontrado em "%TARGET_EXE%".
