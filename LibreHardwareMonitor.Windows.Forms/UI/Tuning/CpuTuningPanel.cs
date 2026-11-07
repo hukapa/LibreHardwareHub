@@ -618,8 +618,8 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         if (telem.VoltageV.HasValue && telem.VoltageV.Value > 0f)
         {
             float volt = telem.VoltageV.Value;
-            MetricCardSeverity sev = volt >= 1.40f ? MetricCardSeverity.Hot : (volt >= 1.30f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal);
-            _voltageCard.SetMetric("VOLTAGEM", $"{volt:F3}", "V", "CPU VCore", sev, volt / 1.5f);
+            MetricCardSeverity sev = volt >= 1.48f ? MetricCardSeverity.Hot : (volt >= 1.40f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal);
+            _voltageCard.SetMetric("VOLTAGEM", $"{volt:F3}", "V", "CPU VCore", sev, volt / 1.6f);
         }
         else
         {

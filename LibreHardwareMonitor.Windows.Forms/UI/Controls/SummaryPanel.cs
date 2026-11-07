@@ -114,7 +114,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             Rectangle detail = new(x, y, innerWidth, DetailFont.Height + LogicalToDeviceUnits(2));
             TextRenderer.DrawText(g, metric.Detail(), DetailFont, detail, theme.MutedForegroundColor, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-            float? ratio = SensorSeverity.Ratio(metric.Sensor.SensorType, value);
+            float? ratio = SensorSeverity.Ratio(metric.Sensor, value);
             if (ratio == null)
                 return;
 

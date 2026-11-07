@@ -95,7 +95,7 @@ public sealed partial class MainForm
 
     private void DrawValueBar(Graphics g, ISensor sensor, Rectangle row, Theme theme)
     {
-        float? ratio = SensorSeverity.Ratio(sensor.SensorType, sensor.Value);
+        float? ratio = SensorSeverity.Ratio(sensor, sensor.Value);
         if (ratio == null)
             return;
 
