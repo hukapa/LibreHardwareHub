@@ -18,8 +18,9 @@ public sealed class CpuTuningEngine : IDisposable
 
     private readonly IComputer _computer;
     private readonly PersistentSettings _settings;
-    private readonly IntelRaplControl _rapl;
+    private IntelRaplControl _rapl;
     private IHardware _cpuHardware;
+    private bool _settingsLoaded;
 
     // Cache de ultimos valores validos para evitar cintilacoes e garantir leituras estaveis
     private float? _lastTemp;
@@ -62,7 +63,6 @@ public sealed class CpuTuningEngine : IDisposable
             _instance = this;
         }
 
-        _rapl = new IntelRaplControl();
 
         _watchdogTimer = new Timer { Interval = 1000 };
         _watchdogTimer.Tick += WatchdogTimer_Tick;
@@ -71,11 +71,27 @@ public sealed class CpuTuningEngine : IDisposable
         _stabilityTimer.Tick += StabilityTimer_Tick;
 
         RegisterSafetyEvents();
-        DiscoverCpu();
-        _computer.HardwareAdded += _ => DiscoverCpu();
-        _computer.HardwareRemoved += _ => DiscoverCpu();
         CheckDirtyBoot();
-        LoadSettings();
+
+        // The engine is created before Computer.Open(): the CPU (and the MSR driver) usually only appear
+        // through HardwareAdded, so discovery and the startup profile are (re)done from there.
+        _computer.HardwareAdded += _ => OnHardwareChanged();
+        _computer.HardwareRemoved += _ => OnHardwareChanged();
+        OnHardwareChanged();
+    }
+
+    private void OnHardwareChanged()
+    {
+        if (!DiscoverCpu())
+            return;
+
+        if (!_settingsLoaded && _cpuHardware != null)
+        {
+            _settingsLoaded = true;
+            LoadSettings();
+        }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RegisterSafetyEvents()
@@ -103,15 +119,27 @@ public sealed class CpuTuningEngine : IDisposable
         }
     }
 
-    private void DiscoverCpu()
+    /// <summary>Resolves the CPU and its capabilities. Returns false when nothing changed (same CPU as before).</summary>
+    private bool DiscoverCpu()
     {
-        _cpuHardware = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
+        IHardware cpu = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
+        if (cpu == _cpuHardware && _rapl != null)
+            return false; // other hardware changed: keep the current state untouched
+
+        _cpuHardware = cpu;
 
         if (_cpuHardware != null)
         {
             string name = _cpuHardware.Name ?? string.Empty;
             Capabilities.IsIntel = name.IndexOf("Intel", StringComparison.OrdinalIgnoreCase) >= 0;
             Capabilities.IsAmd = name.IndexOf("AMD", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // The MSR driver is only usable once the hardware layer is open: (re)try until it is available.
+        if (_rapl == null || (!_rapl.IsAvailable && Capabilities.IsIntel))
+        {
+            _rapl?.Dispose();
+            _rapl = new IntelRaplControl();
         }
 
         int defPl1 = 65;
@@ -135,19 +163,19 @@ public sealed class CpuTuningEngine : IDisposable
 
         if (Capabilities.CanAdjustRapl)
         {
-            Capabilities.RaplStatusMessage = "RAPL DESBLOQUEADO (PL1/PL2 CONFIGURAVEL VIA MSR 0x610)";
+            Capabilities.RaplStatusMessage = "RAPL desbloqueado · PL1 e PL2 ajustáveis";
         }
         else if (Capabilities.IsIntel)
         {
-            Capabilities.RaplStatusMessage = "RAPL BLOQUEADO PELA BIOS - CONTROLO VIA WINDOWS POWER ENGINE ATIVO";
+            Capabilities.RaplStatusMessage = "RAPL bloqueado pela BIOS · só o plano de energia do Windows é ajustável";
         }
         else if (Capabilities.IsAmd)
         {
-            Capabilities.RaplStatusMessage = "AMD RYZEN - CONTROLO VIA WINDOWS POWER ENGINE ATIVO";
+            Capabilities.RaplStatusMessage = "AMD Ryzen · só o plano de energia do Windows é ajustável";
         }
         else
         {
-            Capabilities.RaplStatusMessage = "CONTROLO VIA WINDOWS POWER ENGINE ATIVO";
+            Capabilities.RaplStatusMessage = "Só o plano de energia do Windows é ajustável";
         }
 
         CurrentState = CpuTuningState.CreateDefault(defPl1, defPl2);
@@ -158,6 +186,8 @@ public sealed class CpuTuningEngine : IDisposable
 
         if (WindowsPowerPolicy.GetTurboBoostMode(out int currentBoost))
             CurrentState.TurboBoostMode = currentBoost;
+
+        return true;
     }
 
     private void CheckDirtyBoot()
@@ -456,6 +486,6 @@ public sealed class CpuTuningEngine : IDisposable
         _watchdogTimer.Dispose();
         _stabilityTimer.Stop();
         _stabilityTimer.Dispose();
-        _rapl.Dispose();
+        _rapl?.Dispose();
     }
 }
