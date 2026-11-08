@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
@@ -153,6 +154,190 @@ public class StackPanel : Panel, IThemedControl
         base.OnVisibleChanged(e);
         if (Visible)
             PerformLayout();
+    }
+}
+
+/// <summary>
+/// Scrolling viewport for a page with a thin themed scrollbar (same look as the sensor tree's indicator)
+/// instead of the native one. The mouse wheel always scrolls the page, so combo boxes and sliders under
+/// the cursor are never changed by accident.
+/// </summary>
+public sealed class ScrollHost : Control, IThemedControl, IMessageFilter
+{
+    private const int WM_MOUSEWHEEL = 0x020A;
+    private const int GutterLogical = 12;
+    private const int BarLogical = 6;
+
+    private readonly Control _content;
+    private int _offset;
+    private bool _canScroll;
+    private bool _hover;
+    private bool _dragging;
+    private int _dragStartY;
+    private int _dragStartOffset;
+
+    public ScrollHost(Control content)
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+        _content = content;
+        _content.Dock = DockStyle.None;
+        Controls.Add(_content);
+    }
+
+    private int MaxOffset => Math.Max(0, _content.Height - Height);
+
+    public void ApplyTheme(Theme theme)
+    {
+        BackColor = theme.BackgroundColor;
+        theme.Apply(_content);
+        Invalidate();
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        int gutter = LogicalToDeviceUnits(GutterLogical);
+
+        // Width first (the content computes its height from it), then decide whether a scrollbar is needed.
+        _content.Width = _canScroll ? Width - gutter : Width;
+        bool canScroll = _content.Height > Height;
+        if (canScroll != _canScroll)
+        {
+            _canScroll = canScroll;
+            _content.Width = _canScroll ? Width - gutter : Width;
+        }
+
+        _offset = Math.Max(0, Math.Min(_offset, MaxOffset));
+        _content.Location = new Point(0, -_offset);
+        Invalidate();
+    }
+
+    public void ScrollBy(int delta) => ScrollTo(_offset + delta);
+
+    private void ScrollTo(int offset)
+    {
+        offset = Math.Max(0, Math.Min(offset, MaxOffset));
+        if (offset == _offset)
+            return;
+
+        _offset = offset;
+        _content.Location = new Point(0, -_offset);
+        Invalidate();
+        Update();
+    }
+
+    private Rectangle ThumbBounds()
+    {
+        if (!_canScroll || _content.Height <= 0)
+            return Rectangle.Empty;
+
+        int bar = LogicalToDeviceUnits(_hover || _dragging ? BarLogical : BarLogical - 2);
+        int inset = LogicalToDeviceUnits(2);
+        int track = Height - (inset * 2);
+        int thumb = Math.Max(LogicalToDeviceUnits(32), track * Height / _content.Height);
+        int y = inset + (MaxOffset == 0 ? 0 : (track - thumb) * _offset / MaxOffset);
+        return new Rectangle(Width - bar - inset, y, bar, thumb);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Theme theme = Theme.Current;
+        e.Graphics.Clear(theme.BackgroundColor);
+        Rectangle thumb = ThumbBounds();
+        if (thumb.IsEmpty)
+            return;
+
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        Color color = _hover || _dragging ? FluentStyle.Blend(theme.BackgroundColor, theme.ForegroundColor, 0.45) : theme.ScrollbarTrack;
+        FluentStyle.FillRounded(e.Graphics, color, thumb, thumb.Width / 2f);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (_dragging)
+        {
+            Rectangle thumb = ThumbBounds();
+            int track = Height - thumb.Height - LogicalToDeviceUnits(4);
+            if (track > 0)
+                ScrollTo(_dragStartOffset + ((e.Y - _dragStartY) * MaxOffset / track));
+        }
+        else if (!_hover)
+        {
+            _hover = true;
+            Invalidate();
+        }
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hover = false;
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button != MouseButtons.Left || !_canScroll)
+            return;
+
+        Rectangle thumb = ThumbBounds();
+        if (thumb.Contains(e.Location) || (e.Y >= thumb.Top && e.Y <= thumb.Bottom))
+        {
+            _dragging = true;
+            _dragStartY = e.Y;
+            _dragStartOffset = _offset;
+            Capture = true;
+        }
+        else
+        {
+            // Click on the track: page towards the cursor.
+            ScrollBy(e.Y < thumb.Top ? -Height + LogicalToDeviceUnits(48) : Height - LogicalToDeviceUnits(48));
+        }
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        _dragging = false;
+        Capture = false;
+        Invalidate();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Application.AddMessageFilter(this);
+    }
+
+    protected override void OnHandleDestroyed(EventArgs e)
+    {
+        Application.RemoveMessageFilter(this);
+        base.OnHandleDestroyed(e);
+    }
+
+    public bool PreFilterMessage(ref Message m)
+    {
+        if (m.Msg != WM_MOUSEWHEEL || !_canScroll || !Visible || !IsHandleCreated)
+            return false;
+
+        if (!RectangleToScreen(ClientRectangle).Contains(Cursor.Position) || HasOpenDropDown(_content))
+            return false;
+
+        int delta = (short)((long)m.WParam >> 16);
+        ScrollBy(-delta * LogicalToDeviceUnits(64) / 120);
+        return true;
+    }
+
+    private static bool HasOpenDropDown(Control control)
+    {
+        foreach (Control child in control.Controls)
+        {
+            if ((child is ComboBox { DroppedDown: true }) || HasOpenDropDown(child))
+                return true;
+        }
+
+        return false;
     }
 }
 

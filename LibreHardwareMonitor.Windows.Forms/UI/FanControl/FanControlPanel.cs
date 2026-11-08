@@ -29,6 +29,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     private float _lastGpuTemp;
 
     private readonly StackPanel _page;
+    private readonly ScrollHost _host;
 
     private readonly MetricStrip _metrics;
     private readonly FluentMetricCard _cpuTempCard;
@@ -53,7 +54,6 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         Dock = DockStyle.Fill;
-        AutoScroll = true;
 
         // 1. KPI strip (same geometry as the dashboard summary).
         _metrics = new MetricStrip();
@@ -105,7 +105,8 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _page.Controls.Add(_toolbar);
         _page.Controls.Add(_emptyCard);
         _page.Controls.Add(_channelsStack);
-        Controls.Add(_page);
+        _host = new ScrollHost(_page) { Dock = DockStyle.Fill };
+        Controls.Add(_host);
 
         if (engine != null)
             SetEngine(engine);
@@ -290,7 +291,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         BackColor = theme.BackgroundColor;
         ForeColor = theme.ForegroundColor;
 
-        theme.Apply(_page);
+        theme.Apply(_host);
 
         _presetLabel.ForeColor = theme.MutedForegroundColor;
         _emptyLabel.BackColor = theme.SurfaceColor;

@@ -23,6 +23,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
     private int _selectedPresetIndex = 1; // 0 = Eco, 1 = Stock, 2 = Performance, -1 = Custom
 
     private readonly StackPanel _page;
+    private readonly ScrollHost _host;
 
     // 1. KPI strip
     private readonly MetricStrip _metrics;
@@ -71,7 +72,6 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         Dock = DockStyle.Fill;
-        AutoScroll = true;
 
         // 1. KPI strip
         _metrics = new MetricStrip();
@@ -179,7 +179,8 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _page.Controls.Add(_settingsCard);
         _page.Controls.Add(_actions);
         _page.Controls.Add(_statusMessageLabel);
-        Controls.Add(_page);
+        _host = new ScrollHost(_page) { Dock = DockStyle.Fill };
+        Controls.Add(_host);
 
         UpdateValueLabels();
         UpdatePresetButtonsHighlight();
@@ -466,7 +467,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         BackColor = theme.BackgroundColor;
         ForeColor = theme.ForegroundColor;
 
-        theme.Apply(_page);
+        theme.Apply(_host);
         _controlModeLabel.ForeColor = theme.MutedForegroundColor;
 
         Invalidate(true);

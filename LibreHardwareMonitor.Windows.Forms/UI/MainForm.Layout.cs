@@ -129,7 +129,9 @@ public sealed partial class MainForm
     private void ResolveSummary()
     {
         _summary.SetMetrics(SummaryMetrics.Resolve(_computer.Hardware));
-        _summary.Visible = _summary.HasMetrics;
+        // Tool pages (fan control, tuning) are tagged with a string and have their own KPI strip.
+        bool toolPage = _sidebar?.SelectedItem?.Tag is string;
+        _summary.Visible = _summary.HasMetrics && !toolPage;
     }
 
     /// <summary>Sensors may appear a few update cycles after the hardware; re-resolve briefly after startup.</summary>
