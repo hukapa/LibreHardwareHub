@@ -25,6 +25,21 @@ public class SystemTray : IDisposable
 
     public bool HasSensors => _sensorList.Count > 0;
 
+    /// <summary>Shows a warning balloon (used for fan alerts, so they are seen even when the window is hidden).</summary>
+    public void ShowWarning(string title, string text)
+    {
+        try
+        {
+            // Respect the user's choice: no balloon when the tray icon is hidden (the page still shows the alert).
+            if (_mainIcon.Visible)
+                _mainIcon.ShowBalloonTip(10000, title, text, ToolTipIcon.Warning);
+        }
+        catch
+        {
+            // A missing tray area must never affect fan safety.
+        }
+    }
+
     public SystemTray(IComputer computer, PersistentSettings settings, UnitManager unitManager)
     {
         _computer = computer;

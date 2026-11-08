@@ -146,6 +146,15 @@ public sealed partial class MainForm
                 {
                     treeContextMenu.Items.Add(new ToolStripSeparator());
                     IControl control = node.Sensor.Control;
+
+                    // A channel driven by the Fan Control page must not be fought over from here.
+                    if (FanControl.FanControlEngine.IsControlManaged(control))
+                    {
+                        treeContextMenu.Items.Add(new ToolStripMenuItem("Controlado pela página Fan Control") { Enabled = false });
+                        treeContextMenu.Show(treeView, new Point(m.X, m.Y));
+                        return;
+                    }
+
                     ToolStripMenuItem controlItem = new("Control");
                     ToolStripItem defaultItem = new ToolStripMenuItem("Default") { Checked = control.ControlMode == ControlMode.Default };
                     controlItem.DropDownItems.Add(defaultItem);

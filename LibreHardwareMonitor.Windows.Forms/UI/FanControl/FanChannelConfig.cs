@@ -15,6 +15,15 @@ public sealed class FanChannelConfig
 
     public FanChannelMode Mode { get; set; } = FanChannelMode.DefaultBios;
 
+    /// <summary>User label ("Bomba AIO", "Frente da caixa"); empty = use the sensor name.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Role chosen by the user; <see cref="FanChannelRole.Unassigned" /> = not confirmed yet.</summary>
+    public FanChannelRole Role { get; set; } = FanChannelRole.Unassigned;
+
+    /// <summary>How many fans share this channel (splitters/hubs). Informative.</summary>
+    public int FanCount { get; set; } = 1;
+
     public float FixedPwm { get; set; } = 50f;
 
     public FanCurve Curve { get; set; } = FanCurve.CreateBalanced();

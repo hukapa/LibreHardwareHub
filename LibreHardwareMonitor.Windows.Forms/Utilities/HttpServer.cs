@@ -237,6 +237,11 @@ public class HttpServer
             throw new ArgumentException("Specified sensor '" + sNode.Sensor.Identifier + "' can not be set");
         }
 
+        if (UI.FanControl.FanControlEngine.IsControlManaged(sNode.Sensor.Control))
+        {
+            throw new InvalidOperationException("Sensor '" + sNode.Sensor.Identifier + "' is managed by the Fan Control page");
+        }
+
         if (value == "null")
         {
             sNode.Sensor.Control.SetDefault();

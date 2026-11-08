@@ -16,7 +16,8 @@ namespace LibreHardwareMonitor.Windows.Forms.Utilities;
 
 public class PersistentSettings : ISettings
 {
-    private readonly IDictionary<string, string> _settings = new Dictionary<string, string>();
+    // Written by the UI thread, the background updater and the hardware library at the same time.
+    private readonly IDictionary<string, string> _settings = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
 
     public void Load(string fileName)
     {
