@@ -24,9 +24,6 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 /// </summary>
 public sealed class FanChannelCard : Panel, IThemedControl
 {
-    private const float ChartMinTemp = 20f;
-    private const float ChartMaxTemp = 100f;
-
     private static Font s_valueFont;
     private static Font s_detailFont;
 
@@ -43,16 +40,17 @@ public sealed class FanChannelCard : Panel, IThemedControl
     private readonly FluentButton _btnSilent;
     private readonly FluentButton _btnBalanced;
     private readonly FluentButton _btnPerf;
+    private readonly FanCurveEditor _editor;
 
     private readonly List<FanChannelMode> _modes = new();
     private bool _loading;
     private float _pwm;
     private string _rpmText = string.Empty;
-    private string _alertText;
+    private string _hintText = string.Empty;
+    private bool _hintIsAlert;
     private Rectangle _valueArea;
     private Rectangle _hintArea;
     private Rectangle _sliderValueArea;
-    private Rectangle _chartArea;
 
     public FanChannelRuntime Runtime => _channel;
 
@@ -75,9 +73,8 @@ public sealed class FanChannelCard : Panel, IThemedControl
         _roleCombo.SelectedIndexChanged += RoleCombo_SelectedIndexChanged;
 
         _btnIdentify = new FluentButton { Text = "Identificar" };
-        int identifyWidth = Math.Max(TextRenderer.MeasureText("Identificar", FluentStyle.UiFontSemibold).Width,
-                                     TextRenderer.MeasureText("Parar (8 s)", FluentStyle.UiFontSemibold).Width) + LogicalToDeviceUnits(36);
-        _btnIdentify.Width = identifyWidth;
+        _btnIdentify.Width = Math.Max(TextRenderer.MeasureText("Identificar", FluentStyle.UiFontSemibold).Width,
+                                      TextRenderer.MeasureText("Parar (8 s)", FluentStyle.UiFontSemibold).Width) + LogicalToDeviceUnits(36);
         _btnIdentify.Click += BtnIdentify_Click;
 
         _btnEdit = PageMetrics.FitButton(new FluentButton { Text = "Editar" });
@@ -105,7 +102,15 @@ public sealed class FanChannelCard : Panel, IThemedControl
         _btnPerf = new FluentButton { Text = "Desempenho" };
         _btnPerf.Click += (_, _) => ApplyCurve(FanCurve.CreatePerformance());
 
-        Controls.AddRange(new Control[] { _stateBadge, _roleCombo, _btnIdentify, _btnEdit, _modeCombo, _sourceCombo, _fixedSlider, _btnSilent, _btnBalanced, _btnPerf });
+        _editor = new FanCurveEditor();
+        _editor.CurveChanged += curve =>
+        {
+            _engine.Modify(() => _channel.Config.Curve = curve);
+            UpdateCurveButtons();
+        };
+        _editor.CurveCommitted += (_, _) => _engine.SetCustomMode();
+
+        Controls.AddRange(new Control[] { _stateBadge, _roleCombo, _btnIdentify, _btnEdit, _modeCombo, _sourceCombo, _fixedSlider, _btnSilent, _btnBalanced, _btnPerf, _editor });
 
         LoadFromConfig();
         UpdateTelemetry();
@@ -162,9 +167,13 @@ public sealed class FanChannelCard : Panel, IThemedControl
                 _ => 0
             };
 
-            _fixedSlider.Minimum = (int)FanRolePolicy.MinimumPwm(Role);
+            int floor = (int)Math.Ceiling(_channel.MinimumPwm);
+            _fixedSlider.Minimum = floor;
             _fixedSlider.Maximum = 100;
-            _fixedSlider.Value = Math.Max(_fixedSlider.Minimum, ClampPercent(_channel.Config.FixedPwm));
+            _fixedSlider.Value = Math.Max(floor, ClampPercent(_channel.Config.FixedPwm));
+
+            _editor.MinPwm = _channel.MinimumPwm;
+            _editor.Curve = _channel.Config.Curve;
         }
         finally
         {
@@ -184,6 +193,7 @@ public sealed class FanChannelCard : Panel, IThemedControl
         _btnSilent.Visible = modes && IsCurve;
         _btnBalanced.Visible = modes && IsCurve;
         _btnPerf.Visible = modes && IsCurve;
+        _editor.Visible = modes && IsCurve;
         PerformLayout();
         Invalidate();
     }
@@ -195,28 +205,7 @@ public sealed class FanChannelCard : Panel, IThemedControl
         if (_loading || _roleCombo.SelectedIndex < 0)
             return;
 
-        FanChannelRole role = (FanChannelRole)_roleCombo.SelectedIndex;
-        bool modeReset = false;
-        _engine.Modify(() =>
-        {
-            _channel.Config.Role = role;
-
-            // A mode the new role does not allow is dropped, and the BIOS gets the channel back.
-            if (!FanRolePolicy.AllowsMode(role, _channel.Config.Mode))
-            {
-                _channel.Config.Mode = FanChannelMode.DefaultBios;
-                _channel.ResetToDefault();
-                modeReset = true;
-            }
-
-            _channel.Config.FixedPwm = Math.Max(_channel.Config.FixedPwm, FanRolePolicy.MinimumPwm(role));
-        });
-
-        if (modeReset)
-            _engine.SetCustomMode();
-        else
-            _engine.SaveSettings();
-
+        _engine.SetChannelRole(_channel, (FanChannelRole)_roleCombo.SelectedIndex);
         LoadFromConfig();
         UpdateTelemetry();
         RoleChanged?.Invoke(this, EventArgs.Empty);
@@ -257,7 +246,9 @@ public sealed class FanChannelCard : Panel, IThemedControl
 
     private void ApplyCurve(FanCurve curve)
     {
-        _engine.Modify(() => _channel.Config.Curve = curve);
+        FanCurve safe = FanCurve.Sanitize(curve.Points, _channel.MinimumPwm);
+        _engine.Modify(() => _channel.Config.Curve = safe);
+        _editor.Curve = safe;
         _engine.SetCustomMode();
         UpdateCurveButtons();
         Invalidate();
@@ -292,9 +283,9 @@ public sealed class FanChannelCard : Panel, IThemedControl
     private void UpdateCurveButtons()
     {
         List<FanCurvePoint> points = _channel.Config.Curve?.Points ?? new List<FanCurvePoint>();
-        SetPresetState(_btnSilent, points.SequenceEqual(FanCurve.CreateSilent().Points));
-        SetPresetState(_btnBalanced, points.SequenceEqual(FanCurve.CreateBalanced().Points));
-        SetPresetState(_btnPerf, points.SequenceEqual(FanCurve.CreatePerformance().Points));
+        SetPresetState(_btnSilent, points.SequenceEqual(FanCurve.Sanitize(FanCurve.CreateSilent().Points, _channel.MinimumPwm).Points));
+        SetPresetState(_btnBalanced, points.SequenceEqual(FanCurve.Sanitize(FanCurve.CreateBalanced().Points, _channel.MinimumPwm).Points));
+        SetPresetState(_btnPerf, points.SequenceEqual(FanCurve.Sanitize(FanCurve.CreatePerformance().Points, _channel.MinimumPwm).Points));
     }
 
     private static void SetPresetState(FluentButton button, bool active)
@@ -303,7 +294,7 @@ public sealed class FanChannelCard : Panel, IThemedControl
         button.Variant = FluentButtonVariant.Standard;
     }
 
-    /// <summary>Called by the page after a global preset changed the configuration behind the card's back.</summary>
+    /// <summary>Called by the page after the configuration changed behind the card's back (preset, wizard, calibration).</summary>
     public void SyncUiWithConfig() => LoadFromConfig();
 
     // ------------------------------------------------------------------ live data
@@ -325,10 +316,10 @@ public sealed class FanChannelCard : Panel, IThemedControl
         else
             rpm = string.Format(CultureInfo.CurrentCulture, "{0:N0} RPM", rpmValue.Value);
 
-        string alert = _channel.Alert;
         (string text, BadgeStyle style) = _channel.InEmergencyOverride ? ("Emergência térmica", BadgeStyle.Danger)
             : _channel.Stalled ? ("Parou de rodar", BadgeStyle.Danger)
             : _channel.SensorLost && _channel.IsManaged ? ("Sem sensor", BadgeStyle.Danger)
+            : _channel.IsCalibrating ? ("A calibrar", BadgeStyle.Warning)
             : _channel.IsIdentifying ? ("A identificar", BadgeStyle.Warning)
             : Role == FanChannelRole.Unassigned ? ("Por identificar", BadgeStyle.Warning)
             : Role == FanChannelRole.NotConnected ? ("Não usado", BadgeStyle.Neutral)
@@ -350,20 +341,41 @@ public sealed class FanChannelCard : Panel, IThemedControl
 
         _btnIdentify.IsActive = _channel.IsIdentifying;
 
-        if (Math.Abs(pwm - _pwm) > 0.05f || rpm != _rpmText || alert != _alertText)
+        // While a calibration drives the channel nothing else may change it.
+        bool calibrating = _channel.IsCalibrating;
+        if (_roleCombo.Enabled == calibrating)
         {
-            bool alertChanged = alert != _alertText;
+            _roleCombo.Enabled = !calibrating;
+            _modeCombo.Enabled = !calibrating;
+            _sourceCombo.Enabled = !calibrating;
+            _fixedSlider.Enabled = !calibrating;
+            _btnIdentify.Enabled = !calibrating;
+            _btnEdit.Enabled = !calibrating;
+            _editor.Enabled = !calibrating;
+
+            // A calibration just finished: pick up the new floor.
+            if (!calibrating)
+                LoadFromConfig();
+        }
+
+        string hint = HintText(out bool isAlert);
+        if (hint != _hintText || isAlert != _hintIsAlert)
+        {
+            _hintText = hint;
+            _hintIsAlert = isAlert;
+            PerformLayout(); // the hint line appears/disappears/changes height
+            Invalidate(_hintArea);
+        }
+
+        if (Math.Abs(pwm - _pwm) > 0.05f || rpm != _rpmText)
+        {
             _pwm = pwm;
             _rpmText = rpm;
-            _alertText = alert;
-            if (alertChanged)
-                PerformLayout(); // the hint line appears/disappears and changes the card height
-
             Invalidate(_valueArea);
-            Invalidate(_hintArea);
-            if (IsCurve)
-                Invalidate(_chartArea);
         }
+
+        if (IsCurve)
+            _editor.SetOperatingPoint(_channel.LastEffectiveTemp, Math.Max(_channel.MinimumPwm, _channel.Config.Curve.Evaluate(_channel.LastEffectiveTemp)));
     }
 
     // ------------------------------------------------------------------ layout
@@ -371,24 +383,46 @@ public sealed class FanChannelCard : Panel, IThemedControl
     private string HintText(out bool isAlert)
     {
         isAlert = false;
-        if (_alertText != null)
+        string alert = _channel.Alert;
+        if (alert != null)
         {
             isAlert = true;
-            return _alertText;
+            return alert;
         }
 
+        if (_channel.IsCalibrating)
+        {
+            return string.Format(CultureInfo.CurrentCulture, "Calibração em curso: {0}. O canal volta ao estado anterior no fim.", _channel.CalibrationStatus);
+        }
+
+        List<string> parts = new();
         switch (Role)
         {
             case FanChannelRole.Unassigned:
                 string hint = FanControlEngine.RoleHint(_channel.Control);
-                return "Use «Identificar» e escolha a função para poder controlar este canal." + (hint.Length > 0 ? " " + hint + "." : string.Empty);
+                parts.Add("Use «Identificar» e escolha a função para poder controlar este canal." + (hint.Length > 0 ? " " + hint + "." : string.Empty));
+                break;
             case FanChannelRole.NotConnected:
-                return "A app nunca escreve neste canal.";
+                parts.Add("A app nunca escreve neste canal.");
+                break;
             case FanChannelRole.Pump:
-                return "A bomba fica na BIOS por defeito. Em velocidade fixa nunca baixa de 70 %.";
-            default:
-                return string.Empty;
+                parts.Add("A bomba fica na BIOS por defeito. Em velocidade fixa nunca baixa de 70 %.");
+                break;
         }
+
+        FanCalibrationResult cal = _channel.Config.Calibration;
+        if (cal != null)
+        {
+            parts.Add(cal.Responsive
+                ? string.Format(CultureInfo.CurrentCulture, "Calibrado: roda a partir de {0:F0} %, máx. {1:N0} RPM (mínimo seguro {2:F0} %).", cal.MinSpinPwm, cal.MaxRpm, cal.SafeFloorPwm)
+                : "Calibrado: a velocidade não acompanha o PWM (comum numa bomba ou ventoinha DC).");
+        }
+
+        string abort = _channel.CalibrationAbortReason;
+        if (abort != null)
+            parts.Add("Última calibração interrompida: " + abort + ".");
+
+        return string.Join(" ", parts);
     }
 
     private string Subtitle()
@@ -425,7 +459,7 @@ public sealed class FanChannelCard : Panel, IThemedControl
         _btnEdit.Location = new Point(_btnIdentify.Right + gap, y);
         y += controlHeight;
 
-        // Hint line (alert, or why the channel cannot be controlled yet).
+        // Hint line (alert, calibration, or why the channel cannot be controlled yet).
         string hintText = HintText(out _);
         if (hintText.Length > 0)
         {
@@ -472,19 +506,11 @@ public sealed class FanChannelCard : Panel, IThemedControl
                 _btnSilent.SetBounds(pad, y, third, buttonHeight);
                 _btnBalanced.SetBounds(pad + third + gap, y, third, buttonHeight);
                 _btnPerf.SetBounds(pad + ((third + gap) * 2), y, inner - ((third + gap) * 2), buttonHeight);
-                y += buttonHeight + LogicalToDeviceUnits(12);
+                y += buttonHeight + gap;
 
-                _chartArea = new Rectangle(pad, y, inner, LogicalToDeviceUnits(72));
-                y = _chartArea.Bottom;
+                _editor.SetBounds(pad, y, inner, LogicalToDeviceUnits(124));
+                y = _editor.Bottom;
             }
-            else
-            {
-                _chartArea = Rectangle.Empty;
-            }
-        }
-        else
-        {
-            _chartArea = Rectangle.Empty;
         }
 
         int height = y + pad;
@@ -539,8 +565,7 @@ public sealed class FanChannelCard : Panel, IThemedControl
 
         if (!_hintArea.IsEmpty)
         {
-            string hint = HintText(out bool isAlert);
-            TextRenderer.DrawText(g, hint, DetailFont, _hintArea, isAlert ? theme.StateHotColor : theme.MutedForegroundColor,
+            TextRenderer.DrawText(g, HintText(out bool isAlert), DetailFont, _hintArea, isAlert ? theme.StateHotColor : theme.MutedForegroundColor,
                                   TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
         }
 
@@ -549,9 +574,6 @@ public sealed class FanChannelCard : Panel, IThemedControl
             TextRenderer.DrawText(g, $"{_fixedSlider.Value} %", FluentStyle.UiFontSemibold, _sliderValueArea, theme.ForegroundColor,
                                   TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
-
-        if (IsCurve && !_chartArea.IsEmpty)
-            DrawCurve(g, theme);
     }
 
     private Image IconForRole()
@@ -592,60 +614,5 @@ public sealed class FanChannelCard : Panel, IThemedControl
             Color bar = critical ? theme.StateHotColor : (_pwm >= 85f ? theme.StateWarmColor : theme.AccentColor);
             FluentStyle.FillRounded(g, bar, new RectangleF(track.X, track.Y, Math.Max(barHeight, track.Width * ratio), barHeight), barHeight / 2);
         }
-    }
-
-    private void DrawCurve(Graphics g, Theme theme)
-    {
-        List<FanCurvePoint> points = _channel.Config.Curve?.Points;
-        if (points == null || points.Count == 0)
-            return;
-
-        int labelHeight = DetailFont.Height;
-        Rectangle plot = new(_chartArea.X, _chartArea.Y, _chartArea.Width, _chartArea.Height - labelHeight - LogicalToDeviceUnits(4));
-
-        float X(float temp) => plot.X + (plot.Width * (Math.Max(ChartMinTemp, Math.Min(ChartMaxTemp, temp)) - ChartMinTemp) / (ChartMaxTemp - ChartMinTemp));
-        float Y(float pwm) => plot.Bottom - (plot.Height * Math.Max(0f, Math.Min(100f, pwm)) / 100f);
-
-        Color plotBack = FluentStyle.Blend(theme.SurfaceColor, theme.ForegroundColor, theme.IsDark ? 0.04 : 0.03);
-        FluentStyle.FillRounded(g, plotBack, plot, LogicalToDeviceUnits(4));
-        using (Pen grid = new(theme.LineColor) { DashStyle = DashStyle.Dot })
-            g.DrawLine(grid, plot.X, Y(50f), plot.Right, Y(50f));
-
-        // Floor drawn by the engine: no managed channel gets less than the role minimum.
-        float floor = FanRolePolicy.MinimumPwm(Role);
-        List<PointF> line = new() { new PointF(plot.X, Y(Math.Max(floor, points[0].PwmPercent))) };
-        line.AddRange(points.Select(p => new PointF(X(p.Temperature), Y(Math.Max(floor, p.PwmPercent)))));
-        line.Add(new PointF(plot.Right, Y(Math.Max(floor, points[points.Count - 1].PwmPercent))));
-
-        using (GraphicsPath area = new())
-        {
-            area.AddLines(line.ToArray());
-            area.AddLine(plot.Right, plot.Bottom, plot.X, plot.Bottom);
-            area.CloseFigure();
-            using SolidBrush fill = new(Color.FromArgb(theme.IsDark ? 48 : 36, theme.AccentColor));
-            g.FillPath(fill, area);
-        }
-
-        using (Pen pen = new(theme.AccentColor, Math.Max(1.5f, LogicalToDeviceUnits(2))) { LineJoin = LineJoin.Round })
-            g.DrawLines(pen, line.ToArray());
-
-        float temp = _channel.LastEffectiveTemp;
-        float target = Math.Max(floor, _channel.Config.Curve.Evaluate(temp));
-        float cx = X(temp);
-        float cy = Y(target);
-        using (Pen marker = new(theme.MutedForegroundColor) { DashStyle = DashStyle.Dash })
-            g.DrawLine(marker, cx, plot.Y, cx, plot.Bottom);
-
-        float dot = LogicalToDeviceUnits(8);
-        using (SolidBrush ring = new(theme.SurfaceColor))
-            g.FillEllipse(ring, cx - (dot / 2) - 1, cy - (dot / 2) - 1, dot + 2, dot + 2);
-        using (SolidBrush center = new(theme.AccentColor))
-            g.FillEllipse(center, cx - (dot / 2), cy - (dot / 2), dot, dot);
-
-        Rectangle labels = new(_chartArea.X, _chartArea.Bottom - labelHeight, _chartArea.Width, labelHeight);
-        TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter;
-        TextRenderer.DrawText(g, $"{ChartMinTemp:F0} °C", DetailFont, labels, theme.MutedForegroundColor, flags | TextFormatFlags.Left);
-        TextRenderer.DrawText(g, string.Format(CultureInfo.CurrentCulture, "Agora: {0:F0} °C → {1:F0} %", temp, target), DetailFont, labels, theme.MutedForegroundColor, flags | TextFormatFlags.HorizontalCenter);
-        TextRenderer.DrawText(g, $"{ChartMaxTemp:F0} °C", DetailFont, labels, theme.MutedForegroundColor, flags | TextFormatFlags.Right);
     }
 }
