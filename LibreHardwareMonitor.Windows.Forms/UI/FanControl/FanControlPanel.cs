@@ -50,6 +50,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     private readonly ToolbarRow _toolbar;
     private readonly Label _presetLabel;
     private readonly FluentComboBox _presetCombo;
+    private readonly FluentButton _btnWizard;
     private readonly FluentBadge _safetyBadge;
 
     private readonly WatchdogAlertPanel _faultBanner;
@@ -93,12 +94,17 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _presetCombo.Items.AddRange(new object[] { "BIOS (padrão)", "Silencioso", "Equilibrado", "Desempenho", "Personalizado" });
         _presetCombo.SelectedIndex = 0;
         _presetCombo.SelectedIndexChanged += PresetCombo_SelectedIndexChanged;
+        _btnWizard = PageMetrics.FitButton(new FluentButton { Text = "Assistente de configuração" });
+        _btnWizard.Click += BtnWizard_Click;
         _safetyBadge = new FluentBadge { Height = LogicalToDeviceUnits(24), Tag = PageMetrics.AlignRight };
         _safetyBadge.SetBadge("Proteções ativas · CPU 90 °C · GPU 85 °C · sensor · paragem", BadgeStyle.Success);
         _toolbar.Controls.Add(_presetLabel);
         _toolbar.Controls.Add(_presetCombo);
+        _toolbar.Controls.Add(_btnWizard);
         _toolbar.Controls.Add(_safetyBadge);
-        _toolbar.Height = _presetCombo.Height;
+        // The row is as tall as its tallest control, and the button matches the combo box so their edges line up.
+        _btnWizard.Height = _presetCombo.Height;
+        _toolbar.Height = Math.Max(_presetCombo.Height, _safetyBadge.Height);
 
         // 3. Banners.
         _faultBanner = new WatchdogAlertPanel { Danger = true, Visible = false };
@@ -205,6 +211,17 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         SelectPreset(_engine.ActivePreset);
         RefreshChannels();
         UpdateAlerts();
+    }
+
+    private void BtnWizard_Click(object sender, EventArgs e)
+    {
+        if (_engine == null)
+            return;
+
+        using (FanSetupWizard wizard = new(_engine))
+            wizard.ShowDialog(FindForm());
+
+        RefreshChannels();
     }
 
     private void Engine_ChannelsChanged(object sender, EventArgs e) => RefreshChannels();
@@ -367,8 +384,8 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         int unassigned = _engine?.Channels.Count(c => c.Config.Role == FanChannelRole.Unassigned) ?? 0;
         _setupBanner.Visible = unassigned > 0;
         _setupLabel.Text = unassigned == 1
-            ? "1 canal por identificar. Enquanto não escolher a função, a app não escreve nele e fica na BIOS."
-            : $"{unassigned} canais por identificar. Enquanto não escolher a função, a app não escreve neles e ficam na BIOS.";
+            ? "1 canal por identificar. Abra o «Assistente de configuração» ou use «Identificar» no cartão. Até lá a app não escreve nele e fica na BIOS."
+            : $"{unassigned} canais por identificar. Abra o «Assistente de configuração» ou use «Identificar» nos cartões. Até lá a app não escreve neles e ficam na BIOS.";
 
         _uncleanBanner.Visible = _engine != null && _engine.PreviousSessionUnclean && !_uncleanDismissed;
     }

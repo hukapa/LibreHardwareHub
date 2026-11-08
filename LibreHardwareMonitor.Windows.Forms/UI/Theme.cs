@@ -163,7 +163,8 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
         public abstract bool WindowTitlebarFallbackToImmersiveDarkMode { get; }
         public virtual Color WindowTitlebarForegroundColor => ForegroundColor;
 
-        public void Apply(Form form)
+        /// <summary>Colors only the window frame (title bar, corners, border); the contents are left to the caller.</summary>
+        public void ApplyTitleBar(Form form)
         {
             if (IsWindows10OrGreater(22000))
             {
@@ -186,6 +187,11 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
                 int useImmersiveDarkMode = WindowTitlebarFallbackToImmersiveDarkMode ? 1 : 0;
                 DwmSetWindowAttribute(form.Handle, (int)attribute, ref useImmersiveDarkMode, sizeof(int));
             }
+        }
+
+        public void Apply(Form form)
+        {
+            ApplyTitleBar(form);
             form.BackColor = BackgroundColor;
             foreach (Control control in form.Controls)
             {

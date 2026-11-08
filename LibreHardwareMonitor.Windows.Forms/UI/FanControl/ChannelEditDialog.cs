@@ -34,7 +34,7 @@ public sealed class ChannelEditDialog : Form
         BackColor = theme.BackgroundColor;
         ForeColor = theme.ForegroundColor;
         Font = FluentStyle.UiFont;
-        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScaleMode = AutoScaleMode.None; // sizes below are already in device units
         ClientSize = new Size(LogicalToDeviceUnits(380), LogicalToDeviceUnits(214));
 
         int pad = LogicalToDeviceUnits(18);
@@ -99,5 +99,11 @@ public sealed class ChannelEditDialog : Form
             if (e.KeyCode == Keys.Enter) { DialogResult = DialogResult.OK; Close(); e.Handled = true; }
             else if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); e.Handled = true; }
         };
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Theme.Current.ApplyTitleBar(this);
     }
 }
