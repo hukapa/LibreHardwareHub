@@ -299,10 +299,32 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         Configure(_powerSlider, c.CanAdjustPowerLimit, c.MinPowerLimitPercent, c.MaxPowerLimitPercent, s.PowerLimitPercent);
         Configure(_tempLimitSlider, c.CanAdjustTempLimit, c.MinTempLimitC, c.MaxTempLimitC, s.TempLimitC);
 
+        const string unsupported = "Não suportado nesta placa / versão";
+        _coreRow.Description = c.CanAdjustCoreClock ? "Desvio da frequência do GPU" : unsupported;
+        _memRow.Description = c.CanAdjustMemoryClock ? "Desvio da frequência da memória" : unsupported;
+        _powerRow.Description = c.CanAdjustPowerLimit ? "Percentagem do TDP de fábrica" : unsupported;
+        _tempLimitRow.Description = c.CanAdjustTempLimit ? "Temperatura alvo antes de reduzir frequência" : unsupported;
+
+        bool anyAdjustable = c.IsSupported && (c.CanAdjustCoreClock || c.CanAdjustMemoryClock || c.CanAdjustPowerLimit || c.CanAdjustTempLimit);
+        _btnTest.Enabled = anyAdjustable;
+        _btnResetStock.Enabled = anyAdjustable;
+        _btnEco.Enabled = anyAdjustable;
+        _btnBalanced.Enabled = anyAdjustable;
+        _btnMaxPerf.Enabled = anyAdjustable;
+        if (!c.IsSupported && !string.IsNullOrEmpty(c.UnsupportedReason))
+            ShowStatus(c.UnsupportedReason, Theme.Current.MutedForegroundColor);
+
         _chkApplyStartup.Checked = s.ApplyOnStartup;
         UpdateValueLabels();
         UpdatePresetButtonsHighlight();
         InvalidateRows();
+    }
+
+    /// <summary>Presets only move editors that the device can actually apply.</summary>
+    private static void SetIfEnabled(FluentSlider slider, int value)
+    {
+        if (slider.Enabled)
+            slider.Value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value));
     }
 
     private static void Configure(FluentSlider slider, bool enabled, int min, int max, int value)
@@ -329,24 +351,24 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         switch (index)
         {
             case 0: // Eco
-                _coreSlider.Value = Math.Max(_coreSlider.Minimum, -50);
-                _memSlider.Value = 0;
-                _powerSlider.Value = Math.Max(_powerSlider.Minimum, 85);
-                _tempLimitSlider.Value = Math.Max(_tempLimitSlider.Minimum, 75);
+                SetIfEnabled(_coreSlider, Math.Max(_coreSlider.Minimum, -50));
+                SetIfEnabled(_memSlider, 0);
+                SetIfEnabled(_powerSlider, Math.Max(_powerSlider.Minimum, 85));
+                SetIfEnabled(_tempLimitSlider, Math.Max(_tempLimitSlider.Minimum, 75));
                 break;
 
             case 1: // Stock
-                _coreSlider.Value = 0;
-                _memSlider.Value = 0;
-                _powerSlider.Value = 100;
-                _tempLimitSlider.Value = StockTempLimitC;
+                SetIfEnabled(_coreSlider, 0);
+                SetIfEnabled(_memSlider, 0);
+                SetIfEnabled(_powerSlider, 100);
+                SetIfEnabled(_tempLimitSlider, StockTempLimitC);
                 break;
 
             case 2: // Moderate performance
-                _coreSlider.Value = Math.Min(_coreSlider.Maximum, 60);
-                _memSlider.Value = Math.Min(_memSlider.Maximum, 150);
-                _powerSlider.Value = Math.Min(_powerSlider.Maximum, 105);
-                _tempLimitSlider.Value = Math.Min(_tempLimitSlider.Maximum, 85);
+                SetIfEnabled(_coreSlider, Math.Min(_coreSlider.Maximum, 60));
+                SetIfEnabled(_memSlider, Math.Min(_memSlider.Maximum, 150));
+                SetIfEnabled(_powerSlider, Math.Min(_powerSlider.Maximum, 105));
+                SetIfEnabled(_tempLimitSlider, Math.Min(_tempLimitSlider.Maximum, 85));
                 break;
         }
 

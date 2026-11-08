@@ -47,12 +47,14 @@ public sealed class NvidiaGpuTuningDevice : GenericGpuTuningDevice
         Capabilities.UnsupportedReason = string.Empty;
 
         // Frequencias: Limitadas entre -300 MHz e +150 MHz para o core (seguro para TDR)
-        Capabilities.CanAdjustCoreClock = true;
+        // No hardware write path exists yet for clock offsets or the thermal target (only the power limit is
+        // applied through NVML), so these stay disabled instead of pretending to work.
+        Capabilities.CanAdjustCoreClock = false;
         Capabilities.MinCoreOffsetMhz = -300;
         Capabilities.MaxCoreOffsetMhz = 150;
 
         // Memoria: Limitada entre -1000 MHz e +1000 MHz
-        Capabilities.CanAdjustMemoryClock = true;
+        Capabilities.CanAdjustMemoryClock = false;
         Capabilities.MinMemoryOffsetMhz = -1000;
         Capabilities.MaxMemoryOffsetMhz = 1000;
 
@@ -63,7 +65,7 @@ public sealed class NvidiaGpuTuningDevice : GenericGpuTuningDevice
         Capabilities.DefaultPowerLimitPercent = 100;
 
         // Limite Termico: Entre 65 C e 88 C
-        Capabilities.CanAdjustTempLimit = true;
+        Capabilities.CanAdjustTempLimit = false;
         Capabilities.MinTempLimitC = 65;
         Capabilities.MaxTempLimitC = 88;
         Capabilities.DefaultTempLimitC = 83;
