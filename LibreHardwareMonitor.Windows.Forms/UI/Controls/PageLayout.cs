@@ -131,6 +131,14 @@ public class StackPanel : Panel, IThemedControl
         int y = Padding.Top;
         bool any = false;
 
+        // Pass 1: give every child its width first. Children that size themselves from their width
+        // (cards, grids, nested stacks) recompute their own height here, before it is read below.
+        foreach (Control c in Controls)
+        {
+            if ((c.Visible || !Visible) && c.Width != Math.Max(0, width))
+                c.Width = Math.Max(0, width);
+        }
+
         foreach (Control c in Controls)
         {
             if (!c.Visible && Visible)
@@ -372,6 +380,13 @@ public sealed class WrapGrid : StackPanel
         int columns = Math.Max(1, (width + gap) / (minWidth + gap));
         int columnWidth = Math.Max(0, (width - (gap * (columns - 1))) / columns);
 
+        // Pass 1: set the column width so each card recomputes its own height before the rows are measured.
+        foreach (Control item in items)
+        {
+            if (item.Width != columnWidth)
+                item.Width = columnWidth;
+        }
+
         int y = Padding.Top;
         for (int i = 0; i < items.Count; i += columns)
         {
@@ -504,12 +519,18 @@ public sealed class GroupHeader : Control, IThemedControl
 {
     private string _detail = string.Empty;
     private Image _icon;
+    private bool _collapsible;
+    private bool _collapsed;
+    private bool _hover;
 
     public GroupHeader()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
-        Height = LogicalToDeviceUnits(22);
+        Height = LogicalToDeviceUnits(26);
     }
+
+    /// <summary>Raised when a collapsible header is clicked; <see cref="Collapsed" /> already holds the new state.</summary>
+    public event EventHandler CollapsedChanged;
 
     public string Detail
     {
@@ -521,6 +542,19 @@ public sealed class GroupHeader : Control, IThemedControl
     {
         get => _icon;
         set { _icon = value; Invalidate(); }
+    }
+
+    /// <summary>When true a chevron is shown and a click toggles <see cref="Collapsed" />.</summary>
+    public bool Collapsible
+    {
+        get => _collapsible;
+        set { _collapsible = value; Cursor = value ? Cursors.Hand : Cursors.Default; Invalidate(); }
+    }
+
+    public bool Collapsed
+    {
+        get => _collapsed;
+        set { _collapsed = value; Invalidate(); }
     }
 
     public void ApplyTheme(Theme theme)
@@ -535,6 +569,31 @@ public sealed class GroupHeader : Control, IThemedControl
         Invalidate();
     }
 
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _hover = true;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hover = false;
+        Invalidate();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (_collapsible && e.Button == MouseButtons.Left)
+        {
+            _collapsed = !_collapsed;
+            Invalidate();
+            CollapsedChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         Theme theme = Theme.Current;
@@ -542,6 +601,22 @@ public sealed class GroupHeader : Control, IThemedControl
         g.Clear(theme.BackgroundColor);
 
         int x = LogicalToDeviceUnits(2);
+        if (_collapsible)
+        {
+            // Chevron: right when collapsed, down when open.
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float size = LogicalToDeviceUnits(4);
+            float cx = x + size;
+            float cy = Height / 2f;
+            using Pen pen = new(_hover ? theme.ForegroundColor : theme.MutedForegroundColor, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            if (_collapsed)
+                g.DrawLines(pen, new[] { new PointF(cx - (size / 2), cy - size), new PointF(cx + (size / 2), cy), new PointF(cx - (size / 2), cy + size) });
+            else
+                g.DrawLines(pen, new[] { new PointF(cx - size, cy - (size / 2)), new PointF(cx, cy + (size / 2)), new PointF(cx + size, cy - (size / 2)) });
+
+            x += LogicalToDeviceUnits(16);
+        }
+
         if (_icon != null)
         {
             int icon = LogicalToDeviceUnits(16);
@@ -555,7 +630,7 @@ public sealed class GroupHeader : Control, IThemedControl
 
         if (_detail.Length > 0)
         {
-            int dx = x + titleSize.Width + LogicalToDeviceUnits(4);
+            int dx = x + titleSize.Width + LogicalToDeviceUnits(6);
             TextRenderer.DrawText(g, _detail, FluentStyle.UiFont, new Rectangle(dx, 0, Math.Max(0, Width - dx), Height), theme.MutedForegroundColor, flags);
         }
     }

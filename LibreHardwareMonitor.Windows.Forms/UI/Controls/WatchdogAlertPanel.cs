@@ -27,8 +27,13 @@ public sealed class WatchdogAlertPanel : Panel, IThemedControl
         Padding = new Padding(LogicalToDeviceUnits(PageMetrics.CardPadding), 0, LogicalToDeviceUnits(10), 0);
     }
 
-    private static Color AlertColor(Theme theme) =>
-        FluentStyle.Blend(theme.SurfaceColor, theme.AccentColor, theme.IsDark ? 0.20 : 0.12);
+    /// <summary>Red variant for faults (stalled fan, thermal emergency); accent for informational banners.</summary>
+    public bool Danger { get; set; }
+
+    private Color Tint(Theme theme) => Danger ? theme.StateHotColor : theme.AccentColor;
+
+    private Color AlertColor(Theme theme) =>
+        FluentStyle.Blend(theme.SurfaceColor, Tint(theme), theme.IsDark ? 0.20 : 0.12);
 
     public void ApplyTheme(Theme theme)
     {
@@ -64,6 +69,6 @@ public sealed class WatchdogAlertPanel : Panel, IThemedControl
         RectangleF bounds = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
 
         FluentStyle.FillRounded(g, AlertColor(theme), bounds, radius);
-        FluentStyle.DrawRounded(g, theme.AccentColor, bounds, radius, 1f);
+        FluentStyle.DrawRounded(g, Tint(theme), bounds, radius, 1f);
     }
 }

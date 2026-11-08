@@ -21,6 +21,7 @@ public class FluentComboBox : ComboBox, IThemedControl
 {
     private const int WM_PAINT = 0x000F;
     private const int WM_ERASEBKGND = 0x0014;
+    private const int WM_PRINTCLIENT = 0x0318;
     private const int WM_LBUTTONDOWN = 0x0201;
     private const int WM_LBUTTONDBLCLK = 0x0203;
 
@@ -162,6 +163,7 @@ public class FluentComboBox : ComboBox, IThemedControl
                 return;
 
             case WM_PAINT:
+            case WM_PRINTCLIENT:
                 PAINTSTRUCT ps = new();
                 IntPtr hdc = m.WParam != IntPtr.Zero ? m.WParam : BeginPaint(Handle, ref ps);
                 try
