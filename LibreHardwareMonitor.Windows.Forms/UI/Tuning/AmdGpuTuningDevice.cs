@@ -24,24 +24,25 @@ public sealed class AmdGpuTuningDevice : GenericGpuTuningDevice
             return;
         }
 
-        Capabilities.IsSupported = true;
-        Capabilities.UnsupportedReason = string.Empty;
+        // No AMD driver write path is implemented (ApplyTuning only stores values): report it honestly.
+        Capabilities.IsSupported = false;
+        Capabilities.UnsupportedReason = "O ajuste de placas AMD ainda nao esta implementado nesta versao.";
 
         // Limites de seguranca rigorosos
-        Capabilities.CanAdjustCoreClock = true;
+        Capabilities.CanAdjustCoreClock = false;
         Capabilities.MinCoreOffsetMhz = -300;
         Capabilities.MaxCoreOffsetMhz = 150;
 
-        Capabilities.CanAdjustMemoryClock = true;
+        Capabilities.CanAdjustMemoryClock = false;
         Capabilities.MinMemoryOffsetMhz = -500;
         Capabilities.MaxMemoryOffsetMhz = 500;
 
-        Capabilities.CanAdjustPowerLimit = true;
+        Capabilities.CanAdjustPowerLimit = false;
         Capabilities.MinPowerLimitPercent = 70;
         Capabilities.MaxPowerLimitPercent = 115;
         Capabilities.DefaultPowerLimitPercent = 100;
 
-        Capabilities.CanAdjustTempLimit = true;
+        Capabilities.CanAdjustTempLimit = false;
         Capabilities.MinTempLimitC = 65;
         Capabilities.MaxTempLimitC = 88;
         Capabilities.DefaultTempLimitC = 80;
