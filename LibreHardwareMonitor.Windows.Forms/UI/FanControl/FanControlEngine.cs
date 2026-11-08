@@ -164,9 +164,23 @@ public sealed class FanControlEngine
         if (control.Sensor == null)
             return null;
 
+        // Exact match only (same chip, same index): falling back to "any fan of the chip" showed the RPM
+        // of a different fan.
         IHardware hw = control.Sensor.Hardware;
-        return rpmSensors.FirstOrDefault(rpm => rpm.Hardware == hw && rpm.Index == control.Sensor.Index)
-            ?? rpmSensors.FirstOrDefault(rpm => rpm.Hardware == hw);
+        return rpmSensors.FirstOrDefault(rpm => rpm.Hardware == hw && rpm.Index == control.Sensor.Index);
+    }
+
+    /// <summary>
+    /// Super I/O chips only create a fan RPM sensor after its first non-zero reading, which is after the
+    /// channels were discovered; keep looking until the matching sensor exists.
+    /// </summary>
+    private static void ResolveMissingRpmSensor(FanChannelRuntime channel)
+    {
+        IHardware hw = channel.Control.Sensor?.Hardware;
+        if (channel.RpmSensor != null || hw == null)
+            return;
+
+        channel.RpmSensor = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Fan && s.Index == channel.Control.Sensor.Index);
     }
 
     public void Update()
@@ -179,6 +193,7 @@ public sealed class FanControlEngine
 
         foreach (FanChannelRuntime channel in _channels)
         {
+            ResolveMissingRpmSensor(channel);
             float? targetTemp = ResolveChannelTemperature(channel.Config.TemperatureSource);
             channel.Update(targetTemp, now, deltaSeconds);
         }
