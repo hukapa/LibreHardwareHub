@@ -31,6 +31,8 @@ public sealed class FanChannelRuntime
     private bool _hasSeenRpm;
     private long _stallSinceMs;
     private long _identifyUntilMs;
+    private FanCalibrationRun _cal;
+    private bool _calibrationEvent;
 
     public IControl Control { get; }
 
@@ -70,7 +72,38 @@ public sealed class FanChannelRuntime
     /// <summary>The channel has reported rotation at least once (an empty header never does).</summary>
     public bool HasSeenRpm => _hasSeenRpm;
 
+    /// <summary>
+    /// Lowest duty a managed channel may receive: the role minimum, raised to just above the stall point
+    /// when a calibration measured one.
+    /// </summary>
+    public float MinimumPwm => Math.Max(FanRolePolicy.MinimumPwm(Config.Role), Config.Calibration?.SafeFloorPwm ?? 0f);
+
+    public bool IsCalibrating => _cal is { State: FanCalibrationState.Running };
+
+    public double CalibrationProgress => _cal?.Progress ?? 0.0;
+
+    public string CalibrationStatus => _cal?.StepText ?? string.Empty;
+
+    /// <summary>Why the last calibration did not complete, or null.</summary>
+    public string CalibrationAbortReason => _cal?.State == FanCalibrationState.Aborted ? _cal.AbortReason : null;
+
     public bool IsIdentifying => _identifyUntilMs > 0;
+
+    /// <summary>True once after a calibration finished or was aborted (the engine then saves and notifies).</summary>
+    public bool ConsumeCalibrationEvent()
+    {
+        bool value = _calibrationEvent;
+        _calibrationEvent = false;
+        return value;
+    }
+
+    public void BeginCalibration(long nowMs)
+    {
+        _cal = new FanCalibrationRun();
+        _cal.Start(nowMs);
+    }
+
+    public void CancelCalibration(string reason = "Cancelada pelo utilizador") => _cal?.Abort(reason);
 
     public long IdentifyRemainingMs(long nowMs) => _identifyUntilMs > nowMs ? _identifyUntilMs - nowMs : 0;
 
@@ -105,7 +138,7 @@ public sealed class FanChannelRuntime
 
     public void CancelIdentify() => _identifyUntilMs = 1; // expires on the next update
 
-    public void Update(float? rawTemp, long nowMs, float deltaSeconds, bool globalEmergency)
+    public void Update(float? rawTemp, long nowMs, float deltaSeconds, bool globalEmergency, string calibrationAbortReason = null)
     {
         LastUpdateTimeMs = nowMs;
         UpdateStall(nowMs);
@@ -120,6 +153,33 @@ public sealed class FanChannelRuntime
             }
 
             _identifyUntilMs = 0;
+            if (!IsManaged)
+                ReleaseToBios();
+        }
+
+        // Calibration: the engine supplies an abort reason whenever it is not safe to go on (hot CPU/GPU,
+        // emergency, no temperature reading). The channel is always handed back afterwards.
+        if (_cal is { State: FanCalibrationState.Running })
+        {
+            string abort = calibrationAbortReason;
+            if (abort == null && !FanRolePolicy.AllowsCurve(Config.Role))
+                abort = "A função do canal mudou";
+
+            if (abort != null)
+                _cal.Abort(abort);
+            else
+                _cal.Tick(nowMs, RpmSensor?.Value);
+
+            if (_cal.State == FanCalibrationState.Running)
+            {
+                WritePwm(_cal.TargetPwm);
+                return;
+            }
+
+            if (_cal.State == FanCalibrationState.Completed)
+                Config.Calibration = _cal.Result;
+
+            _calibrationEvent = true;
             if (!IsManaged)
                 ReleaseToBios();
         }
@@ -251,7 +311,7 @@ public sealed class FanChannelRuntime
     /// <summary>Applies a duty clamped to the hardware range and to the role minimum.</summary>
     public void ApplyPwm(float targetPwm)
     {
-        float min = Math.Max(Control.MinSoftwareValue, FanRolePolicy.MinimumPwm(Config.Role));
+        float min = Math.Max(Control.MinSoftwareValue, MinimumPwm);
         WritePwm(targetPwm, min);
     }
 
@@ -304,6 +364,7 @@ public sealed class FanChannelRuntime
 
         _holdsManualControl = false;
         _identifyUntilMs = 0;
+        _cal?.Abort("Canal reposto");
         InEmergencyOverride = false;
         SensorLost = false;
         LastAppliedPwm = 0f;

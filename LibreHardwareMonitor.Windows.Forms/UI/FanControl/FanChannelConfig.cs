@@ -24,6 +24,9 @@ public sealed class FanChannelConfig
     /// <summary>How many fans share this channel (splitters/hubs). Informative.</summary>
     public int FanCount { get; set; } = 1;
 
+    /// <summary>Result of the last calibration, or null when the channel was never calibrated.</summary>
+    public FanCalibrationResult Calibration { get; set; }
+
     public float FixedPwm { get; set; } = 50f;
 
     public FanCurve Curve { get; set; } = FanCurve.CreateBalanced();

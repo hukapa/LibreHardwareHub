@@ -58,7 +58,7 @@ public sealed class FanControlEngine
 
     public GlobalFanPreset ActivePreset { get; private set; } = GlobalFanPreset.DefaultBios;
 
-    public bool HasActiveControls { get { lock (_sync) return _channels.Any(c => c.IsManaged || c.IsIdentifying || c.InEmergencyOverride); } }
+    public bool HasActiveControls { get { lock (_sync) return _channels.Any(c => c.IsManaged || c.IsIdentifying || c.IsCalibrating || c.InEmergencyOverride); } }
 
     public bool HasEmergencyAlert { get { lock (_sync) return _channels.Any(c => c.InEmergencyOverride); } }
 
@@ -80,6 +80,9 @@ public sealed class FanControlEngine
 
     /// <summary>Raised on the UI thread when the set of alerts changes.</summary>
     public event EventHandler AlertsChanged;
+
+    /// <summary>Raised on the UI thread when a calibration finished or was aborted.</summary>
+    public event EventHandler CalibrationChanged;
 
     public FanControlEngine(IComputer computer, PersistentSettings settings)
     {
@@ -331,6 +334,7 @@ public sealed class FanControlEngine
     public void Update()
     {
         bool alertsChanged = false;
+        bool calibrationChanged = false;
 
         lock (_sync)
         {
@@ -341,11 +345,19 @@ public sealed class FanControlEngine
             ResolveTemperatures(now);
             UpdateGlobalEmergency(now);
 
+            string calibrationAbort = _channels.Any(c => c.IsCalibrating) ? CalibrationAbortReason(now) : null;
+
             foreach (FanChannelRuntime channel in _channels)
             {
                 ResolveMissingRpmSensor(channel);
                 float? targetTemp = ResolveChannelTemperature(channel.Config.TemperatureSource, now);
-                channel.Update(targetTemp, now, deltaSeconds, _globalEmergency);
+                channel.Update(targetTemp, now, deltaSeconds, _globalEmergency, calibrationAbort);
+
+                if (channel.ConsumeCalibrationEvent())
+                {
+                    SaveSettings();
+                    calibrationChanged = true;
+                }
             }
 
             UpdateDirtyMarker();
@@ -362,6 +374,9 @@ public sealed class FanControlEngine
 
         if (alertsChanged)
             Raise(AlertsChanged);
+
+        if (calibrationChanged)
+            Raise(CalibrationChanged);
     }
 
     private void ResolveTemperatures(long now)
@@ -429,6 +444,107 @@ public sealed class FanControlEngine
         return Math.Max(cpuExists ? LastCpuTemp : float.MinValue, gpuExists ? LastGpuTemp : float.MinValue);
     }
 
+
+    // ------------------------------------------------------------------ calibration
+
+    // A calibration only starts with a cool system and stops as soon as it is no longer cool.
+    private const float CalibrationStartMaxC = 65f;
+    private const float CpuCalibrationAbortC = 80f;
+    private const float GpuCalibrationAbortC = 75f;
+
+    /// <summary>Reason to stop any running calibration right now, or null when it is safe to go on.</summary>
+    private string CalibrationAbortReason(long now)
+    {
+        bool cpuFresh = CpuFresh(now);
+        bool gpuFresh = GpuFresh(now);
+
+        if (_globalEmergency)
+            return "Emergência térmica";
+        if (cpuFresh && LastCpuTemp >= CpuCalibrationAbortC)
+            return $"CPU acima de {CpuCalibrationAbortC:0} °C";
+        if (gpuFresh && LastGpuTemp >= GpuCalibrationAbortC)
+            return $"GPU acima de {GpuCalibrationAbortC:0} °C";
+        if (!cpuFresh && !gpuFresh)
+            return "Sem leitura de temperatura";
+
+        return null;
+    }
+
+    /// <summary>
+    /// Starts a calibration of one channel. Refused (with the reason) unless the channel has a role that allows
+    /// a curve, a spinning fan with an RPM reading, the system is cool and nothing else is running on it.
+    /// </summary>
+    public bool StartCalibration(FanChannelRuntime channel, out string error)
+    {
+        lock (_sync)
+        {
+            long now = Environment.TickCount64;
+            error = null;
+
+            if (!FanRolePolicy.AllowsCurve(channel.Config.Role))
+                error = "Só canais com função de ventoinha (cooler, radiador, caixa ou GPU) se podem calibrar";
+            else if (channel.RpmSensor == null)
+                error = "O canal não tem leitura de RPM";
+            else if (channel.IsCalibrating || _channels.Any(c => c.IsCalibrating))
+                error = "Já há uma calibração em curso";
+            else if (channel.IsIdentifying)
+                error = "O canal está a ser identificado";
+            else if (channel.Stalled || channel.InEmergencyOverride)
+                error = "O canal tem um alerta ativo";
+            else if (!(channel.RpmSensor.Value > FanCalibrationRun.SpinRpm))
+                error = "A ventoinha tem de estar a rodar para ser calibrada";
+            else
+            {
+                bool cpuFresh = CpuFresh(now);
+                bool gpuFresh = GpuFresh(now);
+                if (!cpuFresh && !gpuFresh)
+                    error = "Sem leitura de temperatura";
+                else if ((cpuFresh && LastCpuTemp >= CalibrationStartMaxC) || (gpuFresh && LastGpuTemp >= CalibrationStartMaxC))
+                    error = $"O sistema está quente (acima de {CalibrationStartMaxC:0} °C). Espere que arrefeça";
+                else if (_globalEmergency)
+                    error = "Emergência térmica ativa";
+            }
+
+            if (error != null)
+                return false;
+
+            channel.BeginCalibration(now);
+            return true;
+        }
+    }
+
+    public void CancelCalibration(FanChannelRuntime channel)
+    {
+        lock (_sync)
+            channel.CancelCalibration();
+    }
+
+    /// <summary>
+    /// Changes what is connected to a channel. A mode the new role does not allow is dropped and the channel goes
+    /// back to the BIOS. Used by the channel card and the setup assistant so both follow the same rules.
+    /// </summary>
+    public void SetChannelRole(FanChannelRuntime channel, FanChannelRole role)
+    {
+        bool modeReset = false;
+        lock (_sync)
+        {
+            channel.Config.Role = role;
+
+            if (!FanRolePolicy.AllowsMode(role, channel.Config.Mode))
+            {
+                channel.Config.Mode = FanChannelMode.DefaultBios;
+                channel.ResetToDefault();
+                modeReset = true;
+            }
+
+            channel.Config.FixedPwm = Math.Max(channel.Config.FixedPwm, channel.MinimumPwm);
+        }
+
+        if (modeReset)
+            SetCustomMode();
+        else
+            SaveSettings();
+    }
     // ------------------------------------------------------------------ commands (UI thread)
 
     /// <summary>Runs a configuration change under the engine lock, so the background update never sees it half-done.</summary>
@@ -442,7 +558,7 @@ public sealed class FanControlEngine
     public bool IsManaged(IControl control)
     {
         lock (_sync)
-            return _channels.Any(c => ReferenceEquals(c.Control, control) && (c.IsManaged || c.IsIdentifying));
+            return _channels.Any(c => ReferenceEquals(c.Control, control) && (c.IsManaged || c.IsIdentifying || c.IsCalibrating));
     }
 
     public static bool IsControlManaged(IControl control) => _instance?.IsManaged(control) ?? false;
@@ -549,6 +665,7 @@ public sealed class FanControlEngine
                 _settings.SetValue(prefix + "name", ch.Config.Name ?? string.Empty);
                 _settings.SetValue(prefix + "role", (int)ch.Config.Role);
                 _settings.SetValue(prefix + "fanCount", ch.Config.FanCount);
+                _settings.SetValue(prefix + "cal", ch.Config.Calibration?.Serialize() ?? string.Empty);
             }
         }
     }
@@ -571,10 +688,15 @@ public sealed class FanControlEngine
 
         config.Name = _settings.GetValue(prefix + "name", string.Empty);
         config.FanCount = Math.Max(1, _settings.GetValue(prefix + "fanCount", 1));
+        config.Calibration = FanCalibrationResult.Parse(_settings.GetValue(prefix + "cal", string.Empty));
 
         // Channels saved before roles existed stay unidentified; the engine then leaves them to the BIOS.
         FanChannelRole role = (FanChannelRole)_settings.GetValue(prefix + "role", (int)FanChannelRole.Unassigned);
         config.Role = role == FanChannelRole.Unassigned ? SuggestRole(control) : role;
+
+        // A curve read from disk is never trusted: it is rebuilt to respect the channel minimum and reach 100 %.
+        float floor = Math.Max(FanRolePolicy.MinimumPwm(config.Role), config.Calibration?.SafeFloorPwm ?? 0f);
+        config.Curve = FanCurve.Sanitize(config.Curve.Points, floor);
 
         return config;
     }
