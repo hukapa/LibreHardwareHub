@@ -13,65 +13,51 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Tuning;
 
+/// <summary>
+/// CPU tuning page. Follows the dashboard structure: KPI strip, a one-line toolbar, then a settings card
+/// (Windows 11 style rows) and the action bar.
+/// </summary>
 public sealed class CpuTuningPanel : UserControl, IThemedControl
 {
     private CpuTuningEngine _engine;
-    private int _selectedPresetIndex = 1; // 0 = Eco, 1 = Balanced, 2 = MaxPerf, -1 = Custom
+    private int _selectedPresetIndex = 1; // 0 = Eco, 1 = Stock, 2 = Performance, -1 = Custom
 
-    // 1. Header
-    private readonly Panel _headerPanel;
-    private readonly Label _titleLabel;
-    private readonly Label _subtitleLabel;
-    private readonly FluentBadge _safetyBadge;
+    private readonly StackPanel _page;
 
-    // 2. Telemetria (5 cartões modernos)
-    private readonly Panel _telemetryRow;
+    // 1. KPI strip
+    private readonly MetricStrip _metrics;
     private readonly FluentMetricCard _tempCard;
     private readonly FluentMetricCard _voltageCard;
     private readonly FluentMetricCard _powerCard;
     private readonly FluentMetricCard _clockCard;
     private readonly FluentMetricCard _loadCard;
 
-    // 3. Perfis Rápidos & Segurança Certificada
-    private readonly Panel _presetsContainer;
-    private readonly FluentSectionCard _presetsCard;
-    private readonly Label _safetyStockLabel;
-    private readonly Label _safetyDescLabel;
-    private readonly FluentButton _btnEco;
-    private readonly FluentButton _btnBalanced;
-    private readonly FluentButton _btnMaxPerf;
+    // 2. Toolbar
+    private readonly ToolbarRow _toolbar;
+    private readonly Label _controlModeLabel;
+    private readonly FluentBadge _safetyBadge;
 
-    // 4. Banner de Watchdog (teste de 15s)
-    private readonly Panel _watchdogContainer;
+    // 3. Watchdog banner (15 s test)
     private readonly WatchdogAlertPanel _watchdogBanner;
     private readonly Label _watchdogLabel;
     private readonly FluentButton _btnKeep;
     private readonly FluentButton _btnRevert;
 
-    // 5. Parâmetros e Ajuste Fino
-    private readonly Panel _controlsContainer;
-    private readonly FluentSectionCard _controlsCard;
-    private readonly Label _boostLabel;
+    // 4. Settings card
+    private readonly FluentSectionCard _settingsCard;
+    private readonly FluentButton _btnEco;
+    private readonly FluentButton _btnBalanced;
+    private readonly FluentButton _btnMaxPerf;
     private readonly FluentComboBox _boostCombo;
-    private readonly Label _boostHelpLabel;
-
-    private readonly Label _throttleMaxLabel;
     private readonly FluentSlider _throttleMaxSlider;
-    private readonly Label _throttleMaxValLabel;
-
-    private readonly Label _pl1Label;
     private readonly FluentSlider _pl1Slider;
-    private readonly Label _pl1ValLabel;
-
-    private readonly Label _pl2Label;
     private readonly FluentSlider _pl2Slider;
-    private readonly Label _pl2ValLabel;
+    private readonly SettingRow _throttleRow;
+    private readonly SettingRow _pl1Row;
+    private readonly SettingRow _pl2Row;
 
-    private readonly Label _raplInfoLabel;
-
-    // 6. Barra de Ações
-    private readonly Panel _actionContainer;
-    private readonly Panel _actionBar;
+    // 5. Actions
+    private readonly ToolbarRow _actions;
     private readonly FluentButton _btnTest;
     private readonly FluentButton _btnResetStock;
     private readonly CheckBox _chkApplyStartup;
@@ -83,316 +69,132 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
 
     public CpuTuningPanel(CpuTuningEngine engine)
     {
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
-                 ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
-
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         Dock = DockStyle.Fill;
-        Padding = new Padding(20);
         AutoScroll = true;
 
-        int gap = LogicalToDeviceUnits(16);
+        // 1. KPI strip
+        _metrics = new MetricStrip();
+        _tempCard = NewCard(FluentIcons.ForSensorType(SensorType.Temperature), "Temperatura", "°C", "CPU Package");
+        _voltageCard = NewCard(FluentIcons.ForSensorType(SensorType.Voltage), "Voltagem", "V", "CPU VCore");
+        _powerCard = NewCard(FluentIcons.ForSensorType(SensorType.Power), "Potência", "W", "Package Power");
+        _clockCard = NewCard(FluentIcons.ForSensorType(SensorType.Clock), "Frequência", "MHz", "Média dos núcleos");
+        _loadCard = NewCard(FluentIcons.ForSensorType(SensorType.Load), "Carga", "%", "Total da CPU");
+        _metrics.AddCard(_tempCard);
+        _metrics.AddCard(_voltageCard);
+        _metrics.AddCard(_powerCard);
+        _metrics.AddCard(_clockCard);
+        _metrics.AddCard(_loadCard);
 
-        // 1. Header (Espaçoso e elegante)
-        _headerPanel = new Panel { Dock = DockStyle.Top, Height = 76, Margin = new Padding(0) };
-        _titleLabel = new Label
-        {
-            Text = "Ajuste de Processador (CPU Tuning)",
-            Font = FluentStyle.CreateUiFont(FontStyle.Bold, 14f),
-            Location = new Point(0, 0),
-            AutoSize = true
-        };
+        // 2. Toolbar
+        _toolbar = new ToolbarRow();
+        _controlModeLabel = new Label { AutoSize = false, Height = FluentStyle.UiFont.Height + 4, Font = FluentStyle.UiFont, AutoEllipsis = true, Tag = PageMetrics.Fill, Text = "A verificar o controlo de energia do processador…" };
+        _safetyBadge = new FluentBadge { Height = LogicalToDeviceUnits(24), Tag = PageMetrics.AlignRight };
+        _safetyBadge.SetBadge("Proteção ativa · watchdog de 15 s", BadgeStyle.Success);
+        _toolbar.Controls.Add(_controlModeLabel);
+        _toolbar.Controls.Add(_safetyBadge);
 
-        _subtitleLabel = new Label
-        {
-            Text = "Controlo de limites de consumo (PL1/PL2) e políticas energéticas com proteções de hardware ativas.",
-            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 9f),
-            Location = new Point(0, 26),
-            AutoSize = true
-        };
-
-        _safetyBadge = new FluentBadge
-        {
-            Location = new Point(0, 50),
-            Height = 24,
-            Style = BadgeStyle.Success
-        };
-        _safetyBadge.SetBadge("Proteção de Hardware Ativa • Clamping Automático & Watchdog", BadgeStyle.Success);
-
-        _headerPanel.Controls.Add(_titleLabel);
-        _headerPanel.Controls.Add(_subtitleLabel);
-        _headerPanel.Controls.Add(_safetyBadge);
-
-        // 2. Telemetria: 5 cartões KPI
-        int cardWidth = 170;
-        int cardHeight = 104;
-        _telemetryRow = new Panel { Dock = DockStyle.Top, Height = cardHeight + gap, Padding = new Padding(0, 0, 0, gap) };
-
-        _tempCard = new FluentMetricCard { Location = new Point(0, 0), Size = new Size(cardWidth, cardHeight), Icon = FluentIcons.ForSensorType(SensorType.Temperature) };
-        _tempCard.SetMetric("TEMPERATURA", "--", "°C", "Sensor Package", MetricCardSeverity.Normal);
-
-        _voltageCard = new FluentMetricCard { Location = new Point((cardWidth + 14) * 1, 0), Size = new Size(cardWidth, cardHeight), Icon = FluentIcons.ForSensorType(SensorType.Voltage) };
-        _voltageCard.SetMetric("VOLTAGEM", "--", "V", "CPU VCore", MetricCardSeverity.Normal);
-
-        _powerCard = new FluentMetricCard { Location = new Point((cardWidth + 14) * 2, 0), Size = new Size(cardWidth, cardHeight), Icon = FluentIcons.ForSensorType(SensorType.Power) };
-        _powerCard.SetMetric("POTÊNCIA", "--", "W", "Package Power", MetricCardSeverity.Normal);
-
-        _clockCard = new FluentMetricCard { Location = new Point((cardWidth + 14) * 3, 0), Size = new Size(cardWidth, cardHeight), Icon = FluentIcons.ForSensorType(SensorType.Clock) };
-        _clockCard.SetMetric("FREQUÊNCIA", "--", "MHz", "Clock Médio", MetricCardSeverity.Normal);
-
-        _loadCard = new FluentMetricCard { Location = new Point((cardWidth + 14) * 4, 0), Size = new Size(cardWidth, cardHeight), Icon = FluentIcons.ForSensorType(SensorType.Load) };
-        _loadCard.SetMetric("CARGA TOTAL", "--", "%", "Uso de CPU", MetricCardSeverity.Normal);
-
-        _telemetryRow.Controls.Add(_tempCard);
-        _telemetryRow.Controls.Add(_voltageCard);
-        _telemetryRow.Controls.Add(_powerCard);
-        _telemetryRow.Controls.Add(_clockCard);
-        _telemetryRow.Controls.Add(_loadCard);
-
-        // 3. Perfis Rápidos & Segurança Integrada
-        _presetsContainer = new Panel { Dock = DockStyle.Top, Height = 144 + gap, Padding = new Padding(0, 0, 0, gap) };
-        _presetsCard = new FluentSectionCard
-        {
-            Dock = DockStyle.Fill,
-            Title = "Perfis Rápidos e Garantia de Segurança",
-            Subtitle = "Selecione uma configuração pré-testada. Todos os valores respeitam as especificações elétricas do fabricante."
-        };
-
-        _safetyStockLabel = new Label
-        {
-            Text = "Valores Certificados de Fábrica: A carregar...",
-            Location = new Point(16, 56),
-            AutoSize = true,
-            Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9f)
-        };
-
-        _safetyDescLabel = new Label
-        {
-            Text = "Clamping de hardware permanente. Em caso de instabilidade num teste, o watchdog repõe os padrões em 15 segundos.",
-            Location = new Point(16, 76),
-            AutoSize = true,
-            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
-        };
-
-        _btnEco = new FluentButton { Text = "🍃 Modo Silencioso (Eco)", Location = new Point(16, 98), Width = 190, Height = 34, Variant = FluentButtonVariant.Standard };
-        _btnEco.Click += (_, _) => ApplyPreset(0);
-
-        _btnBalanced = new FluentButton { Text = "✓ Padrão de Fábrica (Stock)", Location = new Point(216, 98), Width = 210, Height = 34, Variant = FluentButtonVariant.Success };
-        _btnBalanced.Click += (_, _) => ApplyPreset(1);
-
-        _btnMaxPerf = new FluentButton { Text = "⚡ Desempenho Otimizado", Location = new Point(436, 98), Width = 190, Height = 34, Variant = FluentButtonVariant.Standard };
-        _btnMaxPerf.Click += (_, _) => ApplyPreset(2);
-
-        _presetsCard.Controls.Add(_safetyStockLabel);
-        _presetsCard.Controls.Add(_safetyDescLabel);
-        _presetsCard.Controls.Add(_btnEco);
-        _presetsCard.Controls.Add(_btnBalanced);
-        _presetsCard.Controls.Add(_btnMaxPerf);
-        _presetsContainer.Controls.Add(_presetsCard);
-
-        // 4. Banner de Watchdog (teste de 15s)
-        _watchdogContainer = new Panel { Dock = DockStyle.Top, Height = 52 + gap, Padding = new Padding(0, 0, 0, gap), Visible = false };
-        _watchdogBanner = new WatchdogAlertPanel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(16, 8, 16, 8)
-        };
-
-        _watchdogLabel = new Label
-        {
-            Text = "Perfil de CPU em teste temporário! Revertendo automaticamente em 15s...",
-            Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f),
-            Location = new Point(16, 15),
-            AutoSize = true
-        };
-
-        _btnKeep = new FluentButton
-        {
-            Text = "✓ Confirmar e Manter",
-            Location = new Point(500, 8),
-            Width = 160,
-            Height = 34,
-            Variant = FluentButtonVariant.Success
-        };
+        // 3. Watchdog banner
+        _watchdogBanner = new WatchdogAlertPanel { Visible = false };
+        _watchdogLabel = new Label { AutoSize = false, Height = FluentStyle.UiFont.Height + 4, Font = FluentStyle.UiFontSemibold, AutoEllipsis = true, Tag = PageMetrics.Fill, Text = "Perfil em teste. Reverte automaticamente em 15 s." };
+        _btnKeep = PageMetrics.FitButton(new FluentButton { Text = "Confirmar e manter", Variant = FluentButtonVariant.Accent, Tag = PageMetrics.AlignRight });
         _btnKeep.Click += (_, _) => _engine?.ConfirmProfile();
-
-        _btnRevert = new FluentButton
-        {
-            Text = "✕ Reverter Agora",
-            Location = new Point(670, 8),
-            Width = 130,
-            Height = 34,
-            Variant = FluentButtonVariant.Danger
-        };
+        _btnRevert = PageMetrics.FitButton(new FluentButton { Text = "Reverter agora", Tag = PageMetrics.AlignRight });
         _btnRevert.Click += (_, _) => _engine?.CancelTestAndRevert("Revertido manualmente pelo utilizador.");
-
         _watchdogBanner.Controls.Add(_watchdogLabel);
         _watchdogBanner.Controls.Add(_btnKeep);
         _watchdogBanner.Controls.Add(_btnRevert);
-        _watchdogContainer.Controls.Add(_watchdogBanner);
 
-        // 5. Parâmetros e Ajuste Fino
-        _controlsContainer = new Panel { Dock = DockStyle.Top, Height = 270 + gap, Padding = new Padding(0, 0, 0, gap) };
-        _controlsCard = new FluentSectionCard
+        // 4. Settings card
+        _settingsCard = new FluentSectionCard
         {
-            Dock = DockStyle.Fill,
-            Title = "Parâmetros e Ajuste Fino de Energia",
-            Subtitle = "Ajuste manual com intervalos seguros validados pela arquitetura do processador."
+            Title = "Energia e desempenho",
+            Subtitle = "Valores limitados às especificações do fabricante. Cada alteração é testada 15 s antes de ser gravada.",
+            AutoHeight = true
         };
 
-        int rowY = 56;
-        int lblX = 16;
-        int ctrlX = 240;
-        int sliderW = 340;
-        int valX = 596;
+        ToolbarRow presets = new() { OnSurface = true, Height = LogicalToDeviceUnits(32) };
+        _btnEco = PageMetrics.FitButton(new FluentButton { Text = "Silencioso" });
+        _btnEco.Click += (_, _) => ApplyPreset(0);
+        _btnBalanced = PageMetrics.FitButton(new FluentButton { Text = "Padrão de fábrica" });
+        _btnBalanced.Click += (_, _) => ApplyPreset(1);
+        _btnMaxPerf = PageMetrics.FitButton(new FluentButton { Text = "Desempenho" });
+        _btnMaxPerf.Click += (_, _) => ApplyPreset(2);
+        presets.Controls.Add(_btnEco);
+        presets.Controls.Add(_btnBalanced);
+        presets.Controls.Add(_btnMaxPerf);
 
-        _boostLabel = new Label { Text = "Modo de Turbo Boost:", Location = new Point(lblX, rowY + 3), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _boostCombo = new FluentComboBox { Location = new Point(ctrlX, rowY), Width = 300 };
-        _boostCombo.Items.AddRange(new object[]
-        {
-            "0: Desativado (Silêncio absoluto e frio)",
-            "1: Ativo (Padrão de Fábrica)",
-            "2: Agressivo (Frequência máxima sustentada)",
-            "3: Eficiente (Poupança inteligente sob carga)"
-        });
+        _boostCombo = new FluentComboBox();
+        _boostCombo.Items.AddRange(new object[] { "Desativado", "Ativo (padrão)", "Agressivo", "Eficiente" });
         _boostCombo.SelectedIndex = 1;
-        _boostCombo.SelectedIndexChanged += (_, _) =>
-        {
-            _selectedPresetIndex = -1;
-            UpdatePresetButtonsHighlight();
-        };
+        _boostCombo.SelectedIndexChanged += (_, _) => MarkCustom();
 
-        _boostHelpLabel = new Label
-        {
-            Text = "Comportamento com que os núcleos elevam a frequência.",
-            Location = new Point(ctrlX + 312, rowY + 5),
-            AutoSize = true,
-            Font = FluentStyle.CreateUiFont(FontStyle.Italic, 8.5f)
-        };
+        _throttleMaxSlider = new FluentSlider { Minimum = 50, Maximum = 100, Value = 100, SmallChange = 1, LargeChange = 5 };
+        _throttleMaxSlider.Scroll += (_, _) => { UpdateValueLabels(); MarkCustom(); };
 
-        rowY += 46;
-        _throttleMaxLabel = new Label { Text = "Estado Máximo da CPU (%):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _throttleMaxSlider = new FluentSlider { Minimum = 50, Maximum = 100, Value = 100, SmallChange = 1, LargeChange = 5, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _throttleMaxValLabel = new Label { Text = "100% (Padrão: 100%)", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
-        _throttleMaxSlider.Scroll += (_, _) =>
-        {
-            _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}% (Padrão: 100%)";
-            _selectedPresetIndex = -1;
-            UpdatePresetButtonsHighlight();
-        };
+        _pl1Slider = new FluentSlider { Minimum = 15, Maximum = 253, Value = 65, SmallChange = 1, LargeChange = 10 };
+        _pl1Slider.Scroll += (_, _) => { UpdateValueLabels(); MarkCustom(); };
 
-        rowY += 48;
-        _pl1Label = new Label { Text = "Limite Sustentado PL1 (Watts):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _pl1Slider = new FluentSlider { Minimum = 15, Maximum = 253, Value = 65, SmallChange = 1, LargeChange = 10, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _pl1ValLabel = new Label { Text = "65 W", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
-        _pl1Slider.Scroll += (_, _) =>
-        {
-            int def = _engine?.Capabilities.DefaultPl1Watts ?? 65;
-            _pl1ValLabel.Text = $"{_pl1Slider.Value} W (Padrão: {def} W)";
-            _selectedPresetIndex = -1;
-            UpdatePresetButtonsHighlight();
-        };
+        _pl2Slider = new FluentSlider { Minimum = 15, Maximum = 253, Value = 125, SmallChange = 1, LargeChange = 10 };
+        _pl2Slider.Scroll += (_, _) => { UpdateValueLabels(); MarkCustom(); };
 
-        rowY += 48;
-        _pl2Label = new Label { Text = "Limite de Rajada PL2 (Watts):", Location = new Point(lblX, rowY + 4), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _pl2Slider = new FluentSlider { Minimum = 15, Maximum = 253, Value = 125, SmallChange = 1, LargeChange = 10, Location = new Point(ctrlX, rowY), Width = sliderW };
-        _pl2ValLabel = new Label { Text = "125 W", Location = new Point(valX, rowY + 4), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 9.5f) };
-        _pl2Slider.Scroll += (_, _) =>
-        {
-            int def = _engine?.Capabilities.DefaultPl2Watts ?? 125;
-            _pl2ValLabel.Text = $"{_pl2Slider.Value} W (Padrão: {def} W)";
-            _selectedPresetIndex = -1;
-            UpdatePresetButtonsHighlight();
-        };
+        _throttleRow = new SettingRow("Estado máximo do processador", "Teto de frequência no plano de energia do Windows", _throttleMaxSlider);
+        _pl1Row = new SettingRow("Limite sustentado (PL1)", "Potência que a CPU pode manter continuamente", _pl1Slider);
+        _pl2Row = new SettingRow("Limite de pico (PL2)", "Potência permitida durante picos curtos", _pl2Slider);
 
-        rowY += 42;
-        _raplInfoLabel = new Label
-        {
-            Text = "Estado: A verificar limites de hardware do processador...",
-            Font = FluentStyle.CreateUiFont(FontStyle.Italic, 8.5f),
-            Location = new Point(lblX, rowY),
-            AutoSize = true
-        };
+        StackPanel rows = new() { Dock = DockStyle.Top, Gap = 0, OnSurface = true };
+        rows.Controls.Add(new SettingRow("Perfil rápido", "Configurações pré-testadas", presets, false) { ShowDivider = false });
+        rows.Controls.Add(new SettingRow("Turbo Boost", "Como os núcleos sobem de frequência", _boostCombo, false));
+        rows.Controls.Add(_throttleRow);
+        rows.Controls.Add(_pl1Row);
+        rows.Controls.Add(_pl2Row);
+        _settingsCard.Controls.Add(rows);
+        _settingsCard.Padding = new Padding(_settingsCard.Padding.Left, _settingsCard.Padding.Top, _settingsCard.Padding.Right, LogicalToDeviceUnits(4));
 
-        _controlsCard.Controls.Add(_boostLabel);
-        _controlsCard.Controls.Add(_boostCombo);
-        _controlsCard.Controls.Add(_boostHelpLabel);
-        _controlsCard.Controls.Add(_throttleMaxLabel);
-        _controlsCard.Controls.Add(_throttleMaxSlider);
-        _controlsCard.Controls.Add(_throttleMaxValLabel);
-        _controlsCard.Controls.Add(_pl1Label);
-        _controlsCard.Controls.Add(_pl1Slider);
-        _controlsCard.Controls.Add(_pl1ValLabel);
-        _controlsCard.Controls.Add(_pl2Label);
-        _controlsCard.Controls.Add(_pl2Slider);
-        _controlsCard.Controls.Add(_pl2ValLabel);
-        _controlsCard.Controls.Add(_raplInfoLabel);
-        _controlsContainer.Controls.Add(_controlsCard);
-
-        // 6. Barra de Ações (Grande, clara e segura)
-        _actionContainer = new Panel { Dock = DockStyle.Top, Height = 70 + gap, Padding = new Padding(0, 0, 0, gap) };
-        _actionBar = new Panel { Dock = DockStyle.Fill };
-        _btnTest = new FluentButton
-        {
-            Text = "🛡️ Testar com Segurança (15s)",
-            Location = new Point(0, 4),
-            Width = 230,
-            Height = 36,
-            Variant = FluentButtonVariant.Success
-        };
+        // 5. Actions
+        _actions = new ToolbarRow();
+        _btnTest = PageMetrics.FitButton(new FluentButton { Text = "Testar durante 15 s", Variant = FluentButtonVariant.Accent });
         _btnTest.Click += BtnTest_Click;
-
-        _btnResetStock = new FluentButton
-        {
-            Text = "↺ Repor Valores de Fábrica",
-            Location = new Point(242, 4),
-            Width = 210,
-            Height = 36,
-            Variant = FluentButtonVariant.Standard
-        };
+        _btnResetStock = PageMetrics.FitButton(new FluentButton { Text = "Repor valores de fábrica" });
         _btnResetStock.Click += BtnResetStock_Click;
-
-        _chkApplyStartup = new CheckBox
-        {
-            Text = "Aplicar perfil no arranque do Windows (protegido por watchdog de segurança)",
-            Location = new Point(468, 12),
-            AutoSize = true,
-            Font = FluentStyle.UiFont
-        };
+        _chkApplyStartup = new CheckBox { Text = "Aplicar no arranque do Windows", AutoSize = true, Font = FluentStyle.UiFont, Tag = PageMetrics.AlignRight };
         _chkApplyStartup.CheckedChanged += (_, _) =>
         {
-            if (_engine != null)
-            {
-                _engine.CurrentState.ApplyOnStartup = _chkApplyStartup.Checked;
-                _engine.SaveSettings();
-            }
+            if (_engine == null)
+                return;
+
+            _engine.CurrentState.ApplyOnStartup = _chkApplyStartup.Checked;
+            _engine.SaveSettings();
         };
+        _actions.Controls.Add(_btnTest);
+        _actions.Controls.Add(_btnResetStock);
+        _actions.Controls.Add(_chkApplyStartup);
 
-        _statusMessageLabel = new Label
-        {
-            Text = string.Empty,
-            Location = new Point(0, 46),
-            AutoSize = true,
-            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
-        };
+        _statusMessageLabel = new Label { AutoSize = false, Height = FluentStyle.UiFont.Height + 4, Font = FluentStyle.UiFont, AutoEllipsis = true, Visible = false };
 
-        _actionBar.Controls.Add(_btnTest);
-        _actionBar.Controls.Add(_btnResetStock);
-        _actionBar.Controls.Add(_chkApplyStartup);
-        _actionBar.Controls.Add(_statusMessageLabel);
-        _actionContainer.Controls.Add(_actionBar);
+        _page = new StackPanel { Dock = DockStyle.Top };
+        _page.Controls.Add(_metrics);
+        _page.Controls.Add(_toolbar);
+        _page.Controls.Add(_watchdogBanner);
+        _page.Controls.Add(_settingsCard);
+        _page.Controls.Add(_actions);
+        _page.Controls.Add(_statusMessageLabel);
+        Controls.Add(_page);
 
-        // Ordem inversa de adição para dock vertical correto
-        Controls.Add(_actionContainer);
-        Controls.Add(_controlsContainer);
-        Controls.Add(_watchdogContainer);
-        Controls.Add(_presetsContainer);
-        Controls.Add(_telemetryRow);
-        Controls.Add(_headerPanel);
+        UpdateValueLabels();
+        UpdatePresetButtonsHighlight();
 
         if (engine != null)
             SetEngine(engine);
 
         ApplyTheme(Theme.Current);
+    }
+
+    private static FluentMetricCard NewCard(Image icon, string caption, string unit, string detail)
+    {
+        FluentMetricCard card = new() { Icon = icon };
+        card.SetMetric(caption, "-", unit, detail);
+        return card;
     }
 
     public void SetEngine(CpuTuningEngine engine)
@@ -415,49 +217,52 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _engine.StateChanged += Engine_StateChanged;
 
         UpdateUiFromState();
-        UpdateStockLabels();
         UpdateTelemetry();
     }
 
-    private void UpdateStockLabels()
+    private void MarkCustom()
     {
-        if (_engine == null) return;
-        int defPl1 = _engine.Capabilities.DefaultPl1Watts;
-        int defPl2 = _engine.Capabilities.DefaultPl2Watts;
-        _safetyStockLabel.Text = $"Valores Certificados de Fábrica: PL1 = {defPl1} W | PL2 = {defPl2} W | Estado Máximo = 100% | Turbo Boost = Ativo";
-        _pl1ValLabel.Text = $"{_pl1Slider.Value} W (Padrão: {defPl1} W)";
-        _pl2ValLabel.Text = $"{_pl2Slider.Value} W (Padrão: {defPl2} W)";
-        _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}% (Padrão: 100%)";
+        _selectedPresetIndex = -1;
+        UpdatePresetButtonsHighlight();
+    }
+
+    private void UpdateValueLabels()
+    {
+        int defPl1 = _engine?.Capabilities.DefaultPl1Watts ?? 65;
+        int defPl2 = _engine?.Capabilities.DefaultPl2Watts ?? 125;
+        _throttleRow.SetValue($"{_throttleMaxSlider.Value} %", "Padrão 100 %");
+        _pl1Row.SetValue($"{_pl1Slider.Value} W", $"Padrão {defPl1} W");
+        _pl2Row.SetValue($"{_pl2Slider.Value} W", $"Padrão {defPl2} W");
     }
 
     private void UpdateUiFromState()
     {
-        if (_engine == null) return;
+        if (_engine == null)
+            return;
 
         CpuTuningState s = _engine.CurrentState;
         _throttleMaxSlider.Value = Math.Max(_throttleMaxSlider.Minimum, Math.Min(_throttleMaxSlider.Maximum, s.MaxProcessorStatePercent));
-        _throttleMaxValLabel.Text = $"{_throttleMaxSlider.Value}% (Padrão: 100%)";
-
         _pl1Slider.Value = Math.Max(_pl1Slider.Minimum, Math.Min(_pl1Slider.Maximum, s.Pl1Watts));
-        _pl1ValLabel.Text = $"{_pl1Slider.Value} W (Padrão: {_engine.Capabilities.DefaultPl1Watts} W)";
-
         _pl2Slider.Value = Math.Max(_pl2Slider.Minimum, Math.Min(_pl2Slider.Maximum, s.Pl2Watts));
-        _pl2ValLabel.Text = $"{_pl2Slider.Value} W (Padrão: {_engine.Capabilities.DefaultPl2Watts} W)";
-
         _boostCombo.SelectedIndex = Math.Max(0, Math.Min(3, s.TurboBoostMode));
         _chkApplyStartup.Checked = s.ApplyOnStartup;
 
-        _pl1Slider.Enabled = _engine.Capabilities.CanAdjustRapl;
-        _pl2Slider.Enabled = _engine.Capabilities.CanAdjustRapl;
-        _raplInfoLabel.Text = $"Modo de Controlo: {_engine.Capabilities.RaplStatusMessage}";
+        bool rapl = _engine.Capabilities.CanAdjustRapl;
+        _pl1Slider.Enabled = rapl;
+        _pl2Slider.Enabled = rapl;
+        _pl1Row.Invalidate();
+        _pl2Row.Invalidate();
+        _controlModeLabel.Text = $"Modo de controlo: {_engine.Capabilities.RaplStatusMessage}";
 
+        UpdateValueLabels();
         UpdatePresetButtonsHighlight();
     }
 
     private void ApplyPreset(int index)
     {
-        if (_engine == null) return;
-        _selectedPresetIndex = index;
+        if (_engine == null)
+            return;
+
         int defPl1 = _engine.Capabilities.DefaultPl1Watts;
         int defPl2 = _engine.Capabilities.DefaultPl2Watts;
 
@@ -465,45 +270,50 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         {
             case 0: // Eco
                 _throttleMaxSlider.Value = 90;
-                _boostCombo.SelectedIndex = 0; // Desativado
+                _boostCombo.SelectedIndex = 0;
                 _pl1Slider.Value = Math.Max(15, (int)(defPl1 * 0.70f));
                 _pl2Slider.Value = Math.Max(15, (int)(defPl2 * 0.70f));
                 break;
 
-            case 1: // Balanced / Stock
+            case 1: // Stock
                 _throttleMaxSlider.Value = 100;
-                _boostCombo.SelectedIndex = 1; // Ativo
+                _boostCombo.SelectedIndex = 1;
                 _pl1Slider.Value = defPl1;
                 _pl2Slider.Value = defPl2;
                 break;
 
-            case 2: // Max Perf
+            case 2: // Performance
                 _throttleMaxSlider.Value = 100;
-                _boostCombo.SelectedIndex = 2; // Agressivo
+                _boostCombo.SelectedIndex = 2;
                 _pl1Slider.Value = Math.Min(253, (int)(defPl1 * 1.25f));
                 _pl2Slider.Value = Math.Min(253, (int)(defPl2 * 1.25f));
                 break;
         }
 
-        UpdateStockLabels();
+        // Set after the editors: their change handlers mark the profile as custom.
+        _selectedPresetIndex = index;
+        UpdateValueLabels();
         UpdatePresetButtonsHighlight();
     }
 
     private void UpdatePresetButtonsHighlight()
     {
         _btnEco.IsActive = _selectedPresetIndex == 0;
-        _btnEco.Variant = _selectedPresetIndex == 0 ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
-
         _btnBalanced.IsActive = _selectedPresetIndex == 1;
-        _btnBalanced.Variant = _selectedPresetIndex == 1 ? FluentButtonVariant.Success : FluentButtonVariant.Standard;
-
         _btnMaxPerf.IsActive = _selectedPresetIndex == 2;
-        _btnMaxPerf.Variant = _selectedPresetIndex == 2 ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
+    }
+
+    private void ShowStatus(string text, Color color)
+    {
+        _statusMessageLabel.Text = text ?? string.Empty;
+        _statusMessageLabel.ForeColor = color;
+        _statusMessageLabel.Visible = _statusMessageLabel.Text.Length > 0;
     }
 
     private void BtnTest_Click(object sender, EventArgs e)
     {
-        if (_engine == null) return;
+        if (_engine == null)
+            return;
 
         CpuTuningState newState = new()
         {
@@ -516,33 +326,31 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
 
         if (_engine.StartWatchdogTest(newState, out string error))
         {
-            _watchdogContainer.Visible = true;
-            _statusMessageLabel.Text = "🛡️ Teste de segurança iniciado com sucesso. O watchdog reverterá em 15s caso não confirme.";
-            _statusMessageLabel.ForeColor = Theme.Current.AccentColor;
+            _watchdogBanner.Visible = true;
+            ShowStatus(string.Empty, Theme.Current.ForegroundColor);
         }
         else
         {
-            _statusMessageLabel.Text = error ?? "Erro ao iniciar teste de CPU.";
-            _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
+            ShowStatus(error ?? "Não foi possível iniciar o teste.", Theme.Current.StateHotColor);
         }
     }
 
     private void BtnResetStock_Click(object sender, EventArgs e)
     {
-        if (_engine == null) return;
+        if (_engine == null)
+            return;
 
         if (_engine.ResetToStock(out string error))
         {
-            _selectedPresetIndex = 1;
             UpdateUiFromState();
-            _watchdogContainer.Visible = false;
-            _statusMessageLabel.Text = "✓ Valores certificados de fábrica repostos com sucesso.";
-            _statusMessageLabel.ForeColor = Theme.Current.StateCoolColor;
+            _selectedPresetIndex = 1;
+            UpdatePresetButtonsHighlight();
+            _watchdogBanner.Visible = false;
+            ShowStatus("Valores de fábrica repostos.", Theme.Current.StateCoolColor);
         }
         else
         {
-            _statusMessageLabel.Text = error ?? "Erro ao repor padrões.";
-            _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
+            ShowStatus(error ?? "Não foi possível repor os valores de fábrica.", Theme.Current.StateHotColor);
         }
     }
 
@@ -554,7 +362,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
             return;
         }
 
-        _watchdogLabel.Text = $"Perfil de CPU em teste temporário! Revertendo automaticamente em {seconds}s a menos que confirme.";
+        _watchdogLabel.Text = $"Perfil em teste. Reverte automaticamente em {seconds} s se não confirmar.";
     }
 
     private void Engine_WatchdogReverted(object sender, string reason)
@@ -565,10 +373,9 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
             return;
         }
 
-        _watchdogContainer.Visible = false;
+        _watchdogBanner.Visible = false;
         UpdateUiFromState();
-        _statusMessageLabel.Text = reason;
-        _statusMessageLabel.ForeColor = Theme.Current.StateHotColor;
+        ShowStatus(reason, Theme.Current.StateHotColor);
     }
 
     private void Engine_TestConfirmed(object sender, EventArgs e)
@@ -579,9 +386,8 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
             return;
         }
 
-        _watchdogContainer.Visible = false;
-        _statusMessageLabel.Text = "✓ Perfil de CPU confirmado e gravado com segurança.";
-        _statusMessageLabel.ForeColor = Theme.Current.StateCoolColor;
+        _watchdogBanner.Visible = false;
+        ShowStatus("Perfil confirmado e gravado.", Theme.Current.StateCoolColor);
     }
 
     private void Engine_StateChanged(object sender, EventArgs e)
@@ -600,63 +406,58 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         if (_engine == null || !Visible)
             return;
 
-        CpuTuningTelemetry telem = _engine.ReadTelemetry();
+        CpuTuningTelemetry t = _engine.ReadTelemetry();
 
-        // 1. Temp
-        if (telem.PackageTemperatureC.HasValue && telem.PackageTemperatureC.Value > 0f)
+        if (t.PackageTemperatureC is > 0f)
         {
-            float temp = telem.PackageTemperatureC.Value;
-            MetricCardSeverity sev = temp >= 85f ? MetricCardSeverity.Hot : (temp >= 75f ? MetricCardSeverity.Warm : (temp <= 45f ? MetricCardSeverity.Cool : MetricCardSeverity.Normal));
-            _tempCard.SetMetric("TEMPERATURA", $"{temp:F0}", "°C", "Sensor Package", sev, temp / 100f);
+            float temp = t.PackageTemperatureC.Value;
+            MetricCardSeverity sev = temp >= 85f ? MetricCardSeverity.Hot : (temp >= 75f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal);
+            _tempCard.SetMetric("Temperatura", $"{temp:F0}", "°C", "CPU Package", sev, temp / 100f);
         }
         else
         {
-            _tempCard.SetMetric("TEMPERATURA", "--", "°C", "Sensor Package", MetricCardSeverity.Normal);
+            _tempCard.SetMetric("Temperatura", "-", "°C", "CPU Package");
         }
 
-        // 2. Voltagem (CPU VCore)
-        if (telem.VoltageV.HasValue && telem.VoltageV.Value > 0f)
+        if (t.VoltageV is > 0f)
         {
-            float volt = telem.VoltageV.Value;
+            float volt = t.VoltageV.Value;
             MetricCardSeverity sev = volt >= 1.48f ? MetricCardSeverity.Hot : (volt >= 1.40f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal);
-            _voltageCard.SetMetric("VOLTAGEM", $"{volt:F3}", "V", "CPU VCore", sev, volt / 1.6f);
+            _voltageCard.SetMetric("Voltagem", $"{volt:F3}", "V", "CPU VCore", sev, volt / 1.6f);
         }
         else
         {
-            _voltageCard.SetMetric("VOLTAGEM", "--", "V", "CPU VCore", MetricCardSeverity.Normal);
+            _voltageCard.SetMetric("Voltagem", "-", "V", "CPU VCore");
         }
 
-        // 3. Potência
-        if (telem.PackagePowerWatts.HasValue && telem.PackagePowerWatts.Value > 0f)
+        if (t.PackagePowerWatts is > 0f)
         {
-            float power = telem.PackagePowerWatts.Value;
-            _powerCard.SetMetric("POTÊNCIA", $"{power:F1}", "W", "Package Power", power > 90f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal, power / 150f);
+            float power = t.PackagePowerWatts.Value;
+            _powerCard.SetMetric("Potência", $"{power:F1}", "W", "Package Power", power > 90f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal, power / 150f);
         }
         else
         {
-            _powerCard.SetMetric("POTÊNCIA", "--", "W", "Package Power", MetricCardSeverity.Normal);
+            _powerCard.SetMetric("Potência", "-", "W", "Package Power");
         }
 
-        // 4. Clock
-        if (telem.CoreClockMhz.HasValue && telem.CoreClockMhz.Value > 0f)
+        if (t.CoreClockMhz is > 0f)
         {
-            float clock = telem.CoreClockMhz.Value;
-            _clockCard.SetMetric("FREQUÊNCIA", $"{clock:F0}", "MHz", "Clock Médio", MetricCardSeverity.Normal, clock / 5000f);
+            float clock = t.CoreClockMhz.Value;
+            _clockCard.SetMetric("Frequência", $"{clock:F0}", "MHz", "Média dos núcleos", MetricCardSeverity.Normal, clock / 5000f);
         }
         else
         {
-            _clockCard.SetMetric("FREQUÊNCIA", "--", "MHz", "Clock Médio", MetricCardSeverity.Normal);
+            _clockCard.SetMetric("Frequência", "-", "MHz", "Média dos núcleos");
         }
 
-        // 5. Carga
-        if (telem.TotalLoadPercent.HasValue)
+        if (t.TotalLoadPercent.HasValue)
         {
-            float load = telem.TotalLoadPercent.Value;
-            _loadCard.SetMetric("CARGA TOTAL", $"{load:F0}", "%", "Uso de CPU", load > 85f ? MetricCardSeverity.Hot : MetricCardSeverity.Normal, load / 100f);
+            float load = t.TotalLoadPercent.Value;
+            _loadCard.SetMetric("Carga", $"{load:F0}", "%", "Total da CPU", load > 85f ? MetricCardSeverity.Hot : MetricCardSeverity.Normal, load / 100f);
         }
         else
         {
-            _loadCard.SetMetric("CARGA TOTAL", "--", "%", "Uso de CPU", MetricCardSeverity.Normal);
+            _loadCard.SetMetric("Carga", "-", "%", "Total da CPU");
         }
     }
 
@@ -665,50 +466,9 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         BackColor = theme.BackgroundColor;
         ForeColor = theme.ForegroundColor;
 
-        _titleLabel.ForeColor = theme.ForegroundColor;
-        _subtitleLabel.ForeColor = theme.MutedForegroundColor;
-        _safetyBadge.ApplyTheme(theme);
+        theme.Apply(_page);
+        _controlModeLabel.ForeColor = theme.MutedForegroundColor;
 
-        _tempCard.ApplyTheme(theme);
-        _voltageCard.ApplyTheme(theme);
-        _powerCard.ApplyTheme(theme);
-        _clockCard.ApplyTheme(theme);
-        _loadCard.ApplyTheme(theme);
-
-        _presetsCard.ApplyTheme(theme);
-        _safetyStockLabel.ForeColor = theme.AccentColor;
-        _safetyDescLabel.ForeColor = theme.MutedForegroundColor;
-        _btnEco.ApplyTheme(theme);
-        _btnBalanced.ApplyTheme(theme);
-        _btnMaxPerf.ApplyTheme(theme);
-
-        _watchdogBanner.ApplyTheme(theme);
-        _watchdogLabel.ForeColor = theme.ForegroundColor;
-        _btnKeep.ApplyTheme(theme);
-        _btnRevert.ApplyTheme(theme);
-
-        _controlsCard.ApplyTheme(theme);
-        _boostLabel.ForeColor = theme.ForegroundColor;
-        _boostCombo.ApplyTheme(theme);
-        _boostHelpLabel.ForeColor = theme.MutedForegroundColor;
-
-        _throttleMaxLabel.ForeColor = theme.ForegroundColor;
-        _throttleMaxSlider.ApplyTheme(theme);
-        _throttleMaxValLabel.ForeColor = theme.ForegroundColor;
-
-        _pl1Label.ForeColor = theme.ForegroundColor;
-        _pl1Slider.ApplyTheme(theme);
-        _pl1ValLabel.ForeColor = theme.ForegroundColor;
-
-        _pl2Label.ForeColor = theme.ForegroundColor;
-        _pl2Slider.ApplyTheme(theme);
-        _pl2ValLabel.ForeColor = theme.ForegroundColor;
-        _raplInfoLabel.ForeColor = theme.MutedForegroundColor;
-
-        _btnTest.ApplyTheme(theme);
-        _btnResetStock.ApplyTheme(theme);
-        _chkApplyStartup.ForeColor = theme.ForegroundColor;
-
-        Invalidate();
+        Invalidate(true);
     }
 }

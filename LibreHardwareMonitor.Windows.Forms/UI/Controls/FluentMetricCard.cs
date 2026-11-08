@@ -172,7 +172,6 @@ public sealed class FluentMetricCard : Control, IThemedControl
     {
         base.OnMouseEnter(e);
         _isHovered = true;
-        Cursor = Cursors.Hand;
         Invalidate();
     }
 
@@ -180,7 +179,6 @@ public sealed class FluentMetricCard : Control, IThemedControl
     {
         base.OnMouseLeave(e);
         _isHovered = false;
-        Cursor = Cursors.Default;
         Invalidate();
     }
 

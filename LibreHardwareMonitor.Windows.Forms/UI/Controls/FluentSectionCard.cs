@@ -59,6 +59,36 @@ public class FluentSectionCard : Panel, IThemedControl
         }
     }
 
+    /// <summary>
+    /// When true the card sizes its height to its padding plus the heights of its visible children docked
+    /// at the top, so cards never need hard-coded heights.
+    /// </summary>
+    public bool AutoHeight { get; set; }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        base.OnLayout(levent);
+        if (!AutoHeight)
+            return;
+
+        int height = Padding.Vertical;
+        foreach (Control c in Controls)
+        {
+            if (c.Dock == DockStyle.Top && (c.Visible || !Visible))
+                height += c.Height;
+        }
+
+        if (Height != height)
+            Height = height;
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible && AutoHeight)
+            PerformLayout();
+    }
+
     private void UpdateHeaderPadding()
     {
         if (string.IsNullOrEmpty(_title))
@@ -113,7 +143,7 @@ public class FluentSectionCard : Panel, IThemedControl
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         _titleFont ??= FluentStyle.CreateUiFont(FontStyle.Bold, 10f);
-        _subtitleFont ??= FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f);
+        _subtitleFont ??= FluentStyle.CreateUiFont(FontStyle.Regular, 8.25f);
 
         int padX = LogicalToDeviceUnits(16);
         int startY = LogicalToDeviceUnits(12);

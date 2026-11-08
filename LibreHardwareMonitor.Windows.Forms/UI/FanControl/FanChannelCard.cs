@@ -4,39 +4,47 @@
 // All Rights Reserved.
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
+using System.Linq;
 using System.Windows.Forms;
+using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Controls;
+using LibreHardwareMonitor.Windows.Forms.UI.Icons;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 
+/// <summary>
+/// Compact card for one fan channel, built on the dashboard KPI language: icon + name, headline PWM value,
+/// detail line and progress bar, followed by the mode editor (fixed slider or curve presets with a preview).
+/// </summary>
 public sealed class FanChannelCard : Panel, IThemedControl
 {
+    private const float ChartMinTemp = 20f;
+    private const float ChartMaxTemp = 100f;
+
+    private static Font s_valueFont;
+    private static Font s_detailFont;
+
     private readonly FanChannelRuntime _channel;
     private readonly FanControlEngine _engine;
-    private bool _isHovered;
 
-    private readonly Label _titleLabel;
-    private readonly FluentBadge _statusBadge;
-    private readonly FluentBadge _emergencyBadge;
-
-    private readonly Label _modeCaption;
+    private readonly FluentBadge _stateBadge;
     private readonly FluentComboBox _modeCombo;
-
-    private readonly Panel _fixedPanel;
-    private readonly FluentSlider _fixedSlider;
-    private readonly Label _sliderValLabel;
-
-    private readonly Panel _curvePanel;
-    private readonly Label _sourceCaption;
     private readonly FluentComboBox _sourceCombo;
+    private readonly FluentSlider _fixedSlider;
     private readonly FluentButton _btnSilent;
     private readonly FluentButton _btnBalanced;
     private readonly FluentButton _btnPerf;
-    private readonly Label _curveInfoLabel;
-    private readonly Label _hystLabel;
+
+    private float _pwm;
+    private string _rpmText = string.Empty;
+    private Rectangle _valueArea;
+    private Rectangle _sliderValueArea;
+    private Rectangle _chartArea;
 
     public FanChannelRuntime Runtime => _channel;
 
@@ -48,76 +56,15 @@ public sealed class FanChannelCard : Panel, IThemedControl
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
 
-        Height = 150;
-        Padding = new Padding(18);
-        Dock = DockStyle.Top;
+        _stateBadge = new FluentBadge { Height = LogicalToDeviceUnits(22) };
 
-        // 1. Linha de Título e Badges
-        _titleLabel = new Label
-        {
-            Text = $"{_channel.HardwareName} — {_channel.ChannelName}",
-            Font = FluentStyle.CreateUiFont(FontStyle.Bold, 11f),
-            Location = new Point(18, 14),
-            AutoSize = true
-        };
-
-        _statusBadge = new FluentBadge
-        {
-            Location = new Point(380, 12),
-            Height = 24,
-            Style = BadgeStyle.Neutral
-        };
-        _statusBadge.SetBadge("PWM: -- • RPM: --", BadgeStyle.Neutral);
-
-        _emergencyBadge = new FluentBadge
-        {
-            Location = new Point(570, 12),
-            Height = 24,
-            Style = BadgeStyle.Danger,
-            Visible = false
-        };
-        _emergencyBadge.SetBadge("Emergência Térmica >90 °C (100% Forçado)", BadgeStyle.Danger);
-
-        // 2. Linha do Seletor de Modo
-        _modeCaption = new Label
-        {
-            Text = "Modo:",
-            Location = new Point(18, 52),
-            AutoSize = true,
-            Font = FluentStyle.UiFontSemibold
-        };
-
-        _modeCombo = new FluentComboBox
-        {
-            Location = new Point(72, 48),
-            Width = 175
-        };
-        _modeCombo.Items.AddRange(new object[] { "Auto (BIOS Padrão)", "Fixo (% Manual)", "Curva Dinâmica" });
+        _modeCombo = new FluentComboBox();
+        _modeCombo.Items.AddRange(new object[] { "Automático (BIOS)", "Velocidade fixa", "Curva de temperatura" });
         _modeCombo.SelectedIndex = (int)_channel.Config.Mode;
         _modeCombo.SelectedIndexChanged += ModeCombo_SelectedIndexChanged;
 
-        // 3. Painel de Modo Fixo
-        _fixedPanel = new Panel { Location = new Point(265, 42), Size = new Size(500, 48), Visible = false };
-        _fixedSlider = new FluentSlider { Minimum = 0, Maximum = 100, Value = (int)_channel.Config.FixedPwm, SmallChange = 1, LargeChange = 5, Location = new Point(0, 8), Width = 320 };
-        _sliderValLabel = new Label { Text = $"{(int)_channel.Config.FixedPwm}%", Location = new Point(332, 11), AutoSize = true, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 10f) };
-        _fixedSlider.Scroll += (_, _) =>
-        {
-            _channel.Config.FixedPwm = _fixedSlider.Value;
-            _sliderValLabel.Text = $"{_fixedSlider.Value}%";
-            _engine.SetCustomMode();
-        };
-        _fixedPanel.Controls.Add(_fixedSlider);
-        _fixedPanel.Controls.Add(_sliderValLabel);
-
-        // 4. Painel de Curva Dinâmica
-        _curvePanel = new Panel { Location = new Point(265, 42), Size = new Size(580, 94), Visible = false };
-        _sourceCaption = new Label { Text = "Sensor Alvo:", Location = new Point(0, 8), AutoSize = true, Font = FluentStyle.UiFontSemibold };
-        _sourceCombo = new FluentComboBox
-        {
-            Location = new Point(90, 4),
-            Width = 150
-        };
-        _sourceCombo.Items.AddRange(new object[] { "Max(CPU, GPU)", "CPU Package", "GPU Core" });
+        _sourceCombo = new FluentComboBox();
+        _sourceCombo.Items.AddRange(new object[] { "Máx. CPU / GPU", "CPU Package", "GPU Core" });
         _sourceCombo.SelectedIndex = _channel.Config.TemperatureSource switch
         {
             FanChannelConfig.SourceCpu => 1,
@@ -126,64 +73,40 @@ public sealed class FanChannelCard : Panel, IThemedControl
         };
         _sourceCombo.SelectedIndexChanged += SourceCombo_SelectedIndexChanged;
 
-        _btnSilent = new FluentButton { Text = "Silencioso", Location = new Point(252, 4), Width = 96, Height = 30 };
-        _btnSilent.Click += (_, _) => ApplyCurve(FanCurve.CreateSilent(), 0);
-
-        _btnBalanced = new FluentButton { Text = "Equilibrado", Location = new Point(356, 4), Width = 102, Height = 30 };
-        _btnBalanced.Click += (_, _) => ApplyCurve(FanCurve.CreateBalanced(), 1);
-
-        _btnPerf = new FluentButton { Text = "Desempenho", Location = new Point(466, 4), Width = 108, Height = 30 };
-        _btnPerf.Click += (_, _) => ApplyCurve(FanCurve.CreatePerformance(), 2);
-
-        _curveInfoLabel = new Label
+        _fixedSlider = new FluentSlider { Minimum = 0, Maximum = 100, Value = ClampPercent(_channel.Config.FixedPwm), SmallChange = 1, LargeChange = 5 };
+        _fixedSlider.Scroll += (_, _) =>
         {
-            Text = $"Curva: {_channel.Config.Curve}",
-            Location = new Point(0, 44),
-            Size = new Size(560, 22),
-            Font = FluentStyle.CreateUiFont(FontStyle.Regular, 8.5f)
+            _channel.Config.FixedPwm = _fixedSlider.Value;
+            _engine.SetCustomMode();
+            Invalidate(_sliderValueArea);
         };
 
-        _hystLabel = new Label
-        {
-            Text = $"Histerese: +{_channel.Config.HysteresisUpC:F1} °C / -{_channel.Config.HysteresisDownC:F1} °C  •  Suavização: {_channel.Config.ResponseTimeSeconds:F0}s",
-            Location = new Point(0, 68),
-            AutoSize = true,
-            Font = FluentStyle.CreateUiFont(FontStyle.Italic, 8.0f)
-        };
+        _btnSilent = new FluentButton { Text = "Silenciosa" };
+        _btnSilent.Click += (_, _) => ApplyCurve(FanCurve.CreateSilent());
 
-        _curvePanel.Controls.Add(_sourceCaption);
-        _curvePanel.Controls.Add(_sourceCombo);
-        _curvePanel.Controls.Add(_btnSilent);
-        _curvePanel.Controls.Add(_btnBalanced);
-        _curvePanel.Controls.Add(_btnPerf);
-        _curvePanel.Controls.Add(_curveInfoLabel);
-        _curvePanel.Controls.Add(_hystLabel);
+        _btnBalanced = new FluentButton { Text = "Equilibrada" };
+        _btnBalanced.Click += (_, _) => ApplyCurve(FanCurve.CreateBalanced());
 
-        Controls.Add(_titleLabel);
-        Controls.Add(_statusBadge);
-        Controls.Add(_emergencyBadge);
-        Controls.Add(_modeCaption);
-        Controls.Add(_modeCombo);
-        Controls.Add(_fixedPanel);
-        Controls.Add(_curvePanel);
+        _btnPerf = new FluentButton { Text = "Desempenho" };
+        _btnPerf.Click += (_, _) => ApplyCurve(FanCurve.CreatePerformance());
 
-        UpdateModePanels();
+        Controls.AddRange(new Control[] { _stateBadge, _modeCombo, _sourceCombo, _fixedSlider, _btnSilent, _btnBalanced, _btnPerf });
+
+        UpdateModeControls();
+        UpdateCurveButtons();
+        UpdateTelemetry();
         ApplyTheme(Theme.Current);
     }
 
-    protected override void OnMouseEnter(EventArgs e)
-    {
-        base.OnMouseEnter(e);
-        _isHovered = true;
-        Invalidate();
-    }
+    private static Font ValueFont => s_valueFont ??= FluentStyle.CreateDisplayFont(17f);
 
-    protected override void OnMouseLeave(EventArgs e)
-    {
-        base.OnMouseLeave(e);
-        _isHovered = false;
-        Invalidate();
-    }
+    private static Font DetailFont => s_detailFont ??= FluentStyle.CreateUiFont(FontStyle.Regular, 8.25f);
+
+    private static int ClampPercent(float value) => (int)Math.Max(0f, Math.Min(100f, value));
+
+    private bool IsFixed => _channel.Config.Mode == FanChannelMode.Fixed;
+
+    private bool IsCurve => _channel.Config.Mode == FanChannelMode.Curve;
 
     private void ModeCombo_SelectedIndexChanged(object sender, EventArgs e)
     {
@@ -191,8 +114,9 @@ public sealed class FanChannelCard : Panel, IThemedControl
         if (_channel.Config.Mode == FanChannelMode.DefaultBios)
             _channel.ResetToDefault();
 
-        UpdateModePanels();
+        UpdateModeControls();
         _engine.SetCustomMode();
+        UpdateTelemetry();
     }
 
     private void SourceCombo_SelectedIndexChanged(object sender, EventArgs e)
@@ -206,91 +130,155 @@ public sealed class FanChannelCard : Panel, IThemedControl
         _engine.SetCustomMode();
     }
 
-    private void ApplyCurve(FanCurve curve, int btnIndex)
+    private void ApplyCurve(FanCurve curve)
     {
         _channel.Config.Curve = curve;
-        _curveInfoLabel.Text = $"Curva: {curve}";
         _engine.SetCustomMode();
-
-        _btnSilent.IsActive = (btnIndex == 0);
-        _btnSilent.Variant = btnIndex == 0 ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
-
-        _btnBalanced.IsActive = (btnIndex == 1);
-        _btnBalanced.Variant = btnIndex == 1 ? FluentButtonVariant.Success : FluentButtonVariant.Standard;
-
-        _btnPerf.IsActive = (btnIndex == 2);
-        _btnPerf.Variant = btnIndex == 2 ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
+        UpdateCurveButtons();
+        Invalidate();
     }
 
-    private void UpdateModePanels()
+    private void UpdateCurveButtons()
     {
-        bool isFixed = _channel.Config.Mode == FanChannelMode.Fixed;
-        bool isCurve = _channel.Config.Mode == FanChannelMode.Curve;
+        List<FanCurvePoint> points = _channel.Config.Curve?.Points ?? new List<FanCurvePoint>();
+        SetPresetState(_btnSilent, points.SequenceEqual(FanCurve.CreateSilent().Points));
+        SetPresetState(_btnBalanced, points.SequenceEqual(FanCurve.CreateBalanced().Points));
+        SetPresetState(_btnPerf, points.SequenceEqual(FanCurve.CreatePerformance().Points));
+    }
 
-        _fixedPanel.Visible = isFixed;
-        _curvePanel.Visible = isCurve;
+    private static void SetPresetState(FluentButton button, bool active)
+    {
+        button.IsActive = active;
+        button.Variant = FluentButtonVariant.Standard;
+    }
 
-        Height = isCurve ? 154 : (isFixed ? 112 : 98);
+    private void UpdateModeControls()
+    {
+        _fixedSlider.Visible = IsFixed;
+        _sourceCombo.Visible = IsCurve;
+        _btnSilent.Visible = IsCurve;
+        _btnBalanced.Visible = IsCurve;
+        _btnPerf.Visible = IsCurve;
+        PerformLayout();
+        Invalidate();
     }
 
     public void UpdateTelemetry()
     {
-        float pwm = _channel.Control.ControlMode == Hardware.ControlMode.Software
+        float pwm = _channel.Control.ControlMode == ControlMode.Software
             ? _channel.LastAppliedPwm
             : (_channel.Control.Sensor?.Value ?? 0f);
 
-        string rpmText = _channel.RpmSensor?.Value != null
-            ? $"{_channel.RpmSensor.Value.Value:F0} RPM"
-            : "Sem sensor RPM";
+        string rpm = _channel.RpmSensor?.Value != null
+            ? string.Format(CultureInfo.CurrentCulture, "{0:N0} RPM", _channel.RpmSensor.Value.Value)
+            : "Sem sensor de RPM";
 
-        BadgeStyle badgeStyle = _channel.InEmergencyOverride
-            ? BadgeStyle.Danger
-            : (pwm > 80f ? BadgeStyle.Warning : (_channel.Config.Mode == FanChannelMode.DefaultBios ? BadgeStyle.Neutral : BadgeStyle.Accent));
+        (string text, BadgeStyle style) = _channel.InEmergencyOverride
+            ? ("Emergência térmica", BadgeStyle.Danger)
+            : _channel.Config.Mode switch
+            {
+                FanChannelMode.Fixed => ("Manual", BadgeStyle.Accent),
+                FanChannelMode.Curve => ("Curva", BadgeStyle.Accent),
+                _ => ("BIOS", BadgeStyle.Neutral)
+            };
 
-        _statusBadge.SetBadge($"{pwm:F0}% PWM • {rpmText}", badgeStyle);
-        _emergencyBadge.Visible = _channel.InEmergencyOverride;
+        if (_stateBadge.Text != text || _stateBadge.Style != style)
+            _stateBadge.SetBadge(text, style);
+
+        if (Math.Abs(pwm - _pwm) > 0.05f || rpm != _rpmText)
+        {
+            _pwm = pwm;
+            _rpmText = rpm;
+            Invalidate(_valueArea);
+            if (IsCurve)
+                Invalidate(_chartArea);
+        }
     }
 
     public void SyncUiWithConfig()
     {
         _modeCombo.SelectedIndex = (int)_channel.Config.Mode;
-        float pwm = _channel.Config.FixedPwm;
-        _fixedSlider.Value = (int)(pwm < 0f ? 0f : (pwm > 100f ? 100f : pwm));
-        _sliderValLabel.Text = $"{_fixedSlider.Value}%";
-        _curveInfoLabel.Text = $"Curva: {_channel.Config.Curve}";
-        UpdateModePanels();
+        _fixedSlider.Value = ClampPercent(_channel.Config.FixedPwm);
+        UpdateModeControls();
+        UpdateCurveButtons();
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        int pad = LogicalToDeviceUnits(PageMetrics.CardPadding);
+        int gap = LogicalToDeviceUnits(8);
+        int inner = Math.Max(0, Width - (pad * 2));
+        int headerHeight = LogicalToDeviceUnits(22);
+
+        _stateBadge.Location = new Point(Width - pad - _stateBadge.Width, pad + ((headerHeight - _stateBadge.Height) / 2));
+
+        // Headline value + detail + progress bar (painted).
+        int y = pad + headerHeight + LogicalToDeviceUnits(6);
+        _valueArea = new Rectangle(pad, y, inner, ValueFont.Height + LogicalToDeviceUnits(12));
+        y = _valueArea.Bottom + LogicalToDeviceUnits(14);
+
+        // Mode (and source when following a curve) side by side.
+        int half = (inner - gap) / 2;
+        if (IsCurve)
+        {
+            _modeCombo.SetBounds(pad, y, half, _modeCombo.Height);
+            _sourceCombo.SetBounds(pad + half + gap, y, inner - half - gap, _sourceCombo.Height);
+        }
+        else
+        {
+            _modeCombo.SetBounds(pad, y, inner, _modeCombo.Height);
+        }
+
+        y += _modeCombo.Height;
+
+        if (IsFixed)
+        {
+            y += gap;
+            int valueWidth = LogicalToDeviceUnits(44);
+            _fixedSlider.SetBounds(pad, y, inner - valueWidth - gap, _fixedSlider.Height);
+            _sliderValueArea = new Rectangle(pad + inner - valueWidth, y, valueWidth, _fixedSlider.Height);
+            y += _fixedSlider.Height;
+        }
+
+        if (IsCurve)
+        {
+            y += gap;
+            int buttonHeight = LogicalToDeviceUnits(30);
+            int third = (inner - (gap * 2)) / 3;
+            _btnSilent.SetBounds(pad, y, third, buttonHeight);
+            _btnBalanced.SetBounds(pad + third + gap, y, third, buttonHeight);
+            _btnPerf.SetBounds(pad + ((third + gap) * 2), y, inner - ((third + gap) * 2), buttonHeight);
+            y += buttonHeight + LogicalToDeviceUnits(12);
+
+            _chartArea = new Rectangle(pad, y, inner, LogicalToDeviceUnits(72));
+            y = _chartArea.Bottom;
+        }
+        else
+        {
+            _chartArea = Rectangle.Empty;
+        }
+
+        int height = y + pad;
+        if (Height != height)
+            Height = height;
     }
 
     public void ApplyTheme(Theme theme)
     {
         BackColor = theme.SurfaceColor;
         ForeColor = theme.ForegroundColor;
-
-        _titleLabel.ForeColor = theme.ForegroundColor;
-        _modeCaption.ForeColor = theme.ForegroundColor;
-        _sourceCaption.ForeColor = theme.ForegroundColor;
-        _sliderValLabel.ForeColor = theme.AccentColor;
-        _curveInfoLabel.ForeColor = theme.ForegroundColor;
-        _hystLabel.ForeColor = theme.MutedForegroundColor;
-
-        _modeCombo.ApplyTheme(theme);
-        _sourceCombo.ApplyTheme(theme);
-        _fixedSlider.ApplyTheme(theme);
-
-        _btnSilent.ApplyTheme(theme);
-        _btnBalanced.ApplyTheme(theme);
-        _btnPerf.ApplyTheme(theme);
-
-        _statusBadge.ApplyTheme(theme);
-        _emergencyBadge.ApplyTheme(theme);
+        foreach (Control child in Controls)
+        {
+            if (child is IThemedControl themed)
+                themed.ApplyTheme(theme);
+        }
 
         Invalidate();
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        Theme theme = Theme.Current;
-        e.Graphics.Clear(Parent?.BackColor ?? theme.BackgroundColor);
+        e.Graphics.Clear(Parent?.BackColor ?? Theme.Current.BackgroundColor);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -299,11 +287,114 @@ public sealed class FanChannelCard : Panel, IThemedControl
         Graphics g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
-        float radius = Math.Max(4f, LogicalToDeviceUnits(theme.CornerRadius + 2));
-        RectangleF bounds = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+        float radius = LogicalToDeviceUnits(theme.CornerRadius + 2);
+        RectangleF card = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+        FluentStyle.FillRounded(g, theme.SurfaceColor, card, radius);
+        FluentStyle.DrawRounded(g, theme.SurfaceStrokeColor, card, radius);
 
-        Color surfaceColor = _isHovered ? theme.HoverBackgroundColor : theme.SurfaceColor;
-        FluentStyle.FillRounded(g, surfaceColor, bounds, radius);
-        FluentStyle.DrawRounded(g, theme.SurfaceStrokeColor, bounds, radius);
+        int pad = LogicalToDeviceUnits(PageMetrics.CardPadding);
+        int icon = LogicalToDeviceUnits(16);
+        int headerHeight = LogicalToDeviceUnits(22);
+        TextFormatFlags left = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+
+        // Header: icon + channel name.
+        g.DrawImage(FluentIcons.ForSensorType(SensorType.Fan), new Rectangle(pad, pad + ((headerHeight - icon) / 2), icon, icon));
+        int titleX = pad + icon + LogicalToDeviceUnits(8);
+        int titleWidth = Math.Max(0, _stateBadge.Left - titleX - LogicalToDeviceUnits(8));
+        TextRenderer.DrawText(g, _channel.ChannelName, FluentStyle.UiFontSemibold, new Rectangle(titleX, pad, titleWidth, headerHeight), theme.ForegroundColor, left);
+
+        DrawValue(g, theme);
+
+        if (IsFixed)
+        {
+            TextRenderer.DrawText(g, $"{_fixedSlider.Value} %",FluentStyle.UiFontSemibold, _sliderValueArea, theme.ForegroundColor,
+                                  TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+
+        if (IsCurve && !_chartArea.IsEmpty)
+            DrawCurve(g, theme);
+    }
+
+    private void DrawValue(Graphics g, Theme theme)
+    {
+        Rectangle area = _valueArea;
+        Color valueColor = _channel.InEmergencyOverride ? theme.StateHotColor : theme.ForegroundColor;
+        string value = string.Format(CultureInfo.CurrentCulture, "{0:F0} %", _pwm);
+
+        TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+        Size valueSize = TextRenderer.MeasureText(g, value, ValueFont, Size.Empty, flags);
+        TextRenderer.DrawText(g, value, ValueFont, new Point(area.X, area.Y), valueColor, flags);
+
+        int detailX = area.X + valueSize.Width + LogicalToDeviceUnits(8);
+        int detailY = area.Y + valueSize.Height - DetailFont.Height - LogicalToDeviceUnits(3);
+        TextRenderer.DrawText(g, "PWM  ·  " + _rpmText, DetailFont, new Rectangle(detailX, detailY, Math.Max(0, area.Right - detailX), DetailFont.Height + 2),
+                              theme.MutedForegroundColor, TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+
+        float barHeight = Math.Max(3f, LogicalToDeviceUnits(4));
+        RectangleF track = new(area.X, area.Bottom - barHeight, area.Width, barHeight);
+        FluentStyle.FillRounded(g, FluentStyle.Blend(theme.SurfaceColor, theme.ForegroundColor, 0.1), track, barHeight / 2);
+
+        float ratio = Math.Max(0f, Math.Min(1f, _pwm / 100f));
+        if (ratio > 0f)
+        {
+            Color bar = _channel.InEmergencyOverride ? theme.StateHotColor : (_pwm >= 85f ? theme.StateWarmColor : theme.AccentColor);
+            FluentStyle.FillRounded(g, bar, new RectangleF(track.X, track.Y, Math.Max(barHeight, track.Width * ratio), barHeight), barHeight / 2);
+        }
+    }
+
+    private void DrawCurve(Graphics g, Theme theme)
+    {
+        List<FanCurvePoint> points = _channel.Config.Curve?.Points;
+        if (points == null || points.Count == 0)
+            return;
+
+        int labelHeight = DetailFont.Height;
+        Rectangle plot = new(_chartArea.X, _chartArea.Y, _chartArea.Width, _chartArea.Height - labelHeight - LogicalToDeviceUnits(4));
+
+        float X(float temp) => plot.X + (plot.Width * (Math.Max(ChartMinTemp, Math.Min(ChartMaxTemp, temp)) - ChartMinTemp) / (ChartMaxTemp - ChartMinTemp));
+        float Y(float pwm) => plot.Bottom - (plot.Height * Math.Max(0f, Math.Min(100f, pwm)) / 100f);
+
+        // Plot frame: subtle background and a mid grid line.
+        Color plotBack = FluentStyle.Blend(theme.SurfaceColor, theme.ForegroundColor, theme.IsDark ? 0.04 : 0.03);
+        FluentStyle.FillRounded(g, plotBack, plot, LogicalToDeviceUnits(4));
+        using (Pen grid = new(theme.LineColor) { DashStyle = DashStyle.Dot })
+            g.DrawLine(grid, plot.X, Y(50f), plot.Right, Y(50f));
+
+        List<PointF> line = new() { new PointF(plot.X, Y(points[0].PwmPercent)) };
+        line.AddRange(points.Select(p => new PointF(X(p.Temperature), Y(p.PwmPercent))));
+        line.Add(new PointF(plot.Right, Y(points[points.Count - 1].PwmPercent)));
+
+        using (GraphicsPath area = new())
+        {
+            area.AddLines(line.ToArray());
+            area.AddLine(plot.Right, plot.Bottom, plot.X, plot.Bottom);
+            area.CloseFigure();
+            using SolidBrush fill = new(Color.FromArgb(theme.IsDark ? 48 : 36, theme.AccentColor));
+            g.FillPath(fill, area);
+        }
+
+        using (Pen pen = new(theme.AccentColor, Math.Max(1.5f, LogicalToDeviceUnits(2))) { LineJoin = LineJoin.Round })
+            g.DrawLines(pen, line.ToArray());
+
+        // Current operating point.
+        float temp = _channel.LastEffectiveTemp;
+        float target = _channel.Config.Curve.Evaluate(temp);
+        float cx = X(temp);
+        float cy = Y(target);
+        using (Pen marker = new(theme.MutedForegroundColor) { DashStyle = DashStyle.Dash })
+            g.DrawLine(marker, cx, plot.Y, cx, plot.Bottom);
+
+        float dot = LogicalToDeviceUnits(8);
+        using (SolidBrush ring = new(theme.SurfaceColor))
+            g.FillEllipse(ring, cx - (dot / 2) - 1, cy - (dot / 2) - 1, dot + 2, dot + 2);
+        using (SolidBrush center = new(theme.AccentColor))
+            g.FillEllipse(center, cx - (dot / 2), cy - (dot / 2), dot, dot);
+
+        // Axis labels.
+        Rectangle labels = new(_chartArea.X, _chartArea.Bottom - labelHeight, _chartArea.Width, labelHeight);
+        TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter;
+        TextRenderer.DrawText(g, $"{ChartMinTemp:F0} °C", DetailFont, labels, theme.MutedForegroundColor, flags | TextFormatFlags.Left);
+        TextRenderer.DrawText(g, string.Format(CultureInfo.CurrentCulture, "Agora: {0:F0} °C → {1:F0} %", temp, target), DetailFont, labels, theme.MutedForegroundColor, flags | TextFormatFlags.HorizontalCenter);
+        TextRenderer.DrawText(g, $"{ChartMaxTemp:F0} °C", DetailFont, labels, theme.MutedForegroundColor, flags | TextFormatFlags.Right);
     }
 }

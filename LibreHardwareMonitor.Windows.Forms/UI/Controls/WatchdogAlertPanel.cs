@@ -11,15 +11,42 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Controls;
 
+/// <summary>
+/// Accent-tinted banner shown while a tuning profile is under watchdog test. Children are laid out on
+/// one row like a <see cref="ToolbarRow" /> (tag a control with <see cref="PageMetrics.AlignRight" /> or
+/// <see cref="PageMetrics.Fill" />).
+/// </summary>
 public sealed class WatchdogAlertPanel : Panel, IThemedControl
 {
     public WatchdogAlertPanel()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+
+        Height = LogicalToDeviceUnits(52);
+        Padding = new Padding(LogicalToDeviceUnits(PageMetrics.CardPadding), 0, LogicalToDeviceUnits(10), 0);
     }
 
-    public void ApplyTheme(Theme theme) => Invalidate();
+    private static Color AlertColor(Theme theme) =>
+        FluentStyle.Blend(theme.SurfaceColor, theme.AccentColor, theme.IsDark ? 0.20 : 0.12);
+
+    public void ApplyTheme(Theme theme)
+    {
+        BackColor = AlertColor(theme);
+        foreach (Control child in Controls)
+        {
+            theme.Apply(child);
+            if (child is Label label)
+            {
+                label.BackColor = BackColor;
+                label.ForeColor = theme.ForegroundColor;
+            }
+        }
+
+        Invalidate();
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent) => PageMetrics.ArrangeRow(this);
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
@@ -36,8 +63,7 @@ public sealed class WatchdogAlertPanel : Panel, IThemedControl
         float radius = Math.Max(4f, LogicalToDeviceUnits(theme.CornerRadius + 2));
         RectangleF bounds = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
 
-        Color alertBg = FluentStyle.Blend(theme.SurfaceColor, theme.AccentColor, theme.IsDark ? 0.20 : 0.12);
-        FluentStyle.FillRounded(g, alertBg, bounds, radius);
-        FluentStyle.DrawRounded(g, theme.AccentColor, bounds, radius, 1.5f);
+        FluentStyle.FillRounded(g, AlertColor(theme), bounds, radius);
+        FluentStyle.DrawRounded(g, theme.AccentColor, bounds, radius, 1f);
     }
 }
