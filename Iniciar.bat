@@ -33,8 +33,7 @@ echo.
 echo ==========================================================
 echo  [1/3] A fechar instancias anteriores em segundo plano...
 echo ==========================================================
-taskkill /f /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
-taskkill /f /im LibreHardwareMonitor.exe >nul 2>&1
+call :CLOSE_APP
 
 :: Garantir que o executavel antigo nao esta bloqueado
 if exist "%TARGET_EXE%" (
@@ -71,8 +70,7 @@ goto LAUNCH_APP
 :RUN_FAST
 echo.
 echo [INFO] A fechar instancias anteriores...
-taskkill /f /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
-taskkill /f /im LibreHardwareMonitor.exe >nul 2>&1
+call :CLOSE_APP
 if not exist "%TARGET_EXE%" (
     echo [INFO] Executavel nao encontrado. A compilar primeiro...
     goto BUILD_AND_RUN
@@ -98,3 +96,37 @@ if exist "%TARGET_EXE%" (
 )
 
 :END
+exit /b 0
+
+:: ==========================================================
+:: Fecho seguro: primeiro o fecho normal, que devolve as ventoinhas a BIOS.
+:: So se a app nao responder e que o processo e terminado a forca (as
+:: ventoinhas podem ficar na ultima velocidade ate reiniciar o PC).
+:: ==========================================================
+:CLOSE_APP
+call :IS_RUNNING || goto :eof
+taskkill /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
+call :WAIT_EXIT 5
+call :IS_RUNNING || goto :eof
+:: A app corre como Administrador: pedir o fecho normal com elevacao
+powershell -Command "Start-Process taskkill -ArgumentList '/im LibreHardwareMonitor.Windows.Forms.exe' -Verb RunAs -Wait" >nul 2>&1
+call :WAIT_EXIT 8
+call :IS_RUNNING || goto :eof
+echo [AVISO] A app nao fechou normalmente. A terminar a forca...
+taskkill /f /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
+call :IS_RUNNING || goto :eof
+powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardwareMonitor.Windows.Forms.exe' -Verb RunAs -Wait" >nul 2>&1
+goto :eof
+
+:IS_RUNNING
+tasklist /fi "imagename eq LibreHardwareMonitor.Windows.Forms.exe" 2>nul | find /i "LibreHardwareMonitor.Windows.Forms.exe" >nul
+exit /b %errorlevel%
+
+:WAIT_EXIT
+set /a _wait=%1
+:WAIT_LOOP
+call :IS_RUNNING || exit /b 0
+set /a _wait-=1
+if !_wait! leq 0 exit /b 1
+timeout /t 1 /nobreak >nul
+goto WAIT_LOOP
