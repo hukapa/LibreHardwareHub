@@ -13,14 +13,21 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 namespace LibreHardwareMonitor.Windows.Forms.UI.Controls;
 
 /// <summary>
-/// Fluent (Windows 11) combo box: slightly elevated fill, hairline border, accent underline when focused
-/// or open, custom chevron and owner-drawn items. The drop-down list uses the dark system theme in dark mode.
-/// The closed control is painted through a back buffer to avoid flicker over the native drawing.
+/// Fluent (Windows 11) combo box. The closed field and the drop-down are both painted by the app:
+/// the native list (which tracks the mouse with its own selection drawing) is replaced by a rounded popup
+/// with hover highlight, an accent pill on the current value and keyboard support.
 /// </summary>
 public class FluentComboBox : ComboBox, IThemedControl
 {
     private const int WM_PAINT = 0x000F;
+    private const int WM_ERASEBKGND = 0x0014;
+    private const int WM_LBUTTONDOWN = 0x0201;
+    private const int WM_LBUTTONDBLCLK = 0x0203;
+
     private bool _isHovered;
+    private ToolStripDropDown _popup;
+    private FluentComboList _list;
+    private int _lastPopupClose;
 
     protected override bool ShowFocusCues => false;
 
@@ -34,32 +41,31 @@ public class FluentComboBox : ComboBox, IThemedControl
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
 
+    /// <summary>True while the custom drop-down popup is open.</summary>
+    public bool IsPopupOpen => _popup is { Visible: true };
+
     public void ApplyTheme(Theme theme)
     {
         BackColor = theme.SurfaceColor;
         ForeColor = theme.ForegroundColor;
-        ApplyListTheme(theme);
         Invalidate();
     }
 
-    private static Color Fill(Theme theme, bool hover) =>
+    internal static Color Fill(Theme theme, bool hover) =>
         theme.IsDark
             ? FluentStyle.Blend(theme.SurfaceColor, Color.White, hover ? 0.09 : 0.05)
             : (hover ? FluentStyle.Blend(Color.White, theme.ForegroundColor, 0.03) : Color.White);
 
-    private static Color Border(Theme theme) =>
+    internal static Color Border(Theme theme) =>
         FluentStyle.Blend(theme.SurfaceColor, theme.ForegroundColor, theme.IsDark ? 0.12 : 0.16);
+
+    internal static Color PopupBack(Theme theme) =>
+        theme.IsDark ? FluentStyle.Blend(theme.BackgroundColor, Color.White, 0.07) : Color.FromArgb(249, 249, 249);
 
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        ApplyListTheme(Theme.Current);
-    }
-
-    /// <summary>Dark drop-down list (and its scrollbar) in dark mode, default otherwise.</summary>
-    private void ApplyListTheme(Theme theme)
-    {
-        if (!IsHandleCreated || Software.OperatingSystem.IsUnix)
+        if (Software.OperatingSystem.IsUnix)
             return;
 
         try
@@ -67,11 +73,6 @@ public class FluentComboBox : ComboBox, IThemedControl
             // The closed field is fully painted by us: removing its visual style also removes the native
             // hot-track animation, which paints outside WM_PAINT and flashed white on hover.
             SetWindowTheme(Handle, string.Empty, string.Empty);
-
-            // The drop-down list is a separate window; give it (and its scrollbar) the matching system theme.
-            COMBOBOXINFO info = new() { cbSize = Marshal.SizeOf<COMBOBOXINFO>() };
-            if (GetComboBoxInfo(Handle, ref info) && info.hwndList != IntPtr.Zero)
-                SetWindowTheme(info.hwndList, theme.IsDark ? "DarkMode_Explorer" : "Explorer", null);
         }
         catch (DllNotFoundException)
         { }
@@ -105,82 +106,134 @@ public class FluentComboBox : ComboBox, IThemedControl
         Invalidate();
     }
 
-    protected override void OnDropDownClosed(EventArgs e)
+    protected override bool IsInputKey(Keys keyData) =>
+        (IsPopupOpen && keyData is Keys.Escape or Keys.Enter or Keys.Up or Keys.Down or Keys.Home or Keys.End) || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
     {
-        base.OnDropDownClosed(e);
-        Invalidate();
+        // The popup does not take keyboard focus: route navigation keys to its list.
+        if (IsPopupOpen && _list != null)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            if (e.KeyCode == Keys.Escape || e.KeyCode == Keys.F4 || (e.Alt && e.KeyCode is Keys.Up or Keys.Down))
+                _popup.Close(ToolStripDropDownCloseReason.Keyboard);
+            else
+                _list.HandleKey(e.KeyCode);
+
+            return;
+        }
+
+        // Open our popup instead of the native list (F4, Alt+Down, Space, Enter).
+        if (e.KeyCode == Keys.F4 || (e.Alt && e.KeyCode is Keys.Down or Keys.Up) || e.KeyCode is Keys.Space or Keys.Enter)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            ShowPopup();
+            return;
+        }
+
+        base.OnKeyDown(e);
     }
 
     protected override void OnDrawItem(DrawItemEventArgs e)
     {
-        if (e.Index < 0 || e.Index >= Items.Count)
-            return;
-
-        Theme theme = Theme.Current;
-        Graphics g = e.Graphics;
-        bool isSelected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-        bool isEditArea = (e.State & DrawItemState.ComboBoxEdit) == DrawItemState.ComboBoxEdit;
-        bool isCurrent = e.Index == SelectedIndex && !isEditArea;
-        isSelected &= !isEditArea;
-
-        Color listBack = theme.IsDark ? FluentStyle.Blend(theme.SurfaceColor, Color.White, 0.03) : Color.White;
-        using (SolidBrush back = new(listBack))
-            g.FillRectangle(back, e.Bounds);
-
-        int inset = LogicalToDeviceUnits(4);
-        Rectangle item = new(e.Bounds.X + inset, e.Bounds.Y + 1, e.Bounds.Width - (inset * 2), e.Bounds.Height - 2);
-        if (isSelected)
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            FluentStyle.FillRounded(g, FluentStyle.Blend(listBack, theme.ForegroundColor, theme.IsDark ? 0.09 : 0.06), item, LogicalToDeviceUnits(4));
-        }
-
-        // Windows 11 marks the current value with a short accent pill on the left.
-        if (isCurrent)
-        {
-            int pillHeight = LogicalToDeviceUnits(14);
-            RectangleF pill = new(item.X + 1, item.Y + ((item.Height - pillHeight) / 2f), LogicalToDeviceUnits(3), pillHeight);
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            FluentStyle.FillRounded(g, theme.AccentColor, pill, pill.Width / 2f);
-        }
-
-        Rectangle textBounds = new(item.X + LogicalToDeviceUnits(10), item.Y, item.Width - LogicalToDeviceUnits(14), item.Height);
-        TextRenderer.DrawText(g, Items[e.Index]?.ToString() ?? string.Empty, Font, textBounds, theme.ForegroundColor,
-                              TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        // The native list is never shown; nothing to draw.
     }
 
     protected override void WndProc(ref Message m)
     {
-        if (DropDownStyle == ComboBoxStyle.DropDownList)
+        switch (m.Msg)
         {
-            switch (m.Msg)
-            {
-                case WM_ERASEBKGND:
-                    m.Result = (IntPtr)1;
-                    return;
+            case WM_LBUTTONDOWN:
+            case WM_LBUTTONDBLCLK:
+                if (!Focused)
+                    Focus();
 
-                case WM_PAINT:
-                    // Paint the closed field ourselves only; the native control never draws it.
-                    PAINTSTRUCT ps = new();
-                    IntPtr hdc = m.WParam != IntPtr.Zero ? m.WParam : BeginPaint(Handle, ref ps);
-                    try
-                    {
-                        using Graphics target = Graphics.FromHdc(hdc);
-                        PaintControlSurface(target);
-                    }
-                    finally
-                    {
-                        if (m.WParam == IntPtr.Zero)
-                            EndPaint(Handle, ref ps);
-                    }
+                // A click on the field while the popup is open first closes the popup (outside click);
+                // don't reopen it immediately.
+                if (unchecked(Environment.TickCount - _lastPopupClose) > 200)
+                    ShowPopup();
 
-                    m.Result = IntPtr.Zero;
-                    return;
-            }
+                return;
+
+            case WM_ERASEBKGND:
+                m.Result = (IntPtr)1;
+                return;
+
+            case WM_PAINT:
+                PAINTSTRUCT ps = new();
+                IntPtr hdc = m.WParam != IntPtr.Zero ? m.WParam : BeginPaint(Handle, ref ps);
+                try
+                {
+                    using Graphics target = Graphics.FromHdc(hdc);
+                    PaintControlSurface(target);
+                }
+                finally
+                {
+                    if (m.WParam == IntPtr.Zero)
+                        EndPaint(Handle, ref ps);
+                }
+
+                m.Result = IntPtr.Zero;
+                return;
         }
 
         base.WndProc(ref m);
     }
+
+    private void ShowPopup()
+    {
+        if (IsPopupOpen || Items.Count == 0 || !Enabled)
+            return;
+
+        Theme theme = Theme.Current;
+        FluentComboList list = new(this);
+        _list = list;
+
+        ToolStripControlHost host = new(list)
+        {
+            AutoSize = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            Size = list.Size
+        };
+
+        _popup = new ToolStripDropDown
+        {
+            Padding = Padding.Empty,
+            Margin = Padding.Empty,
+            AutoSize = false,
+            Size = list.Size,
+            BackColor = PopupBack(theme),
+            DropShadowEnabled = true,
+            Renderer = new PopupRenderer()
+        };
+        _popup.Items.Add(host);
+        _popup.Closed += (_, _) =>
+        {
+            _lastPopupClose = Environment.TickCount;
+            ToolStripDropDown closed = _popup;
+            _popup = null;
+            _list = null;
+            Invalidate();
+            BeginInvoke(new Action(() => closed?.Dispose()));
+        };
+
+        // Below the field, or above it when there is no room on the screen.
+        Rectangle screen = Screen.FromControl(this).WorkingArea;
+        Point below = PointToScreen(new Point(0, Height + LogicalToDeviceUnits(2)));
+        Point location = below.Y + list.Height <= screen.Bottom
+            ? new Point(0, Height + LogicalToDeviceUnits(2))
+            : new Point(0, -list.Height - LogicalToDeviceUnits(2));
+
+        _popup.Show(this, location);
+        FluentStyle.ApplyWindowChrome(_popup.Handle, Border(theme), smallCorners: true);
+        list.Focus();
+        Invalidate();
+    }
+
+    internal void ClosePopup() => _popup?.Close(ToolStripDropDownCloseReason.ItemClicked);
 
     private void PaintControlSurface(Graphics target)
     {
@@ -198,9 +251,9 @@ public class FluentComboBox : ComboBox, IThemedControl
 
         float radius = Math.Max(3f, LogicalToDeviceUnits(theme.CornerRadius - 2));
         RectangleF bounds = new(0.5f, 0.5f, client.Width - 1.5f, client.Height - 1.5f);
-        bool active = Focused || DroppedDown;
+        bool active = Focused || IsPopupOpen;
 
-        FluentStyle.FillRounded(g, Enabled ? Fill(theme, _isHovered || DroppedDown) : theme.SurfaceColor, bounds, radius);
+        FluentStyle.FillRounded(g, Enabled ? Fill(theme, _isHovered || IsPopupOpen) : theme.SurfaceColor, bounds, radius);
         FluentStyle.DrawRounded(g, Border(theme), bounds, radius);
 
         // Accent underline when focused/open, like Windows 11 text and combo fields.
@@ -238,7 +291,29 @@ public class FluentComboBox : ComboBox, IThemedControl
         buffer.Render(target);
     }
 
-    private const int WM_ERASEBKGND = 0x0014;
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _popup?.Dispose();
+
+        base.Dispose(disposing);
+    }
+
+    /// <summary>Paints nothing around the hosted list (no ToolStrip border or margins).</summary>
+    private sealed class PopupRenderer : ToolStripRenderer
+    {
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            using SolidBrush brush = new(PopupBack(Theme.Current));
+            e.Graphics.FillRectangle(brush, e.AffectedBounds);
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            using Pen pen = new(Border(Theme.Current));
+            e.Graphics.DrawRectangle(pen, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+        }
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT
@@ -258,27 +333,156 @@ public class FluentComboBox : ComboBox, IThemedControl
         public byte[] rgbReserved;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct COMBOBOXINFO
-    {
-        public int cbSize;
-        public RECT rcItem;
-        public RECT rcButton;
-        public int stateButton;
-        public IntPtr hwndCombo;
-        public IntPtr hwndItem;
-        public IntPtr hwndList;
-    }
-
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
     private static extern int SetWindowTheme(IntPtr hWnd, string pszSubAppName, string pszSubIdList);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetComboBoxInfo(IntPtr hWnd, ref COMBOBOXINFO pcbi);
 
     [DllImport("user32.dll")]
     private static extern IntPtr BeginPaint(IntPtr hWnd, ref PAINTSTRUCT lpPaint);
 
     [DllImport("user32.dll")]
     private static extern bool EndPaint(IntPtr hWnd, ref PAINTSTRUCT lpPaint);
+}
+
+/// <summary>Item list shown inside the <see cref="FluentComboBox" /> popup.</summary>
+internal sealed class FluentComboList : Control
+{
+    private const int ItemLogicalHeight = 32;
+    private const int PaddingLogical = 4;
+
+    private readonly FluentComboBox _owner;
+    private int _hoverIndex = -1;
+
+    public FluentComboList(FluentComboBox owner)
+    {
+        _owner = owner;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
+                 ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        Font = owner.Font;
+        _hoverIndex = owner.SelectedIndex;
+        Size = new Size(Math.Max(owner.Width, LogicalToDeviceUnits(120)),
+                        (owner.Items.Count * ItemHeight) + (owner.LogicalToDeviceUnits(PaddingLogical) * 2));
+    }
+
+    private int ItemHeight => _owner.LogicalToDeviceUnits(ItemLogicalHeight);
+
+    private int Pad => _owner.LogicalToDeviceUnits(PaddingLogical);
+
+    private Rectangle ItemBounds(int index) => new(Pad, Pad + (index * ItemHeight), Width - (Pad * 2), ItemHeight);
+
+    private int HitTest(Point p)
+    {
+        if (p.X < 0 || p.X >= Width || p.Y < Pad)
+            return -1;
+
+        int index = (p.Y - Pad) / ItemHeight;
+        return index >= 0 && index < _owner.Items.Count ? index : -1;
+    }
+
+    protected override bool IsInputKey(Keys keyData) =>
+        keyData is Keys.Up or Keys.Down or Keys.Enter or Keys.Escape or Keys.Home or Keys.End || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        HandleKey(e.KeyCode);
+    }
+
+    public void HandleKey(Keys key)
+    {
+        int count = _owner.Items.Count;
+        switch (key)
+        {
+            case Keys.Down:
+                SetHover(Math.Min(count - 1, _hoverIndex + 1));
+                break;
+            case Keys.Up:
+                SetHover(Math.Max(0, _hoverIndex - 1));
+                break;
+            case Keys.Home:
+                SetHover(0);
+                break;
+            case Keys.End:
+                SetHover(count - 1);
+                break;
+            case Keys.Enter:
+                Commit(_hoverIndex);
+                break;
+            case Keys.Escape:
+                _owner.ClosePopup();
+                break;
+        }
+    }
+
+    private void SetHover(int index)
+    {
+        if (index == _hoverIndex)
+            return;
+
+        _hoverIndex = index;
+        Invalidate();
+    }
+
+    private void Commit(int index)
+    {
+        if (index >= 0 && index < _owner.Items.Count && index != _owner.SelectedIndex)
+            _owner.SelectedIndex = index;
+
+        _owner.ClosePopup();
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        SetHover(HitTest(e.Location));
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        SetHover(-1);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button == MouseButtons.Left)
+        {
+            int index = HitTest(e.Location);
+            if (index >= 0)
+                Commit(index);
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Theme theme = Theme.Current;
+        Graphics g = e.Graphics;
+        Color back = FluentComboBox.PopupBack(theme);
+        g.Clear(back);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        float radius = _owner.LogicalToDeviceUnits(4);
+        for (int i = 0; i < _owner.Items.Count; i++)
+        {
+            Rectangle item = ItemBounds(i);
+            bool current = i == _owner.SelectedIndex;
+
+            // Exactly one highlighted row: the one under the mouse / keyboard cursor.
+            if (i == _hoverIndex)
+                FluentStyle.FillRounded(g, FluentStyle.Blend(back, theme.ForegroundColor, theme.IsDark ? 0.08 : 0.06), item, radius);
+            else if (current)
+                FluentStyle.FillRounded(g, FluentStyle.Blend(back, theme.ForegroundColor, theme.IsDark ? 0.05 : 0.04), item, radius);
+
+            if (current)
+            {
+                int pillHeight = _owner.LogicalToDeviceUnits(16);
+                RectangleF pill = new(item.X, item.Y + ((item.Height - pillHeight) / 2f), _owner.LogicalToDeviceUnits(3), pillHeight);
+                FluentStyle.FillRounded(g, theme.AccentColor, pill, pill.Width / 2f);
+            }
+
+            Rectangle text = new(item.X + _owner.LogicalToDeviceUnits(12), item.Y, item.Width - _owner.LogicalToDeviceUnits(16), item.Height);
+            TextRenderer.DrawText(g, _owner.Items[i]?.ToString() ?? string.Empty, Font, text, theme.ForegroundColor,
+                                  TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+    }
 }

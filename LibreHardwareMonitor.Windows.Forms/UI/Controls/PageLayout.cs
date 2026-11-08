@@ -321,7 +321,12 @@ public sealed class ScrollHost : Control, IThemedControl, IMessageFilter
         if (m.Msg != WM_MOUSEWHEEL || !_canScroll || !Visible || !IsHandleCreated)
             return false;
 
-        if (!RectangleToScreen(ClientRectangle).Contains(Cursor.Position) || HasOpenDropDown(_content))
+        // While a drop-down is open the wheel does nothing (it must not scroll the page under the popup
+        // nor change the value of the field).
+        if (HasOpenDropDown(_content))
+            return true;
+
+        if (!RectangleToScreen(ClientRectangle).Contains(Cursor.Position))
             return false;
 
         int delta = (short)((long)m.WParam >> 16);
@@ -333,7 +338,7 @@ public sealed class ScrollHost : Control, IThemedControl, IMessageFilter
     {
         foreach (Control child in control.Controls)
         {
-            if ((child is ComboBox { DroppedDown: true }) || HasOpenDropDown(child))
+            if (child is FluentComboBox { IsPopupOpen: true } || child is ComboBox { DroppedDown: true } || HasOpenDropDown(child))
                 return true;
         }
 
@@ -466,7 +471,15 @@ public sealed class ToolbarRow : Panel, IThemedControl
         Height = LogicalToDeviceUnits(32);
     }
 
-    protected override void OnLayout(LayoutEventArgs e) => PageMetrics.ArrangeRow(this);
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        PageMetrics.ArrangeRow(this);
+
+        // Children can grow after the parent sized this row (e.g. DPI scaling of the buttons); ask a hosting
+        // SettingRow to make room instead of clipping the last control.
+        if (Parent is SettingRow && GetPreferredSize(Size.Empty).Width > Width)
+            Parent.PerformLayout();
+    }
 
     /// <summary>Natural width: all children side by side with the row gap.</summary>
     public override Size GetPreferredSize(Size proposedSize)
