@@ -100,6 +100,20 @@ public class FluentButton : ButtonBase, IThemedControl
         Invalidate();
     }
 
+    protected override void OnPaintBackground(PaintEventArgs pevent)
+    {
+        // The corners outside the rounded rectangle show the parent, never a system button color.
+        pevent.Graphics.Clear(Parent?.BackColor ?? Theme.Current.BackgroundColor);
+    }
+
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        base.OnEnabledChanged(e);
+        _isHovered = false;
+        _isPressed = false;
+        Invalidate();
+    }
+
     protected override void OnPaint(PaintEventArgs pevent)
     {
         Theme theme = Theme.Current;
@@ -111,7 +125,13 @@ public class FluentButton : ButtonBase, IThemedControl
             return;
 
         float radius = Math.Max(3f, LogicalToDeviceUnits(theme.CornerRadius));
-        RectangleF bounds = new(1f, 1f, client.Width - 2f, client.Height - 2f);
+        // Crisp 1px border on pixel centers, covering the whole control (same geometry as the combo box beside it).
+        RectangleF bounds = new(0.5f, 0.5f, client.Width - 1f, client.Height - 1f);
+
+        // Hover/pressed are checked against the real pointer, not only the enter/leave events: a modal dialog opened by
+        // this button swallows the leave event and the button would stay highlighted afterwards.
+        bool hovered = _isHovered && Enabled && client.Contains(PointToClient(Cursor.Position));
+        bool pressed = _isPressed && hovered && (Control.MouseButtons & MouseButtons.Left) != 0;
 
         Color bg;
         Color border;
@@ -120,27 +140,27 @@ public class FluentButton : ButtonBase, IThemedControl
         switch (_variant)
         {
             case FluentButtonVariant.Accent:
-                bg = _isPressed
+                bg = pressed
                     ? FluentStyle.Blend(theme.AccentColor, Color.Black, 0.20)
-                    : (_isHovered ? FluentStyle.Blend(theme.AccentColor, Color.White, 0.15) : theme.AccentColor);
+                    : (hovered ? FluentStyle.Blend(theme.AccentColor, Color.White, 0.15) : theme.AccentColor);
                 border = bg;
                 text = theme.AccentForegroundColor;
                 break;
 
             case FluentButtonVariant.Success:
                 Color successBg = Color.FromArgb(16, 124, 65);
-                bg = _isPressed
+                bg = pressed
                     ? FluentStyle.Blend(successBg, Color.Black, 0.20)
-                    : (_isHovered ? FluentStyle.Blend(successBg, Color.White, 0.15) : successBg);
+                    : (hovered ? FluentStyle.Blend(successBg, Color.White, 0.15) : successBg);
                 border = bg;
                 text = Color.White;
                 break;
 
             case FluentButtonVariant.Danger:
                 Color dangerBg = Color.FromArgb(196, 43, 28);
-                bg = _isPressed
+                bg = pressed
                     ? FluentStyle.Blend(dangerBg, Color.Black, 0.20)
-                    : (_isHovered ? FluentStyle.Blend(dangerBg, Color.White, 0.15) : dangerBg);
+                    : (hovered ? FluentStyle.Blend(dangerBg, Color.White, 0.15) : dangerBg);
                 border = bg;
                 text = Color.White;
                 break;
@@ -155,10 +175,10 @@ public class FluentButton : ButtonBase, IThemedControl
                 }
                 else
                 {
-                    bg = _isPressed
+                    bg = pressed
                         ? theme.SelectedBackgroundColor
-                        : (_isHovered ? theme.HoverBackgroundColor : theme.SurfaceColor);
-                    border = _isHovered ? theme.AccentColor : theme.SurfaceStrokeColor;
+                        : (hovered ? theme.HoverBackgroundColor : theme.SurfaceColor);
+                    border = hovered ? theme.AccentColor : theme.SurfaceStrokeColor;
                     text = theme.ForegroundColor;
                 }
                 break;
