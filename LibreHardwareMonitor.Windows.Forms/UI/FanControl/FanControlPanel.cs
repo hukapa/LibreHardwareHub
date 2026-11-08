@@ -16,15 +16,25 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 namespace LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 
 /// <summary>
-/// Fan control page. Follows the dashboard structure: KPI strip, a one-line toolbar, then content cards
-/// (fan channels grouped by controller in a responsive grid).
+/// Fan control page: KPI strip, toolbar, banners (faults, setup, unclean previous session) and the fan
+/// channels grouped by what is connected to them (unidentified first, unused last and collapsed).
 /// </summary>
 public sealed class FanControlPanel : UserControl, IThemedControl
 {
+    // Display order of the groups. "Unassigned" comes first so it is the first thing the user sees.
+    private static readonly FanChannelRole[] GroupOrder =
+    {
+        FanChannelRole.Unassigned, FanChannelRole.CpuCooler, FanChannelRole.Pump, FanChannelRole.Radiator,
+        FanChannelRole.CaseFan, FanChannelRole.Gpu, FanChannelRole.NotConnected
+    };
+
     private FanControlEngine _engine;
     private readonly List<FanChannelCard> _cards = new();
+    private bool _loading;
+    private bool _notConnectedCollapsed = true;
+    private bool _uncleanDismissed;
 
-    // Last valid readings, so the KPIs never flicker to "--" between sensor updates.
+    // Last valid readings, so the KPIs never flicker to "-" between sensor updates.
     private float _lastCpuTemp;
     private float _lastGpuTemp;
 
@@ -42,9 +52,19 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     private readonly FluentComboBox _presetCombo;
     private readonly FluentBadge _safetyBadge;
 
+    private readonly WatchdogAlertPanel _faultBanner;
+    private readonly Label _faultLabel;
+    private readonly WatchdogAlertPanel _uncleanBanner;
+    private readonly Label _uncleanLabel;
+    private readonly FluentButton _uncleanDismiss;
+    private readonly WatchdogAlertPanel _setupBanner;
+    private readonly Label _setupLabel;
+
     private readonly StackPanel _channelsStack;
     private readonly FluentSectionCard _emptyCard;
     private readonly Label _emptyLabel;
+    private readonly FluentSectionCard _infoCard;
+    private readonly Label _infoLabel;
 
     public FanControlPanel() : this(null)
     {
@@ -60,7 +80,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _cpuTempCard = NewCard(FluentIcons.ForHardware(HardwareType.Cpu), "Temperatura CPU", "°C", "CPU Package");
         _gpuTempCard = NewCard(FluentIcons.ForSensorType(SensorType.Temperature), "Temperatura GPU", "°C", "GPU Core");
         _channelsCard = NewCard(FluentIcons.ForSensorType(SensorType.Fan), "Canais", "", "Controláveis por PWM");
-        _avgPwmCard = NewCard(FluentIcons.ForSensorType(SensorType.Control), "Velocidade média", "%", "PWM dos canais");
+        _avgPwmCard = NewCard(FluentIcons.ForSensorType(SensorType.Control), "Velocidade média", "%", "PWM dos canais em uso");
         _metrics.AddCard(_cpuTempCard);
         _metrics.AddCard(_gpuTempCard);
         _metrics.AddCard(_channelsCard);
@@ -74,13 +94,30 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _presetCombo.SelectedIndex = 0;
         _presetCombo.SelectedIndexChanged += PresetCombo_SelectedIndexChanged;
         _safetyBadge = new FluentBadge { Height = LogicalToDeviceUnits(24), Tag = PageMetrics.AlignRight };
-        _safetyBadge.SetBadge("Proteção térmica ativa · 100 % acima de 90 °C", BadgeStyle.Success);
+        _safetyBadge.SetBadge("Proteções ativas · CPU 90 °C · GPU 85 °C · sensor · paragem", BadgeStyle.Success);
         _toolbar.Controls.Add(_presetLabel);
         _toolbar.Controls.Add(_presetCombo);
         _toolbar.Controls.Add(_safetyBadge);
         _toolbar.Height = _presetCombo.Height;
 
-        // 3. Channels (groups are rebuilt by RefreshChannels).
+        // 3. Banners.
+        _faultBanner = new WatchdogAlertPanel { Danger = true, Visible = false };
+        _faultLabel = NewBannerLabel(FluentStyle.UiFontSemibold);
+        _faultBanner.Controls.Add(_faultLabel);
+
+        _uncleanBanner = new WatchdogAlertPanel { Danger = true, Visible = false };
+        _uncleanLabel = NewBannerLabel(FluentStyle.UiFont);
+        _uncleanLabel.Text = "A sessão anterior terminou sem devolver as ventoinhas à BIOS. Reinicie o PC para garantir o estado de fábrica.";
+        _uncleanDismiss = PageMetrics.FitButton(new FluentButton { Text = "Entendi", Tag = PageMetrics.AlignRight });
+        _uncleanDismiss.Click += (_, _) => { _uncleanDismissed = true; _uncleanBanner.Visible = false; };
+        _uncleanBanner.Controls.Add(_uncleanLabel);
+        _uncleanBanner.Controls.Add(_uncleanDismiss);
+
+        _setupBanner = new WatchdogAlertPanel { Visible = false };
+        _setupLabel = NewBannerLabel(FluentStyle.UiFont);
+        _setupBanner.Controls.Add(_setupLabel);
+
+        // 4. Channels (groups are rebuilt by RefreshChannels).
         _channelsStack = new StackPanel { Gap = PageMetrics.Gap };
 
         _emptyCard = new FluentSectionCard
@@ -100,11 +137,33 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         };
         _emptyCard.Controls.Add(_emptyLabel);
 
+        _infoCard = new FluentSectionCard
+        {
+            Title = "Ventoinhas que o PC não vê",
+            Subtitle = "Nem todas as ventoinhas ligadas ao PC aparecem nesta página.",
+            AutoHeight = true
+        };
+        _infoLabel = new Label
+        {
+            Dock = DockStyle.Top,
+            AutoSize = false,
+            Height = LogicalToDeviceUnits(58),
+            Font = FluentStyle.UiFont,
+            Text = "Ventoinhas ligadas a um hub, a um controlador próprio da caixa, ou alimentadas direto pela fonte (SATA/Molex), " +
+                   "não enviam rotação à motherboard e não podem ser lidas nem controladas aqui. Se um hub tiver um cabo PWM ligado " +
+                   "a um conector da motherboard, esse conector controla todas as ventoinhas do hub como um único canal."
+        };
+        _infoCard.Controls.Add(_infoLabel);
+
         _page = new StackPanel { Dock = DockStyle.Top };
         _page.Controls.Add(_metrics);
         _page.Controls.Add(_toolbar);
+        _page.Controls.Add(_faultBanner);
+        _page.Controls.Add(_uncleanBanner);
+        _page.Controls.Add(_setupBanner);
         _page.Controls.Add(_emptyCard);
         _page.Controls.Add(_channelsStack);
+        _page.Controls.Add(_infoCard);
         _host = new ScrollHost(_page) { Dock = DockStyle.Fill };
         Controls.Add(_host);
 
@@ -114,6 +173,9 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         ApplyTheme(Theme.Current);
     }
 
+    private static Label NewBannerLabel(Font font) =>
+        new() { AutoSize = false, Height = font.Height + 4, Font = font, AutoEllipsis = true, Tag = PageMetrics.Fill };
+
     private static FluentMetricCard NewCard(Image icon, string caption, string unit, string detail)
     {
         FluentMetricCard card = new() { Icon = icon };
@@ -121,12 +183,15 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         return card;
     }
 
+    // ------------------------------------------------------------------ engine
+
     public void SetEngine(FanControlEngine engine)
     {
         if (_engine != null)
         {
             _engine.ChannelsChanged -= Engine_ChannelsChanged;
             _engine.PresetChanged -= Engine_PresetChanged;
+            _engine.AlertsChanged -= Engine_AlertsChanged;
         }
 
         _engine = engine;
@@ -135,9 +200,11 @@ public sealed class FanControlPanel : UserControl, IThemedControl
 
         _engine.ChannelsChanged += Engine_ChannelsChanged;
         _engine.PresetChanged += Engine_PresetChanged;
+        _engine.AlertsChanged += Engine_AlertsChanged;
 
-        _presetCombo.SelectedIndex = (int)_engine.ActivePreset;
+        SelectPreset(_engine.ActivePreset);
         RefreshChannels();
+        UpdateAlerts();
     }
 
     private void Engine_ChannelsChanged(object sender, EventArgs e) => RefreshChannels();
@@ -145,22 +212,80 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     private void Engine_PresetChanged(object sender, EventArgs e)
     {
         if (_engine != null)
-            _presetCombo.SelectedIndex = (int)_engine.ActivePreset;
+            SelectPreset(_engine.ActivePreset);
+    }
+
+    private void Engine_AlertsChanged(object sender, EventArgs e) => UpdateAlerts();
+
+    private void SelectPreset(GlobalFanPreset preset)
+    {
+        _loading = true;
+        try
+        {
+            _presetCombo.SelectedIndex = (int)preset;
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private void PresetCombo_SelectedIndexChanged(object sender, EventArgs e)
     {
-        if (_engine == null || _presetCombo.SelectedIndex < 0 || _presetCombo.SelectedIndex > 4)
+        if (_loading || _engine == null || _presetCombo.SelectedIndex < 0 || _presetCombo.SelectedIndex > 4)
             return;
 
         GlobalFanPreset selected = (GlobalFanPreset)_presetCombo.SelectedIndex;
         if (selected == _engine.ActivePreset)
             return;
 
+        if (selected is GlobalFanPreset.Silent or GlobalFanPreset.Balanced or GlobalFanPreset.Performance)
+        {
+            int targets = _engine.CountPresetTargets();
+            string name = _presetCombo.SelectedItem?.ToString() ?? string.Empty;
+
+            if (targets == 0)
+            {
+                MessageBox.Show(FindForm(), "Ainda não há canais com função escolhida onde um perfil possa ser aplicado.\n\nIdentifique os canais abaixo primeiro.",
+                                "Perfil global", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SelectPreset(_engine.ActivePreset);
+                return;
+            }
+
+            string text = $"Aplicar o perfil «{name}» a {targets} {(targets == 1 ? "canal" : "canais")}?\n\n" +
+                          "A bomba, os canais por identificar e os canais não usados não são alterados.";
+            if (MessageBox.Show(FindForm(), text, "Perfil global", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            {
+                SelectPreset(_engine.ActivePreset);
+                return;
+            }
+        }
+
         _engine.ApplyPreset(selected);
         foreach (FanChannelCard card in _cards)
             card.SyncUiWithConfig();
     }
+
+    // ------------------------------------------------------------------ groups
+
+    private static string GroupTitle(FanChannelRole role) => role switch
+    {
+        FanChannelRole.Unassigned => "Por identificar",
+        FanChannelRole.CpuCooler => "Cooler do CPU",
+        FanChannelRole.Pump => "Bomba (watercooler)",
+        FanChannelRole.Radiator => "Radiador",
+        FanChannelRole.CaseFan => "Ventoinhas da caixa",
+        FanChannelRole.Gpu => "Placa gráfica",
+        _ => "Nada ligado / não usado"
+    };
+
+    private static Image GroupIcon(FanChannelRole role) => role switch
+    {
+        FanChannelRole.CpuCooler => FluentIcons.ForHardware(HardwareType.Cpu),
+        FanChannelRole.Gpu => FluentIcons.ForHardware(HardwareType.GpuNvidia),
+        FanChannelRole.Pump => FluentIcons.ForSensorType(SensorType.Flow),
+        _ => FluentIcons.ForSensorType(SensorType.Fan)
+    };
 
     public void RefreshChannels()
     {
@@ -175,67 +300,103 @@ public sealed class FanControlPanel : UserControl, IThemedControl
 
         _cards.Clear();
 
-        bool hasChannels = _engine != null && _engine.Channels.Count > 0;
+        IReadOnlyList<FanChannelRuntime> channels = _engine?.Channels ?? Array.Empty<FanChannelRuntime>();
+        bool hasChannels = channels.Count > 0;
         _emptyCard.Visible = !hasChannels;
         _channelsStack.Visible = hasChannels;
+        _infoCard.Visible = hasChannels;
 
-        if (hasChannels)
+        foreach (FanChannelRole role in GroupOrder)
         {
-            // One header + grid per controller, in discovery order.
-            foreach (IGrouping<string, FanChannelRuntime> group in _engine.Channels.GroupBy(c => c.HardwareName))
+            List<FanChannelRuntime> members = channels.Where(c => c.Config.Role == role).ToList();
+            if (members.Count == 0)
+                continue;
+
+            bool collapsible = role == FanChannelRole.NotConnected;
+            GroupHeader header = new()
             {
-                int count = group.Count();
-                GroupHeader header = new()
-                {
-                    Text = group.Key,
-                    Detail = count == 1 ? "· 1 canal" : $"· {count} canais",
-                    Icon = IconForController(group.First())
-                };
+                Text = GroupTitle(role),
+                Detail = members.Count == 1 ? "· 1 canal" : $"· {members.Count} canais",
+                Icon = GroupIcon(role),
+                Collapsible = collapsible,
+                Collapsed = collapsible && _notConnectedCollapsed
+            };
 
-                WrapGrid grid = new() { MinColumnWidth = 340 };
-                foreach (FanChannelRuntime channel in group)
-                {
-                    FanChannelCard card = new(channel, _engine);
-                    _cards.Add(card);
-                    grid.Controls.Add(card);
-                }
-
-                // A group = header + grid with a tighter gap between them.
-                StackPanel block = new() { Gap = 8 };
-                block.Controls.Add(header);
-                block.Controls.Add(grid);
-                _channelsStack.Controls.Add(block);
+            WrapGrid grid = new() { MinColumnWidth = 340, Visible = !header.Collapsed };
+            foreach (FanChannelRuntime channel in members)
+            {
+                FanChannelCard card = new(channel, _engine);
+                card.RoleChanged += Card_RoleChanged;
+                _cards.Add(card);
+                grid.Controls.Add(card);
             }
+
+            if (collapsible)
+            {
+                header.CollapsedChanged += (_, _) =>
+                {
+                    _notConnectedCollapsed = header.Collapsed;
+                    grid.Visible = !header.Collapsed;
+                };
+            }
+
+            // A group = header + grid with a tighter gap between them.
+            StackPanel block = new() { Gap = 8 };
+            block.Controls.Add(header);
+            block.Controls.Add(grid);
+            _channelsStack.Controls.Add(block);
         }
 
         UpdateChannelMetrics();
+        UpdateBanners();
         _channelsStack.ResumeLayout(true);
         _page.ResumeLayout(true);
         ApplyTheme(Theme.Current);
     }
 
-    private static Image IconForController(FanChannelRuntime channel)
+    private void Card_RoleChanged(object sender, EventArgs e)
     {
-        IHardware hardware = channel.Control.Sensor?.Hardware;
-        return hardware != null ? FluentIcons.ForHardware(hardware.HardwareType) : FluentIcons.ForSensorType(SensorType.Fan);
+        // Regroup after the card finished handling its own event (the card is disposed by the rebuild).
+        BeginInvoke(new Action(RefreshChannels));
+    }
+
+    // ------------------------------------------------------------------ banners and metrics
+
+    private void UpdateBanners()
+    {
+        int unassigned = _engine?.Channels.Count(c => c.Config.Role == FanChannelRole.Unassigned) ?? 0;
+        _setupBanner.Visible = unassigned > 0;
+        _setupLabel.Text = unassigned == 1
+            ? "1 canal por identificar. Enquanto não escolher a função, a app não escreve nele e fica na BIOS."
+            : $"{unassigned} canais por identificar. Enquanto não escolher a função, a app não escreve neles e ficam na BIOS.";
+
+        _uncleanBanner.Visible = _engine != null && _engine.PreviousSessionUnclean && !_uncleanDismissed;
+    }
+
+    private void UpdateAlerts()
+    {
+        IReadOnlyList<string> alerts = _engine?.CurrentAlerts ?? Array.Empty<string>();
+        _faultBanner.Visible = alerts.Count > 0;
+        _faultLabel.Text = alerts.Count == 0 ? string.Empty : string.Join("   ·   ", alerts);
     }
 
     private void UpdateChannelMetrics()
     {
-        int count = _engine?.Channels.Count ?? 0;
-        _channelsCard.SetMetric("Canais", count.ToString(), "", count == 0 ? "Nenhum controlador" : "Controláveis por PWM");
+        IReadOnlyList<FanChannelRuntime> channels = _engine?.Channels ?? Array.Empty<FanChannelRuntime>();
+        int total = channels.Count;
+        int managed = channels.Count(c => c.IsManaged);
+        _channelsCard.SetMetric("Canais", total.ToString(), "", total == 0 ? "Nenhum controlador" : $"{managed} sob controlo da app");
 
-        if (count == 0)
+        List<FanChannelRuntime> inUse = channels.Where(c => c.Config.Role != FanChannelRole.NotConnected).ToList();
+        if (inUse.Count == 0)
         {
-            _avgPwmCard.SetMetric("Velocidade média", "-", "%", "PWM dos canais");
+            _avgPwmCard.SetMetric("Velocidade média", "-", "%", "PWM dos canais em uso");
             return;
         }
 
-        float avg = _engine.Channels.Average(c => c.Control.ControlMode == ControlMode.Software
-                                                    ? c.LastAppliedPwm
-                                                    : (c.Control.Sensor?.Value ?? 0f));
+        float avg = inUse.Average(c => c.Control.ControlMode == ControlMode.Software ? c.LastAppliedPwm : (c.Control.Sensor?.Value ?? 0f));
         MetricCardSeverity sev = avg >= 85f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal;
-        _avgPwmCard.SetMetric("Velocidade média", $"{avg:F0}", "%", "PWM dos canais", sev, avg / 100f);
+        _avgPwmCard.SetMetric("Velocidade média", $"{avg:F0}", "%", "PWM dos canais em uso", sev, avg / 100f);
     }
 
     public void UpdateTelemetry()
@@ -252,6 +413,7 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         SetTemperature(_gpuTempCard, "Temperatura GPU", "GPU Core", gpu, 72f, 83f);
 
         UpdateChannelMetrics();
+        UpdateAlerts();
         foreach (FanChannelCard card in _cards)
             card.UpdateTelemetry();
     }
@@ -296,6 +458,8 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         _presetLabel.ForeColor = theme.MutedForegroundColor;
         _emptyLabel.BackColor = theme.SurfaceColor;
         _emptyLabel.ForeColor = theme.MutedForegroundColor;
+        _infoLabel.BackColor = theme.SurfaceColor;
+        _infoLabel.ForeColor = theme.MutedForegroundColor;
 
         Invalidate(true);
     }

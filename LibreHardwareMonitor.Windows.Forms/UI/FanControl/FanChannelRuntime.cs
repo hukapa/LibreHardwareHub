@@ -67,6 +67,9 @@ public sealed class FanChannelRuntime
     public bool IsManaged =>
         Config.Mode != FanChannelMode.DefaultBios && FanRolePolicy.AllowsMode(Config.Role, Config.Mode);
 
+    /// <summary>The channel has reported rotation at least once (an empty header never does).</summary>
+    public bool HasSeenRpm => _hasSeenRpm;
+
     public bool IsIdentifying => _identifyUntilMs > 0;
 
     public long IdentifyRemainingMs(long nowMs) => _identifyUntilMs > nowMs ? _identifyUntilMs - nowMs : 0;

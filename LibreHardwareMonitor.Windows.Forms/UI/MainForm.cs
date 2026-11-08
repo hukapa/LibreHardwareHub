@@ -152,6 +152,13 @@ public sealed partial class MainForm : Form
 
         _systemTray = new SystemTray(_computer, _settings, _unitManager);
         _systemTray.SetFanControlEngine(_fanControlEngine);
+
+        // Fan faults (stalled fan, thermal emergency, lost sensor) must be seen even with the window hidden.
+        _fanControlEngine.AlertsChanged += (_, _) =>
+        {
+            if (_fanControlEngine.CurrentAlerts.Count > 0)
+                _systemTray.ShowWarning("Alerta de ventoinhas", string.Join(Environment.NewLine, _fanControlEngine.CurrentAlerts));
+        };
         _systemTray.HideShowCommand += HideShowClick;
         _systemTray.ExitCommand += ExitClick;
 
