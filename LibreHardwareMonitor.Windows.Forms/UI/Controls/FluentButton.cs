@@ -118,13 +118,17 @@ public class FluentButton : ButtonBase, IThemedControl
     {
         Theme theme = Theme.Current;
         Graphics g = pevent.Graphics;
+        // ButtonBase sets ControlStyles.Opaque: Windows Forms never paints the background for it (OnPaintBackground is not
+        // even called), so the whole client area, including the corners outside the rounded shape, must be painted here.
+        // Otherwise those corners show whatever was left in the shared double-buffer (black, or other buttons' colors).
+        g.Clear(Parent?.BackColor ?? theme.BackgroundColor);
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         Rectangle client = ClientRectangle;
         if (client.Width <= 1 || client.Height <= 1)
             return;
 
-        float radius = Math.Max(3f, LogicalToDeviceUnits(theme.CornerRadius));
+        float radius = Math.Max(3f, LogicalToDeviceUnits(FluentStyle.ControlCornerLogical));
         // Crisp 1px border on pixel centers, covering the whole control (same geometry as the combo box beside it).
         RectangleF bounds = new(0.5f, 0.5f, client.Width - 1f, client.Height - 1f);
 
@@ -175,13 +179,22 @@ public class FluentButton : ButtonBase, IThemedControl
                 }
                 else
                 {
+                    // Same fill and border as the combo box, so the two read as one family of controls.
                     bg = pressed
                         ? theme.SelectedBackgroundColor
-                        : (hovered ? theme.HoverBackgroundColor : theme.SurfaceColor);
-                    border = hovered ? theme.AccentColor : theme.SurfaceStrokeColor;
+                        : FluentComboBox.Fill(theme, hovered);
+                    border = hovered ? FluentStyle.Blend(FluentComboBox.Border(theme), theme.AccentColor, 0.55) : FluentComboBox.Border(theme);
                     text = theme.ForegroundColor;
                 }
                 break;
+        }
+
+        // Disabled: flat, low-contrast and without any hover/pressed hint, for every variant.
+        if (!Enabled)
+        {
+            bg = FluentStyle.Blend(theme.BackgroundColor, theme.ForegroundColor, theme.IsDark ? 0.06 : 0.05);
+            border = FluentStyle.Blend(theme.BackgroundColor, theme.ForegroundColor, theme.IsDark ? 0.10 : 0.09);
+            text = FluentStyle.Blend(bg, theme.MutedForegroundColor, 0.55);
         }
 
         FluentStyle.FillRounded(g, bg, bounds, radius);

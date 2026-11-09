@@ -27,6 +27,7 @@ public class FluentComboBox : ComboBox, IThemedControl
 
     private bool _isHovered;
     private ToolStripDropDown _popup;
+    private BufferedGraphicsContext _bufferContext;
     private FluentComboList _list;
     private int _lastPopupClose;
 
@@ -245,13 +246,16 @@ public class FluentComboBox : ComboBox, IThemedControl
         Theme theme = Theme.Current;
         Rectangle client = ClientRectangle;
 
-        using BufferedGraphics buffer = BufferedGraphicsManager.Current.Allocate(target, client);
+        // A private buffer context: the shared BufferedGraphicsManager.Current is also used by every double-buffered
+        // control, and mixing the two left pixels of this field inside neighbouring controls (e.g. the corner of a button).
+        _bufferContext ??= new BufferedGraphicsContext();
+        using BufferedGraphics buffer = _bufferContext.Allocate(target, client);
         Graphics g = buffer.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         g.Clear(Parent?.BackColor ?? theme.BackgroundColor);
 
-        float radius = Math.Max(3f, LogicalToDeviceUnits(theme.CornerRadius - 2));
+        float radius = Math.Max(3f, LogicalToDeviceUnits(FluentStyle.ControlCornerLogical));
         RectangleF bounds = new(0.5f, 0.5f, client.Width - 1.5f, client.Height - 1.5f);
         bool active = Focused || IsPopupOpen;
 
@@ -297,6 +301,7 @@ public class FluentComboBox : ComboBox, IThemedControl
     {
         if (disposing)
             _popup?.Dispose();
+            _bufferContext?.Dispose();
 
         base.Dispose(disposing);
     }
