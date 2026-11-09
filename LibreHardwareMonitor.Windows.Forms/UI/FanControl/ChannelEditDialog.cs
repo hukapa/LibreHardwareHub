@@ -14,8 +14,8 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 /// <summary>Small themed dialog to name a fan channel and say how many fans share it.</summary>
 public sealed class ChannelEditDialog : Form
 {
-    private readonly TextBox _nameBox;
-    private readonly NumericUpDown _countBox;
+    private readonly FluentTextBox _nameBox;
+    private readonly FluentNumberBox _countBox;
 
     public string ChannelLabel => _nameBox.Text.Trim();
 
@@ -56,31 +56,25 @@ public sealed class ChannelEditDialog : Form
         Label nameCaption = new() { Text = "Nome", AutoSize = true, Location = new Point(pad, y), BackColor = theme.BackgroundColor };
         y += nameCaption.PreferredHeight + LogicalToDeviceUnits(4);
 
-        _nameBox = new TextBox
+        _nameBox = new FluentTextBox
         {
             Text = currentName,
             MaxLength = 40,
             Location = new Point(pad, y),
-            Width = width,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = theme.IsDark ? FluentStyle.Blend(theme.SurfaceColor, Color.White, 0.05) : Color.White,
-            ForeColor = theme.ForegroundColor
+            Width = width
         };
         y += _nameBox.Height + LogicalToDeviceUnits(12);
 
         Label countCaption = new() { Text = "Ventoinhas neste canal (hub ou splitter)", AutoSize = true, Location = new Point(pad, y), BackColor = theme.BackgroundColor };
         y += countCaption.PreferredHeight + LogicalToDeviceUnits(4);
 
-        _countBox = new NumericUpDown
+        _countBox = new FluentNumberBox
         {
             Minimum = 1,
             Maximum = 12,
             Value = Math.Max(1, Math.Min(12, fanCount)),
             Location = new Point(pad, y),
-            Width = LogicalToDeviceUnits(80),
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = _nameBox.BackColor,
-            ForeColor = theme.ForegroundColor
+            Width = LogicalToDeviceUnits(110)
         };
         y += _countBox.Height + LogicalToDeviceUnits(18);
 

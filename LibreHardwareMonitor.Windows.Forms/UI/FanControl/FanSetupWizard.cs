@@ -43,8 +43,8 @@ public sealed class FanSetupWizard : Form
     private readonly Label _identifyHint;
     private readonly FluentButton _btnIdentify;
     private readonly FluentComboBox _roleCombo;
-    private readonly TextBox _nameBox;
-    private readonly NumericUpDown _countBox;
+    private readonly FluentTextBox _nameBox;
+    private readonly FluentNumberBox _countBox;
 
     // page 2
     private readonly Panel _pageCalibrate;
@@ -88,7 +88,7 @@ public sealed class FanSetupWizard : Form
         _title = new Label { Text = "Assistente de configuração", AutoSize = false, Font = FluentStyle.CreateUiFont(FontStyle.Bold, 12f), Location = new Point(pad, pad), Size = new Size(inner, LogicalToDeviceUnits(26)), BackColor = theme.BackgroundColor };
         _subtitle = new Label { AutoSize = false, Font = FluentStyle.UiFont, ForeColor = theme.MutedForegroundColor, Location = new Point(pad, pad + LogicalToDeviceUnits(28)), Size = new Size(inner, LogicalToDeviceUnits(36)), BackColor = theme.BackgroundColor };
         int top = _subtitle.Bottom + LogicalToDeviceUnits(14);
-        int pageHeight = LogicalToDeviceUnits(340);
+        int pageHeight = LogicalToDeviceUnits(362);
 
         // ---- page 1: identify
         _pageIdentify = new Panel { Location = new Point(pad, top), Size = new Size(inner, pageHeight), BackColor = theme.BackgroundColor };
@@ -123,27 +123,21 @@ public sealed class FanSetupWizard : Form
 
         y += LogicalToDeviceUnits(70);
         Label nameCaption = Caption("Nome (opcional)", y);
-        _nameBox = new TextBox
+        _nameBox = new FluentTextBox
         {
             MaxLength = 40,
             Location = new Point(0, y + LogicalToDeviceUnits(22)),
-            Width = inner,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = theme.IsDark ? FluentStyle.Blend(theme.SurfaceColor, Color.White, 0.05) : Color.White,
-            ForeColor = theme.ForegroundColor
+            Width = inner
         };
 
         y += LogicalToDeviceUnits(70);
         Label countCaption = Caption("Ventoinhas neste canal (hub ou splitter)", y);
-        _countBox = new NumericUpDown
+        _countBox = new FluentNumberBox
         {
             Minimum = 1,
             Maximum = 12,
             Location = new Point(0, y + LogicalToDeviceUnits(22)),
-            Width = LogicalToDeviceUnits(80),
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = _nameBox.BackColor,
-            ForeColor = theme.ForegroundColor
+            Width = LogicalToDeviceUnits(110)
         };
 
         _pageIdentify.Controls.AddRange(new Control[] { _stepLabel, _channelLabel, _liveLabel, _btnIdentify, _identifyHint, roleCaption, _roleCombo, nameCaption, _nameBox, countCaption, _countBox });
