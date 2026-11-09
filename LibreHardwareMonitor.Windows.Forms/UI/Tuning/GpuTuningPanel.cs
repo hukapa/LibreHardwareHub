@@ -23,7 +23,6 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
 
     private GpuTuningEngine _engine;
     private IGpuTuningDevice _selectedDevice;
-    private int _selectedPresetIndex = 1; // 0 = Eco, 1 = Stock, 2 = Performance, -1 = Custom
 
     private readonly StackPanel _page;
     private readonly ScrollHost _host;
@@ -188,7 +187,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         Controls.Add(_host);
 
         UpdateValueLabels();
-        UpdatePresetButtonsHighlight();
+        RefreshActions();
 
         if (engine != null)
             SetEngine(engine);
@@ -258,11 +257,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         UpdateTelemetry();
     }
 
-    private void MarkCustom()
-    {
-        _selectedPresetIndex = -1;
-        UpdatePresetButtonsHighlight();
-    }
+    private void MarkCustom() => RefreshActions();
 
     private void UpdateValueLabels()
     {
@@ -316,7 +311,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
 
         _chkApplyStartup.Checked = s.ApplyOnStartup;
         UpdateValueLabels();
-        UpdatePresetButtonsHighlight();
+        RefreshActions();
         InvalidateRows();
     }
 
@@ -343,45 +338,97 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         _tempLimitRow.Invalidate();
     }
 
+    /// <summary>Slider values a quick profile stands for (clamped to what the card supports).</summary>
+    private (int Core, int Mem, int Power, int Temp) PresetValues(int index) => index switch
+    {
+        0 => (Math.Max(_coreSlider.Minimum, -50), 0, Math.Max(_powerSlider.Minimum, 85), Math.Max(_tempLimitSlider.Minimum, 75)),
+        1 => (0, 0, 100, StockTempLimitC),
+        _ => (Math.Min(_coreSlider.Maximum, 60), Math.Min(_memSlider.Maximum, 150), Math.Min(_powerSlider.Maximum, 105), Math.Min(_tempLimitSlider.Maximum, 85))
+    };
+
     private void ApplyPreset(int index)
     {
         if (_selectedDevice == null)
             return;
 
-        switch (index)
-        {
-            case 0: // Eco
-                SetIfEnabled(_coreSlider, Math.Max(_coreSlider.Minimum, -50));
-                SetIfEnabled(_memSlider, 0);
-                SetIfEnabled(_powerSlider, Math.Max(_powerSlider.Minimum, 85));
-                SetIfEnabled(_tempLimitSlider, Math.Max(_tempLimitSlider.Minimum, 75));
-                break;
+        (int core, int mem, int power, int temp) = PresetValues(index);
+        SetIfEnabled(_coreSlider, core);
+        SetIfEnabled(_memSlider, mem);
+        SetIfEnabled(_powerSlider, power);
+        SetIfEnabled(_tempLimitSlider, temp);
 
-            case 1: // Stock
-                SetIfEnabled(_coreSlider, 0);
-                SetIfEnabled(_memSlider, 0);
-                SetIfEnabled(_powerSlider, 100);
-                SetIfEnabled(_tempLimitSlider, StockTempLimitC);
-                break;
-
-            case 2: // Moderate performance
-                SetIfEnabled(_coreSlider, Math.Min(_coreSlider.Maximum, 60));
-                SetIfEnabled(_memSlider, Math.Min(_memSlider.Maximum, 150));
-                SetIfEnabled(_powerSlider, Math.Min(_powerSlider.Maximum, 105));
-                SetIfEnabled(_tempLimitSlider, Math.Min(_tempLimitSlider.Maximum, 85));
-                break;
-        }
-
-        _selectedPresetIndex = index;
         UpdateValueLabels();
-        UpdatePresetButtonsHighlight();
+        RefreshActions();
     }
 
+    /// <summary>Editors the device cannot apply do not count when comparing with a profile.</summary>
+    private static bool Matches(FluentSlider slider, int value) =>
+        !slider.Enabled || slider.Value == Math.Max(slider.Minimum, Math.Min(slider.Maximum, value));
+
+    private bool MatchesPreset(int index)
+    {
+        (int core, int mem, int power, int temp) = PresetValues(index);
+        return Matches(_coreSlider, core) && Matches(_memSlider, mem) && Matches(_powerSlider, power) && Matches(_tempLimitSlider, temp);
+    }
+
+    private bool HasAdjustableEditors =>
+        _selectedDevice != null && _selectedDevice.Capabilities.IsSupported &&
+        (_coreSlider.Enabled || _memSlider.Enabled || _powerSlider.Enabled || _tempLimitSlider.Enabled);
+
+    /// <summary>A profile is highlighted only while the editors really hold its values; nothing is "selected" by default.</summary>
     private void UpdatePresetButtonsHighlight()
     {
-        _btnEco.IsActive = _selectedPresetIndex == 0;
-        _btnBalanced.IsActive = _selectedPresetIndex == 1;
-        _btnMaxPerf.IsActive = _selectedPresetIndex == 2;
+        bool any = HasAdjustableEditors;
+        _btnEco.IsActive = any && MatchesPreset(0);
+        _btnBalanced.IsActive = any && MatchesPreset(1);
+        _btnMaxPerf.IsActive = any && MatchesPreset(2);
+    }
+
+    private GpuTuningState ReadEditedState() => new()
+    {
+        CoreClockOffsetMhz = _coreSlider.Value,
+        MemoryClockOffsetMhz = _memSlider.Value,
+        PowerLimitPercent = _powerSlider.Value,
+        TempLimitC = _tempLimitSlider.Value,
+        ApplyOnStartup = _chkApplyStartup.Checked
+    };
+
+    private static bool SameValues(GpuTuningState a, GpuTuningState b) =>
+        a.CoreClockOffsetMhz == b.CoreClockOffsetMhz && a.MemoryClockOffsetMhz == b.MemoryClockOffsetMhz &&
+        a.PowerLimitPercent == b.PowerLimitPercent && a.TempLimitC == b.TempLimitC;
+
+
+    private void SetActionsEnabled(bool enabled)
+    {
+        _btnTest.Enabled = enabled;
+        _btnResetStock.Enabled = enabled;
+        _btnEco.Enabled = enabled;
+        _btnBalanced.Enabled = enabled;
+        _btnMaxPerf.Enabled = enabled;
+    }
+    /// <summary>
+    /// Enables each action only when it can do something: "Test" needs values that differ from what is applied,
+    /// "Reset" needs something that is not at the factory value, and nothing runs during a test.
+    /// </summary>
+    private void RefreshActions()
+    {
+        UpdatePresetButtonsHighlight();
+        if (_selectedDevice == null)
+        {
+            SetActionsEnabled(false);
+            return;
+        }
+
+        bool adjustable = HasAdjustableEditors;
+        bool testing = _engine?.IsInTestMode == true;
+        GpuTuningState edited = ReadEditedState();
+        GpuTuningState applied = _selectedDevice.CurrentState;
+
+        _btnTest.Enabled = adjustable && !testing && !SameValues(edited, applied);
+        _btnResetStock.Enabled = adjustable && !testing && (!applied.IsStock() || !edited.IsStock());
+        _btnEco.Enabled = adjustable && !testing;
+        _btnBalanced.Enabled = adjustable && !testing;
+        _btnMaxPerf.Enabled = adjustable && !testing;
     }
 
     private void ShowStatus(string text, Color color)
@@ -408,6 +455,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         if (_engine.StartWatchdogTest(_selectedDevice, newState, out string error))
         {
             _watchdogBanner.Visible = true;
+            RefreshActions();
             ShowStatus(string.Empty, Theme.Current.ForegroundColor);
         }
         else
@@ -423,7 +471,6 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
 
         if (_engine.ResetDeviceToStock(_selectedDevice, out string error))
         {
-            _selectedPresetIndex = 1;
             UpdateUiFromState();
             _watchdogBanner.Visible = false;
             ShowStatus("Valores de fábrica da placa repostos.", Theme.Current.StateCoolColor);
@@ -467,6 +514,7 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         }
 
         _watchdogBanner.Visible = false;
+        RefreshActions();
         ShowStatus("Perfil confirmado e gravado.", Theme.Current.StateCoolColor);
     }
 

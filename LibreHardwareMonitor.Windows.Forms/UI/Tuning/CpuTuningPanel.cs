@@ -20,7 +20,6 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Tuning;
 public sealed class CpuTuningPanel : UserControl, IThemedControl
 {
     private CpuTuningEngine _engine;
-    private int _selectedPresetIndex = 1; // 0 = Eco, 1 = Stock, 2 = Performance, -1 = Custom
 
     private readonly StackPanel _page;
     private readonly ScrollHost _host;
@@ -183,7 +182,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         Controls.Add(_host);
 
         UpdateValueLabels();
-        UpdatePresetButtonsHighlight();
+        RefreshActions();
 
         if (engine != null)
             SetEngine(engine);
@@ -221,11 +220,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         UpdateTelemetry();
     }
 
-    private void MarkCustom()
-    {
-        _selectedPresetIndex = -1;
-        UpdatePresetButtonsHighlight();
-    }
+    private void MarkCustom() => RefreshActions();
 
     private void UpdateValueLabels()
     {
@@ -256,7 +251,20 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         _controlModeLabel.Text = $"Modo de controlo: {_engine.Capabilities.RaplStatusMessage}";
 
         UpdateValueLabels();
-        UpdatePresetButtonsHighlight();
+        RefreshActions();
+    }
+
+    /// <summary>Editor values a quick profile stands for.</summary>
+    private (int Throttle, int Boost, int Pl1, int Pl2) PresetValues(int index)
+    {
+        int defPl1 = _engine?.Capabilities.DefaultPl1Watts ?? 65;
+        int defPl2 = _engine?.Capabilities.DefaultPl2Watts ?? 125;
+        return index switch
+        {
+            0 => (90, 0, Math.Max(15, (int)(defPl1 * 0.70f)), Math.Max(15, (int)(defPl2 * 0.70f))),
+            1 => (100, 1, defPl1, defPl2),
+            _ => (100, 2, Math.Min(253, (int)(defPl1 * 1.25f)), Math.Min(253, (int)(defPl2 * 1.25f)))
+        };
     }
 
     private void ApplyPreset(int index)
@@ -264,44 +272,86 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         if (_engine == null)
             return;
 
+        (int throttle, int boost, int pl1, int pl2) = PresetValues(index);
+        _throttleMaxSlider.Value = Math.Max(_throttleMaxSlider.Minimum, Math.Min(_throttleMaxSlider.Maximum, throttle));
+        _boostCombo.SelectedIndex = boost;
+        if (_pl1Slider.Enabled) _pl1Slider.Value = Math.Max(_pl1Slider.Minimum, Math.Min(_pl1Slider.Maximum, pl1));
+        if (_pl2Slider.Enabled) _pl2Slider.Value = Math.Max(_pl2Slider.Minimum, Math.Min(_pl2Slider.Maximum, pl2));
+
+        UpdateValueLabels();
+        RefreshActions();
+    }
+
+    private bool MatchesPreset(int index)
+    {
+        (int throttle, int boost, int pl1, int pl2) = PresetValues(index);
+        bool power = (!_pl1Slider.Enabled || _pl1Slider.Value == Math.Max(_pl1Slider.Minimum, Math.Min(_pl1Slider.Maximum, pl1)))
+                     && (!_pl2Slider.Enabled || _pl2Slider.Value == Math.Max(_pl2Slider.Minimum, Math.Min(_pl2Slider.Maximum, pl2)));
+        return _throttleMaxSlider.Value == throttle && _boostCombo.SelectedIndex == boost && power;
+    }
+
+    /// <summary>A profile is highlighted only while the editors really hold its values; nothing is "selected" by default.</summary>
+    private void UpdatePresetButtonsHighlight()
+    {
+        bool any = _engine != null;
+        _btnEco.IsActive = any && MatchesPreset(0);
+        _btnBalanced.IsActive = any && MatchesPreset(1);
+        _btnMaxPerf.IsActive = any && MatchesPreset(2);
+    }
+
+    private CpuTuningState ReadEditedState() => new()
+    {
+        MaxProcessorStatePercent = _throttleMaxSlider.Value,
+        TurboBoostMode = _boostCombo.SelectedIndex,
+        Pl1Watts = _pl1Slider.Value,
+        Pl2Watts = _pl2Slider.Value,
+        ApplyOnStartup = _chkApplyStartup.Checked
+    };
+
+
+    private void SetActionsEnabled(bool enabled)
+    {
+        _btnTest.Enabled = enabled;
+        _btnResetStock.Enabled = enabled;
+        _btnEco.Enabled = enabled;
+        _btnBalanced.Enabled = enabled;
+        _btnMaxPerf.Enabled = enabled;
+    }
+    /// <summary>
+    /// Enables each action only when it can do something: "Test" needs values that differ from what is applied,
+    /// "Reset" needs something that is not at the factory value, and nothing runs during a test.
+    /// </summary>
+    private void RefreshActions()
+    {
+        UpdatePresetButtonsHighlight();
+        if (_engine == null)
+        {
+            SetActionsEnabled(false);
+            return;
+        }
+
+        bool testing = _engine.IsInTestMode;
+        CpuTuningState edited = ReadEditedState();
+        CpuTuningState applied = _engine.CurrentState;
         int defPl1 = _engine.Capabilities.DefaultPl1Watts;
         int defPl2 = _engine.Capabilities.DefaultPl2Watts;
 
-        switch (index)
-        {
-            case 0: // Eco
-                _throttleMaxSlider.Value = 90;
-                _boostCombo.SelectedIndex = 0;
-                _pl1Slider.Value = Math.Max(15, (int)(defPl1 * 0.70f));
-                _pl2Slider.Value = Math.Max(15, (int)(defPl2 * 0.70f));
-                break;
+        // Power limits only count when the CPU lets the app change them.
+        bool rapl = _engine.Capabilities.CanAdjustRapl;
+        bool changed = edited.MaxProcessorStatePercent != applied.MaxProcessorStatePercent
+                       || edited.TurboBoostMode != applied.TurboBoostMode
+                       || (rapl && (edited.Pl1Watts != applied.Pl1Watts || edited.Pl2Watts != applied.Pl2Watts));
 
-            case 1: // Stock
-                _throttleMaxSlider.Value = 100;
-                _boostCombo.SelectedIndex = 1;
-                _pl1Slider.Value = defPl1;
-                _pl2Slider.Value = defPl2;
-                break;
+        bool EditedIsStock() => edited.MaxProcessorStatePercent == 100 && edited.TurboBoostMode == 1
+                                && (!rapl || (edited.Pl1Watts == defPl1 && edited.Pl2Watts == defPl2));
+        bool AppliedIsStock() => applied.MaxProcessorStatePercent == 100 && applied.TurboBoostMode == 1
+                                 && (!rapl || (applied.Pl1Watts == defPl1 && applied.Pl2Watts == defPl2));
 
-            case 2: // Performance
-                _throttleMaxSlider.Value = 100;
-                _boostCombo.SelectedIndex = 2;
-                _pl1Slider.Value = Math.Min(253, (int)(defPl1 * 1.25f));
-                _pl2Slider.Value = Math.Min(253, (int)(defPl2 * 1.25f));
-                break;
-        }
-
-        // Set after the editors: their change handlers mark the profile as custom.
-        _selectedPresetIndex = index;
-        UpdateValueLabels();
-        UpdatePresetButtonsHighlight();
-    }
-
-    private void UpdatePresetButtonsHighlight()
-    {
-        _btnEco.IsActive = _selectedPresetIndex == 0;
-        _btnBalanced.IsActive = _selectedPresetIndex == 1;
-        _btnMaxPerf.IsActive = _selectedPresetIndex == 2;
+        _btnTest.Enabled = !testing && changed;
+        _btnResetStock.Enabled = !testing && (!AppliedIsStock() || !EditedIsStock());
+        _btnEco.Enabled = !testing;
+        _btnBalanced.Enabled = !testing;
+        _btnMaxPerf.Enabled = !testing;
     }
 
     private void ShowStatus(string text, Color color)
@@ -328,6 +378,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         if (_engine.StartWatchdogTest(newState, out string error))
         {
             _watchdogBanner.Visible = true;
+            RefreshActions();
             ShowStatus(string.Empty, Theme.Current.ForegroundColor);
         }
         else
@@ -344,8 +395,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         if (_engine.ResetToStock(out string error))
         {
             UpdateUiFromState();
-            _selectedPresetIndex = 1;
-            UpdatePresetButtonsHighlight();
+            RefreshActions();
             _watchdogBanner.Visible = false;
             ShowStatus("Valores de fábrica repostos.", Theme.Current.StateCoolColor);
         }
@@ -388,6 +438,7 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         }
 
         _watchdogBanner.Visible = false;
+        RefreshActions();
         ShowStatus("Perfil confirmado e gravado.", Theme.Current.StateCoolColor);
     }
 
