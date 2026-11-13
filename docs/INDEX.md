@@ -1,7 +1,7 @@
 # LibreHardwareMonitor — Guia Master do Projeto e Navegacao de Documentacao
 
 > **Versao:** 0.9.6.0 (Fork hukapa)  
-> **Arquitetura:** .NET 8.0 LTS (`net8.0-windows`) + WinForms + Web Server HTTP Embutido  
+> **Arquitetura:** .NET 8.0 LTS Exclusivo (`net8.0` / `net8.0-windows`) + WinForms + Web Server HTTP Embutido  
 > **Publico:** Desenvolvedores, Engenheiros de Software e Agentes de IA  
 > **Regra Fundamental:** Zero Emojis em toda a documentacao, codigo e commits.  
 
@@ -90,7 +90,7 @@ LibreHardwareMonitor/
 
 ### Compilacao da Versao Release (.NET 8.0)
 ```powershell
-dotnet build LibreHardwareMonitor.Windows.Forms\LibreHardwareMonitor.Windows.Forms.csproj -c Release /p:Platform=x64
+dotnet build LibreHardwareMonitor.sln -c Release /p:Platform=x64
 ```
 
 ### Publicacao Standalone em Ficheiro Unico (Single-File)

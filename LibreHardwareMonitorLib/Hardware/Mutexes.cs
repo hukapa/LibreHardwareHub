@@ -32,11 +32,7 @@ internal static class Mutexes
                 var mutexSecurity = new MutexSecurity();
                 mutexSecurity.AddAccessRule(worldRule);
 
-#if NETFRAMEWORK
-                return new Mutex(false, name, out _, mutexSecurity);
-#else
                 return MutexAcl.Create(false, name, out _, mutexSecurity);
-#endif
             }
             catch (UnauthorizedAccessException)
             {

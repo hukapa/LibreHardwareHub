@@ -198,3 +198,28 @@
     - `FluentSectionCard.cs`: Painel de agrupamento com cantos arredondados e borda sutil.
     - `FluentComboBox.cs`: Caixa de combinacao estilizada com cantos curvos e chevron vetorial.
     - Atualizacao de `FanControlPanel.cs` e `FanChannelCard.cs` para utilizacao integral dos novos componentes Fluent.
+
+---
+
+## 14. Fase 14: Unificacao Exclusiva em .NET 8.0 LTS e Blindagem de Dependencias
+
+* **Objetivo:** Eliminar a sobrecarga de compilacao multi-target legada (.NET Framework 4.7.2 e .NET Standard 2.0), blindar o Dependabot contra versoes instaveis do ecossistema .NET 11 e unificar toda a solucao exclusivamente em .NET 8.0 LTS.
+* **Acoes Efetuadas:**
+  - **Tratamento de Dependencias e Dependabot (PR #4 e PR #5):**
+    - Identificada duplicacao identica entre PR #4 e PR #5, bem como a tentativa de atualizacao dos pacotes `System.*` (`System.IO.Ports`, `System.Management`, `System.Resources.Extensions`, `System.Text.Json`, `System.Threading.AccessControl`) para `11.0.0`, que geravam 29 avisos de incompatibilidade e conflitos de resolucao de tipos (`MSB3277`).
+    - Mantidos todos os pacotes `System.*` na versao estavel `10.0.14`.
+    - Atualizado isoladamente o gerador de codigo nativo `Microsoft.Windows.CsWin32` de `0.3.367` para `0.3.371` em `LibreHardwareMonitorLib.csproj`.
+    - Blindado o `.github/dependabot.yml` com regra `ignore` para versoes `>= 11.0.0` e `semver-major` nos pacotes `System.*`.
+  - **Unificacao de TargetFramework em .NET 8.0:**
+    - `LibreHardwareMonitorLib.csproj`: Unificado em `<TargetFramework>net8.0</TargetFramework>`, removendo `net472`, `netstandard2.0`, condicoes `Condition="'$(TargetFramework)' == 'net472'"` (como `System.Memory` 4.6.3), `<GeneratePackageOnBuild>` e `<Import Project="main.nuget.target">`.
+    - `Aga.Controls.csproj`: Unificado em `<TargetFramework>net8.0-windows</TargetFramework>`, eliminadas referencias legadas a `System.Design` e adicionada supressao pontual de avisos obsoletos de 2009 (`SYSLIB0003`, `SYSLIB0006`, `SYSLIB0050`).
+    - `LibreHardwareMonitor.Windows.Forms.csproj`: Migrado o SDK para `Microsoft.NET.Sdk` com `<TargetFramework>net8.0-windows</TargetFramework>`, eliminando o aviso `NETSDK1137` e removendo referencias legadas a `System.Configuration.Install` e `System.Web`.
+  - **Limpeza de Diretivas Condicionais (#if Legadas):**
+    - `UpdateVisitor.cs`: Removida diretiva `#if NETCOREAPP || NET8_0_OR_GREATER`, passando a invocar diretamente `Environment.TickCount64`.
+    - `Mutexes.cs`: Removida compilacao condicional `#if NETFRAMEWORK`, mantendo uso direto de `MutexAcl.Create`.
+    - `OpCode.cs`: Removidas diretivas e metodos de reflexao de fallback para Mono.Posix em .NET Framework, utilizando diretamente `Syscall.mmap` e `Syscall.munmap`.
+    - `ByteExtensions.cs`: Removida diretiva redundante `#if NET8_0_OR_GREATER`.
+  - **Ajuste de Pipelines CI (`.github/workflows/`):**
+    - Atualizados `master.yml` e `pull requests.yml` para disparar em `branches: [main]` com `dotnet-version: '8.0.x'`, removendo artefatos e passos legados de `net472`, `net10.0` e Avalonia.
+  - **Validacao:**
+    - Compilacao de toda a solucao `LibreHardwareMonitor.sln` em Release x64 concluida com **0 Warnings e 0 Errors** em ~4 segundos.

@@ -21,11 +21,7 @@ public class UpdateVisitor : IVisitor
 
     public void VisitComputer(IComputer computer)
     {
-#if NETCOREAPP || NET8_0_OR_GREATER
         _currentTickMs = Environment.TickCount64;
-#else
-        _currentTickMs = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
-#endif
         computer.Traverse(this);
     }
 

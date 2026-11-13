@@ -2,8 +2,6 @@
 
 namespace LibreHardwareMonitor.Interop;
 
-#if NET8_0_OR_GREATER
-
 internal static class ByteExtensions
 {
     public static byte[] ToArray(this __byte_4 bytes)
@@ -11,5 +9,3 @@ internal static class ByteExtensions
         return bytes.AsReadOnlySpan().ToArray();
     }
 }
-
-#endif

@@ -85,10 +85,10 @@ LibreHardwareMonitor.Windows.Forms/UI/
 
 ## 6. Estado Atual de Compilacao e Testes
 
-* **Framework de Destino Principal:** .NET 8.0 Windows (`net8.0-windows`)
-* **Compatibilidade Retroativa Mantida:** .NET Framework 4.7.2 (`net472`)
+* **Framework de Destino Exclusivo:** .NET 8.0 LTS (`net8.0` na biblioteca central e `net8.0-windows` na interface de utilizador)
+* **Suporte Legado .NET Framework 4.7.2 (`net472`):** Descontinuado formalmente para eliminar peso morto, diretivas condicionais e acelerar a compilação
 * **Erros de Compilacao:** 0
-* **Avisos:** 0 avisos bloqueantes
+* **Avisos de Compilacao:** 0 avisos (validado com `dotnet build LibreHardwareMonitor.sln -c Release /p:Platform=x64`)
 * **Regra Zero Emojis:** 100% em conformidade em todo o repositorio.
 
 ---
@@ -326,7 +326,7 @@ Para unificar a experiencia de utilizacao e erradicar duplicacao de codigo, fora
 * **Pintura Livre de Cintilacao:** Todas as novas classes ativam `OptimizedDoubleBuffer | AllPaintingInWmPaint | UserPaint`.
 * **Zero Overhead em Segundo Plano:** Atualizacoes de telemetria dos tres paineis continuam estritamente suspensas quando a janela esta minimizada ou quando o utilizador se encontra a navegar noutras vistas.
 * **Pegada de Memoria:** O binario da aplicacao `LibreHardwareMonitor.Windows.Forms.dll` mantem-se extremamente leve (~577 KB).
-* **Compilacao:** Validada com sucesso em `.NET 8.0` e `net472` com **0 Warnings e 0 Errors**.
+* **Compilacao:** Validada com sucesso em `.NET 8.0 LTS` exclusivo em toda a solucao com **0 Warnings e 0 Errors**.
 
 
 

@@ -8,9 +8,9 @@ version: 2
 updates:
   - package-ecosystem: "nuget"
     directories: 
-     - "/LibreHardwareMonitor.Windows.Forms"
-     - "/LibreHardwareMonitorLib"
-     - "/Aga.Controls"
+      - "/LibreHardwareMonitor.Windows.Forms"
+      - "/LibreHardwareMonitorLib"
+      - "/Aga.Controls"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
@@ -18,3 +18,9 @@ updates:
       all-dependencies:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "System.*"
+        versions: [">= 11.0.0"]
+      - dependency-name: "System.*"
+        update-types: ["version-update:semver-major"]
+
