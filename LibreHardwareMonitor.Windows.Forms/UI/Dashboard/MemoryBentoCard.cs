@@ -4,6 +4,7 @@
 // All Rights Reserved.
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -15,10 +16,11 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
 /// <summary>
 /// Specialized Bento card for System Memory (RAM) showing usage bars,
-/// free memory, swap/pagefile allocation and module thermals.
+/// free memory, swap/pagefile allocation, and expandable details for physical and virtual memory.
 /// </summary>
 public sealed class MemoryBentoCard : BentoCardBase
 {
+    private readonly List<(string Name, string Value)> _detailedSensors = new();
     private float? _usedGb;
     private float? _availableGb;
     private float? _loadPercent;
@@ -34,30 +36,41 @@ public sealed class MemoryBentoCard : BentoCardBase
         Height = LogicalToDeviceUnits(260);
     }
 
-    public void UpdateSensors(IHardware memory)
+    public void UpdateSensors(IEnumerable<IHardware> hardwareList)
     {
-        if (memory == null)
+        if (hardwareList == null)
             return;
 
-        ISensor used = memory.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Memory Used"));
-        _usedGb = ToGigabytes(used?.Value);
+        var memoryHws = hardwareList.Where(h => h.HardwareType == HardwareType.Memory).ToList();
+        IHardware physMem = memoryHws.FirstOrDefault(h => !h.Name.Contains("Virtual")) ?? memoryHws.FirstOrDefault();
+        IHardware virtMem = memoryHws.FirstOrDefault(h => h.Name.Contains("Virtual"));
 
-        ISensor avail = memory.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Memory Available"));
-        _availableGb = ToGigabytes(avail?.Value);
+        if (physMem != null)
+        {
+            ISensor used = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Memory Used"));
+            _usedGb = ToGigabytes(used?.Value);
 
-        ISensor load = memory.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Load && s.Name.Contains("Memory"));
-        _loadPercent = load?.Value;
+            ISensor avail = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Memory Available"));
+            _availableGb = ToGigabytes(avail?.Value);
 
-        ISensor virtUsed = memory.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Virtual Memory Used"));
+            ISensor load = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Load && s.Name.Contains("Memory"));
+            _loadPercent = load?.Value;
+
+            ISensor temp = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
+            _dimmTemp = temp?.Value;
+        }
+
+        // Virtual Memory (Swap/Pagefile)
+        ISensor virtUsed = virtMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Used"))
+            ?? physMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Virtual Memory Used"));
         _virtualUsedGb = ToGigabytes(virtUsed?.Value);
 
-        ISensor virtAvail = memory.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Virtual Memory Available"));
+        ISensor virtAvail = virtMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Available"))
+            ?? physMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Virtual Memory Available"));
         float? virtAvailGb = ToGigabytes(virtAvail?.Value);
+
         if (_virtualUsedGb.HasValue && virtAvailGb.HasValue)
             _virtualTotalGb = _virtualUsedGb.Value + virtAvailGb.Value;
-
-        ISensor temp = memory.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
-        _dimmTemp = temp?.Value;
 
         if (_loadPercent.HasValue)
         {
@@ -78,7 +91,47 @@ public sealed class MemoryBentoCard : BentoCardBase
             }
         }
 
+        // Detailed Sensors for expansion
+        _detailedSensors.Clear();
+        foreach (IHardware mHw in memoryHws)
+        {
+            foreach (ISensor s in mHw.Sensors.Where(s => s.Value.HasValue))
+            {
+                string label = $"{mHw.Name}: {s.Name}";
+                if (s.SensorType == SensorType.Data)
+                {
+                    float? gb = ToGigabytes(s.Value);
+                    _detailedSensors.Add((label, $"{gb.GetValueOrDefault():F2} GB"));
+                }
+                else if (s.SensorType == SensorType.Load)
+                {
+                    _detailedSensors.Add((label, $"{s.Value.Value:F1} %"));
+                }
+                else if (s.SensorType == SensorType.Temperature)
+                {
+                    _detailedSensors.Add((label, $"{s.Value.Value:F1} °C"));
+                }
+                else
+                {
+                    _detailedSensors.Add((label, $"{s.Value.Value:F0}"));
+                }
+            }
+        }
+
+        RecalculateCardHeight();
         Invalidate();
+    }
+
+    protected override void RecalculateCardHeight()
+    {
+        int baseHeight = 260;
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / 2.0);
+            baseHeight += 32 + (extraRows * 22) + 16;
+        }
+
+        Height = LogicalToDeviceUnits(baseHeight);
     }
 
     protected override void DrawCardContent(Graphics g, Theme theme)
@@ -91,11 +144,11 @@ public sealed class MemoryBentoCard : BentoCardBase
         float ratio = _loadPercent.HasValue ? Math.Max(0f, Math.Min(1f, _loadPercent.Value / 100f))
             : (totalGb > 0.1f ? Math.Max(0f, Math.Min(1f, _usedGb.GetValueOrDefault() / totalGb)) : 0f);
 
-        // RAM Usage Bar Section
-        DrawSectionTitle(g, "OCUPAÇÃO DE MEMÓRIA FÍSICA", pad, topY, theme);
+        // RAM Usage Bar Section (Clean title "MEMÓRIA FÍSICA")
+        DrawSectionTitle(g, "MEMÓRIA FÍSICA", pad, topY, theme);
 
         string barText = totalGb > 0.1f
-            ? $"{_usedGb.GetValueOrDefault():F1} GB usados de {totalGb:F1} GB ({ratio * 100f:F0}%)"
+            ? $"{_usedGb.GetValueOrDefault():F1} / {totalGb:F1} GB ({ratio * 100f:F1}%)"
             : $"{_usedGb.GetValueOrDefault():F1} GB";
 
         Rectangle barTextRect = new(pad, topY, availWidth, LogicalToDeviceUnits(14));
@@ -112,7 +165,7 @@ public sealed class MemoryBentoCard : BentoCardBase
             DrawProgressBar(g, ramBarBounds, ratio, ramFill, ramBg);
         }
 
-        // 4 KPI Boxes (2x2)
+        // 4 KPI Boxes (2x2) with 1 decimal precision
         int kpiY = barY + barH + LogicalToDeviceUnits(14);
         int kpiW = (availWidth - LogicalToDeviceUnits(10)) / 2;
         int kpiH = LogicalToDeviceUnits(48);
@@ -126,9 +179,15 @@ public sealed class MemoryBentoCard : BentoCardBase
         DrawKpiBox(g, r2, "Memória Livre", _availableGb.HasValue ? $"{_availableGb.Value:F1}" : "--", "GB", 1f - ratio, null, theme);
 
         string virtVal = _virtualUsedGb.HasValue ? $"{_virtualUsedGb.Value:F1}" : "--";
-        string dimmVal = _dimmTemp.HasValue ? $"{_dimmTemp.Value:F0} °C" : "Normal";
+        string dimmVal = _dimmTemp.HasValue ? $"{_dimmTemp.Value:F1} °C" : "Normal";
 
         DrawKpiBox(g, r3, "Memória Virtual (Swap)", virtVal, "GB", null, null, theme);
         DrawKpiBox(g, r4, "Temperatura Módulos", dimmVal, string.Empty, _dimmTemp / 100f, null, theme);
+
+        // Expandable detailed sensor list
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            DrawExpandedSensorList(g, kpiY + (kpiH * 2) + LogicalToDeviceUnits(18), _detailedSensors, theme);
+        }
     }
 }

@@ -54,7 +54,7 @@ public sealed partial class MainForm
         _treeCard = new CardPanel { Dock = DockStyle.Fill };
         _treeCard.Controls.Add(splitContainer);
 
-        _hardwareBentoPanel = new HardwareBentoPanel { Dock = DockStyle.Fill, Visible = true };
+        _hardwareBentoPanel = new HardwareBentoPanel { Dock = DockStyle.Fill, Visible = true, Padding = new Padding(0, LogicalToDeviceUnits(8), 0, 0) };
         _overlayEditorPanel = new OverlayEditorPanel(_overlayConfig, _overlayForm, OnOverlayConfigChanged) { Dock = DockStyle.Fill, Visible = false };
         _fanControlPanel = new FanControlPanel { Dock = DockStyle.Fill, Visible = false };
         _gpuTuningPanel = new GpuTuningPanel { Dock = DockStyle.Fill, Visible = false };
@@ -86,15 +86,15 @@ public sealed partial class MainForm
         _toolbar = new ToolbarRow
         {
             Dock = DockStyle.Top,
-            Height = LogicalToDeviceUnits(44),
-            Padding = new Padding(0, 0, 0, LogicalToDeviceUnits(12))
+            Height = LogicalToDeviceUnits(40),
+            Padding = new Padding(0, LogicalToDeviceUnits(4), 0, LogicalToDeviceUnits(4))
         };
         _toolbar.Controls.Add(_search);
         _toolbar.Controls.Add(_btnRawTable);
         _toolbar.Controls.Add(_btnVisualCards);
 
         // Docking runs from the back of the z-order: summary, then toolbar, then panels.
-        _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, LogicalToDeviceUnits(6), gutter, gutter) };
+        _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, LogicalToDeviceUnits(8), gutter, gutter) };
         _content.Controls.Add(_overlayEditorPanel);
         _content.Controls.Add(_cpuTuningPanel);
         _content.Controls.Add(_gpuTuningPanel);

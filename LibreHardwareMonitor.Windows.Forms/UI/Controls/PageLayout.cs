@@ -51,9 +51,11 @@ public static class PageMetrics
     /// </summary>
     public static void ArrangeRow(Control container, int gapLogical = 8)
     {
-        Rectangle area = container.DisplayRectangle;
-        area = new Rectangle(area.X + container.Padding.Left, area.Y + container.Padding.Top,
-                             area.Width - container.Padding.Horizontal, area.Height - container.Padding.Vertical);
+        Rectangle area = new(
+            container.Padding.Left,
+            container.Padding.Top,
+            Math.Max(0, container.ClientSize.Width - container.Padding.Horizontal),
+            Math.Max(0, container.ClientSize.Height - container.Padding.Vertical));
 
         int gap = container.LogicalToDeviceUnits(gapLogical);
         List<Control> left = new();

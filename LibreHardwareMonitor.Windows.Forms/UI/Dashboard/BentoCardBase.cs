@@ -4,6 +4,7 @@
 // All Rights Reserved.
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -13,12 +14,18 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
 /// <summary>
 /// Base class for Bento hardware cards providing unified Fluent geometry,
-/// header rendering, cached brushes, and zero-flicker double-buffered painting.
+/// header rendering, cached brushes, interactive click-to-expand capabilities,
+/// and zero-flicker double-buffered painting.
 /// </summary>
 public abstract class BentoCardBase : Control, IThemedControl
 {
     protected const int HeaderHeightLogical = 48;
     protected const int CornerRadiusLogical = 10;
+
+    private bool _isHovered;
+    private bool _isExpanded;
+
+    public event EventHandler ExpansionChanged;
 
     protected BentoCardBase()
     {
@@ -28,6 +35,7 @@ public abstract class BentoCardBase : Control, IThemedControl
         Height = LogicalToDeviceUnits(260);
         Width = LogicalToDeviceUnits(400);
         Margin = new Padding(LogicalToDeviceUnits(6));
+        Cursor = Cursors.Hand;
     }
 
     public string Title { get; set; } = string.Empty;
@@ -35,6 +43,24 @@ public abstract class BentoCardBase : Control, IThemedControl
     public Image Icon { get; set; }
     public string BadgeText { get; set; } = string.Empty;
     public Color BadgeColor { get; set; } = Color.Empty;
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded != value)
+            {
+                _isExpanded = value;
+                RecalculateCardHeight();
+                ExpansionChanged?.Invoke(this, EventArgs.Empty);
+                Parent?.PerformLayout();
+                Invalidate();
+            }
+        }
+    }
+
+    protected bool IsHovered => _isHovered;
 
     public static float? ToGigabytes(float? val)
     {
@@ -52,6 +78,33 @@ public abstract class BentoCardBase : Control, IThemedControl
         return v; // Already Gigabytes
     }
 
+    protected virtual void RecalculateCardHeight()
+    {
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _isHovered = true;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _isHovered = false;
+        Invalidate();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (e.Button == MouseButtons.Left)
+        {
+            IsExpanded = !IsExpanded;
+        }
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         Graphics g = e.Graphics;
@@ -67,7 +120,12 @@ public abstract class BentoCardBase : Control, IThemedControl
             using SolidBrush bgBrush = new(theme.SurfaceColor);
             g.FillPath(bgBrush, path);
 
-            using Pen strokePen = new(theme.SurfaceStrokeColor, 1f);
+            Color strokeColor = _isHovered
+                ? FluentStyle.Blend(theme.SurfaceStrokeColor, theme.AccentColor, 0.65)
+                : theme.SurfaceStrokeColor;
+            float strokeWidth = _isHovered ? 1.5f : 1f;
+
+            using Pen strokePen = new(strokeColor, strokeWidth);
             g.DrawPath(strokePen, path);
         }
 
@@ -133,6 +191,15 @@ public abstract class BentoCardBase : Control, IThemedControl
         int divY = LogicalToDeviceUnits(HeaderHeightLogical) - LogicalToDeviceUnits(2);
         using Pen divPen = new(theme.LineColor, 1f);
         g.DrawLine(divPen, pad, divY, Width - pad, divY);
+
+        // Subtle interactive hint at bottom right
+        string hint = _isExpanded ? "Clique para recolher ▲" : "Clique para mais detalhes ▼";
+        int hintW = LogicalToDeviceUnits(140);
+        int hintH = LogicalToDeviceUnits(14);
+        Rectangle hintRect = new(Width - pad - hintW, Height - pad / 2 - hintH, hintW, hintH);
+        Color hintColor = _isHovered ? theme.AccentColor : theme.MutedForegroundColor;
+        TextRenderer.DrawText(g, hint, FluentStyle.UiFontMini, hintRect, hintColor,
+            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 
     protected abstract void DrawCardContent(Graphics g, Theme theme);
@@ -231,6 +298,61 @@ public abstract class BentoCardBase : Control, IThemedControl
                 DrawProgressBar(g, barRect, ratio.Value, barFill, barBg);
             }
         }
+    }
+
+    protected int DrawExpandedSensorList(Graphics g, int startY, IReadOnlyList<(string Name, string Value)> items, Theme theme)
+    {
+        if (!_isExpanded || items == null || items.Count == 0)
+            return startY;
+
+        int pad = LogicalToDeviceUnits(14);
+        int availWidth = Width - (pad * 2);
+
+        // Subtle divider
+        using (Pen divPen = new(theme.LineColor, 1f))
+            g.DrawLine(divPen, pad, startY, Width - pad, startY);
+
+        int titleY = startY + LogicalToDeviceUnits(8);
+        DrawSectionTitle(g, "SENSORES DETALHADOS", pad, titleY, theme);
+
+        int listY = titleY + LogicalToDeviceUnits(18);
+        int rowH = LogicalToDeviceUnits(22);
+        int cols = availWidth > LogicalToDeviceUnits(480) ? 2 : 1;
+        int colW = cols == 2 ? (availWidth - LogicalToDeviceUnits(12)) / 2 : availWidth;
+
+        int rowCount = (int)Math.Ceiling(items.Count / (double)cols);
+
+        for (int i = 0; i < items.Count; i++)
+        {
+            int c = i % cols;
+            int r = i / cols;
+            int rx = pad + (c * (colW + LogicalToDeviceUnits(12)));
+            int ry = listY + (r * rowH);
+
+            if (ry + rowH > Height - LogicalToDeviceUnits(20))
+                break;
+
+            Rectangle rowRect = new(rx, ry, colW, rowH);
+            if (r % 2 == 1)
+            {
+                using SolidBrush zb = new(Color.FromArgb(theme.IsDark ? 16 : 8, theme.ForegroundColor));
+                g.FillRectangle(zb, rowRect);
+            }
+
+            var (name, val) = items[i];
+
+            int split = (colW * 55) / 100;
+            Rectangle nameRect = new(rx + 4, ry, split - 6, rowH);
+            Rectangle valRect = new(rx + split, ry, colW - split - 4, rowH);
+
+            TextRenderer.DrawText(g, name, FluentStyle.UiFontSmall, nameRect, theme.MutedForegroundColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+
+            TextRenderer.DrawText(g, val, FluentStyle.MonoFontSmall, valRect, theme.ForegroundColor,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+
+        return listY + (rowCount * rowH) + LogicalToDeviceUnits(24);
     }
 
     public virtual void ApplyTheme(Theme theme)

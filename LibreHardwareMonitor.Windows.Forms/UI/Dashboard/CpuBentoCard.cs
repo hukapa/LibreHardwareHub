@@ -16,12 +16,13 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
 /// <summary>
-/// Specialized Bento card for Processors (CPU) displaying 4 vital KPIs
-/// and a compact Core Matrix (mini-grelha de núcleos) in place of giant tables.
+/// Specialized Bento card for Processors (CPU) displaying vital KPIs,
+/// a compact Core Matrix, and an expandable drawer of detailed core and plane sensors.
 /// </summary>
 public sealed class CpuBentoCard : BentoCardBase
 {
     private readonly List<(string Name, float Load, float? Clock)> _cores = new();
+    private readonly List<(string Name, string Value)> _detailedSensors = new();
     private float? _packageTemp;
     private float? _totalLoad;
     private float? _packagePower;
@@ -32,7 +33,7 @@ public sealed class CpuBentoCard : BentoCardBase
         Icon = FluentIcons.ForHardware(HardwareType.Cpu);
         Title = "Processador (CPU)";
         Subtitle = "Telemetria e Matriz de Núcleos";
-        Height = LogicalToDeviceUnits(260);
+        Height = LogicalToDeviceUnits(280);
     }
 
     public void UpdateSensors(IHardware cpu)
@@ -78,6 +79,7 @@ public sealed class CpuBentoCard : BentoCardBase
             }
         }
 
+        // Core Matrix
         _cores.Clear();
         var coreLoads = cpu.Sensors.Where(s => s.SensorType == SensorType.Load && s.Name.StartsWith("CPU Core #")).ToList();
         var coreClocks = cpu.Sensors.Where(s => s.SensorType == SensorType.Clock && s.Name.StartsWith("CPU Core #")).ToList();
@@ -89,12 +91,37 @@ public sealed class CpuBentoCard : BentoCardBase
             _cores.Add(($"C{i}", l, c));
         }
 
+        // Detailed Sensors for expansion
+        _detailedSensors.Clear();
+        foreach (ISensor s in cpu.Sensors.Where(s => s.Value.HasValue))
+        {
+            if (s.SensorType == SensorType.Temperature && s.Name.StartsWith("CPU Core #"))
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} °C"));
+            else if (s.SensorType == SensorType.Voltage)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F3} V"));
+            else if (s.SensorType == SensorType.Power && !s.Name.Contains("Package"))
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} W"));
+            else if (s.SensorType == SensorType.Clock && s.Name.StartsWith("CPU Core #"))
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} MHz"));
+        }
+
+        RecalculateCardHeight();
+        Invalidate();
+    }
+
+    protected override void RecalculateCardHeight()
+    {
         int cols = _cores.Count > 16 ? 5 : 4;
         int rows = Math.Max(1, (int)Math.Ceiling(_cores.Count / (double)cols));
-        int calculatedHeight = 48 + 6 + (48 * 2) + 8 + 16 + 14 + 6 + (rows * 28) + 16;
-        Height = LogicalToDeviceUnits(Math.Max(260, calculatedHeight));
+        int baseHeight = 48 + 6 + (48 * 2) + 8 + 14 + 16 + (rows * 28) + 28;
 
-        Invalidate();
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / 2.0);
+            baseHeight += 32 + (extraRows * 22) + 16;
+        }
+
+        Height = LogicalToDeviceUnits(Math.Max(260, baseHeight));
     }
 
     protected override void DrawCardContent(Graphics g, Theme theme)
@@ -103,7 +130,7 @@ public sealed class CpuBentoCard : BentoCardBase
         int topY = LogicalToDeviceUnits(HeaderHeightLogical) + LogicalToDeviceUnits(6);
         int availWidth = Width - (pad * 2);
 
-        // 1. Top 4 KPI Boxes (2x2)
+        // 1. Top 4 KPI Boxes (2x2) with 1 decimal precision
         int kpiW = (availWidth - LogicalToDeviceUnits(10)) / 2;
         int kpiH = LogicalToDeviceUnits(48);
 
@@ -116,9 +143,9 @@ public sealed class CpuBentoCard : BentoCardBase
         Rectangle r3 = new(pad, topY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
         Rectangle r4 = new(pad + kpiW + LogicalToDeviceUnits(10), topY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
 
-        DrawKpiBox(g, r1, "Temp. Package", _packageTemp.HasValue ? $"{_packageTemp.Value:F0}" : "--", "°C", _packageTemp / 100f, tempColor, theme);
-        DrawKpiBox(g, r2, "Carga Total", _totalLoad.HasValue ? $"{_totalLoad.Value:F0}" : "--", "%", _totalLoad / 100f, null, theme);
-        DrawKpiBox(g, r3, "Consumo Package", _packagePower.HasValue ? $"{_packagePower.Value:F0}" : "--", "W", null, null, theme);
+        DrawKpiBox(g, r1, "Temp. Package", _packageTemp.HasValue ? $"{_packageTemp.Value:F1}" : "--", "°C", _packageTemp / 100f, tempColor, theme);
+        DrawKpiBox(g, r2, "Carga Total", _totalLoad.HasValue ? $"{_totalLoad.Value:F1}" : "--", "%", _totalLoad / 100f, null, theme);
+        DrawKpiBox(g, r3, "Consumo Package", _packagePower.HasValue ? $"{_packagePower.Value:F1}" : "--", "W", null, null, theme);
         DrawKpiBox(g, r4, "Clock Pico", _peakClock.HasValue ? $"{_peakClock.Value:F0}" : "--", "MHz", null, null, theme);
 
         // 2. Core Matrix (Mini-Grelha de Núcleos)
@@ -127,8 +154,9 @@ public sealed class CpuBentoCard : BentoCardBase
         DrawSectionTitle(g, matrixTitle, pad, matrixY, theme);
 
         int gridY = matrixY + LogicalToDeviceUnits(16);
-        int gridH = Height - gridY - pad;
-        if (_cores.Count > 0 && gridH > 10)
+        int endGridY = gridY;
+
+        if (_cores.Count > 0)
         {
             int cols = _cores.Count > 16 ? 5 : 4;
             int rows = Math.Max(1, (int)Math.Ceiling(_cores.Count / (double)cols));
@@ -161,8 +189,9 @@ public sealed class CpuBentoCard : BentoCardBase
                     TextRenderer.DrawText(g, name ?? string.Empty, FluentStyle.UiFontMini, nameRect, theme.MutedForegroundColor,
                         TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
+                    string pctText = (coreLoad < 10f && coreLoad > 0.1f) ? $"{coreLoad:F1}%" : $"{coreLoad:F0}%";
                     Rectangle pctRect = new(cx + (cellW / 2), cy + 2, (cellW / 2) - 4, LogicalToDeviceUnits(12));
-                    TextRenderer.DrawText(g, $"{coreLoad:F0}%", FluentStyle.MonoFontSmall, pctRect, theme.ForegroundColor,
+                    TextRenderer.DrawText(g, pctText, FluentStyle.MonoFontSmall, pctRect, theme.ForegroundColor,
                         TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
                     int barY = cy + cellH - LogicalToDeviceUnits(4);
@@ -175,7 +204,15 @@ public sealed class CpuBentoCard : BentoCardBase
                     int fillW = Math.Max(0, Math.Min(barW, (int)(barW * ratio)));
                     g.FillRectangle(coreBarFill, cx + 3, barY, fillW, 2);
                 }
+
+                endGridY = gridY + (rows * (cellH + LogicalToDeviceUnits(4))) + LogicalToDeviceUnits(12);
             }
+        }
+
+        // 3. Expandable detailed sensor list
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            DrawExpandedSensorList(g, endGridY, _detailedSensors, theme);
         }
     }
 }

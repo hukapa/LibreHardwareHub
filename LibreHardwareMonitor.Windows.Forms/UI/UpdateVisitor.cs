@@ -39,36 +39,18 @@ public class UpdateVisitor : IVisitor
 
     private bool ShouldUpdate(IHardware hardware, long now)
     {
+        if (!LowPowerMode)
+            return true;
+
         if (!_lastUpdateTicks.TryGetValue(hardware, out long lastUpdate))
             return true;
 
         long elapsedMs = now - lastUpdate;
-
-        if (LowPowerMode)
-        {
-            return hardware.HardwareType switch
-            {
-                HardwareType.Storage or HardwareType.Battery => elapsedMs >= 60000,
-                HardwareType.Memory or HardwareType.Network or HardwareType.Psu => elapsedMs >= 5000,
-                _ => elapsedMs >= 2500
-            };
-        }
-
         return hardware.HardwareType switch
         {
-            // Tier Lento: Atributos SMART de discos e bateria (15 segundos)
-            HardwareType.Storage or HardwareType.Battery => elapsedMs >= 15000,
-
-            // Tier Normal: Memoria, Rede e Fontes de Alimentacao (800 ms)
-            HardwareType.Memory or HardwareType.Network or HardwareType.Psu => elapsedMs >= 800,
-
-            // Tier Critico: CPU, GPU, Motherboard, Super I/O e Controladores de Ventoinha
-            HardwareType.Cpu or HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel
-                or HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.Cooler
-                or HardwareType.EmbeddedController or HardwareType.PowerMonitor =>
-                elapsedMs >= (ActiveFanControl ? 750 : 350),
-
-            _ => elapsedMs >= 500
+            HardwareType.Storage or HardwareType.Battery => elapsedMs >= 60000,
+            HardwareType.Memory or HardwareType.Network or HardwareType.Psu => elapsedMs >= 5000,
+            _ => elapsedMs >= 2500
         };
     }
 

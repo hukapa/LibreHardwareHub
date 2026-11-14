@@ -16,10 +16,11 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
 /// <summary>
 /// Specialized Bento card for Motherboard, Super I/O, Fans and Network,
-/// presenting key rail voltages (+12V, +5V, +3.3V, Vcore), system temps, fans and network throughput.
+/// presenting key rail voltages (+12V, +5V, +3.3V, Vcore), system temps, fans, and expandable sensor inventory.
 /// </summary>
 public sealed class SystemBentoCard : BentoCardBase
 {
+    private readonly List<(string Name, string Value)> _detailedSensors = new();
     private string _vcoreVal;
     private string _railVal;
     private float? _moboTemp;
@@ -46,6 +47,7 @@ public sealed class SystemBentoCard : BentoCardBase
         _moboTemp = null;
         _mainFanRpm = null;
         _allFans.Clear();
+        _detailedSensors.Clear();
 
         List<ISensor> allSensors = new();
 
@@ -64,23 +66,34 @@ public sealed class SystemBentoCard : BentoCardBase
                 ISensor ul = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Throughput && s.Name.Contains("Upload"));
                 if (dl != null) _netDownBytes = dl.Value;
                 if (ul != null) _netUpBytes = ul.Value;
+
+                foreach (ISensor s in hw.Sensors.Where(s => s.Value.HasValue))
+                {
+                    if (s.SensorType == SensorType.Throughput)
+                        _detailedSensors.Add(($"{hw.Name}: {s.Name}", FormatThroughput(s.Value.Value)));
+                    else if (s.SensorType == SensorType.Data)
+                    {
+                        float? gb = ToGigabytes(s.Value);
+                        _detailedSensors.Add(($"{hw.Name}: {s.Name}", $"{gb.GetValueOrDefault():F2} GB"));
+                    }
+                }
             }
         }
 
-        // 1. Voltages
+        // 1. Voltages: Vcore with 3 decimals, Rails with 2 decimals
         ISensor vcore = allSensors.FirstOrDefault(s => s.SensorType == SensorType.Voltage &&
             (s.Name.Contains("Vcore") || s.Name.Contains("Core") || s.Name.Contains("CPU VDD")));
         if (vcore?.Value.HasValue == true)
-            _vcoreVal = $"{vcore.Value.Value:F2}";
+            _vcoreVal = $"{vcore.Value.Value:F3}";
 
         ISensor rail12 = allSensors.FirstOrDefault(s => s.SensorType == SensorType.Voltage && s.Name.Contains("12V"));
         ISensor rail5 = allSensors.FirstOrDefault(s => s.SensorType == SensorType.Voltage && s.Name.Contains("5V"));
         if (rail12?.Value.HasValue == true)
-            _railVal = $"{rail12.Value.Value:F1}";
+            _railVal = $"{rail12.Value.Value:F2}";
         else if (rail5?.Value.HasValue == true)
-            _railVal = $"{rail5.Value.Value:F1}";
+            _railVal = $"{rail5.Value.Value:F2}";
 
-        // 2. Motherboard Temp
+        // 2. Motherboard Temp with 1 decimal
         ISensor temp = allSensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature &&
             (s.Name.Contains("System") || s.Name.Contains("Motherboard") || s.Name.Contains("Mainboard")))
             ?? allSensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
@@ -97,9 +110,26 @@ public sealed class SystemBentoCard : BentoCardBase
             }
         }
 
+        // Detailed sensors for expansion
+        foreach (ISensor s in allSensors.Where(s => s.Value.HasValue))
+        {
+            if (s.SensorType == SensorType.Temperature)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} °C"));
+            else if (s.SensorType == SensorType.Voltage)
+            {
+                string fmt = (s.Name.Contains("Vcore") || s.Name.Contains("Core")) ? $"{s.Value.Value:F3} V" : $"{s.Value.Value:F2} V";
+                _detailedSensors.Add((s.Name, fmt));
+            }
+            else if (s.SensorType == SensorType.Fan)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} RPM"));
+            else if (s.SensorType == SensorType.Control)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} %"));
+        }
+
         BadgeText = _allFans.Count > 0 ? $"{_allFans.Count} Ventoinhas" : "Motherboard";
         BadgeColor = _allFans.Count > 0 ? Color.FromArgb(70, 200, 100) : Color.FromArgb(170, 170, 180);
 
+        RecalculateCardHeight();
         Invalidate();
     }
 
@@ -116,6 +146,18 @@ public sealed class SystemBentoCard : BentoCardBase
                 CollectSensors(sub, allSensors);
             }
         }
+    }
+
+    protected override void RecalculateCardHeight()
+    {
+        int baseHeight = 260;
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / 2.0);
+            baseHeight += 32 + (extraRows * 22) + 16;
+        }
+
+        Height = LogicalToDeviceUnits(baseHeight);
     }
 
     protected override void DrawCardContent(Graphics g, Theme theme)
@@ -139,7 +181,7 @@ public sealed class SystemBentoCard : BentoCardBase
 
         DrawKpiBox(g, r1, "CPU Vcore", _vcoreVal ?? "--", "V", null, null, theme);
         DrawKpiBox(g, r2, "Linha +12V / +5V", _railVal ?? "--", "V", null, null, theme);
-        DrawKpiBox(g, r3, "Temp. Placa-Mãe", _moboTemp.HasValue ? $"{_moboTemp.Value:F0}" : "--", "°C", _moboTemp / 100f, tempColor, theme);
+        DrawKpiBox(g, r3, "Temp. Placa-Mãe", _moboTemp.HasValue ? $"{_moboTemp.Value:F1}" : "--", "°C", _moboTemp / 100f, tempColor, theme);
         DrawKpiBox(g, r4, "Ventoinha Princ.", _mainFanRpm.HasValue ? $"{_mainFanRpm.Value:F0}" : "0", "RPM", null, null, theme);
 
         // 2. Network & Cooling Section
@@ -165,6 +207,12 @@ public sealed class SystemBentoCard : BentoCardBase
         Rectangle fanRect = new(pad, fanSummaryY, availWidth, LogicalToDeviceUnits(14));
         TextRenderer.DrawText(g, fansSummary, FluentStyle.UiFontSmall, fanRect, theme.MutedForegroundColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+
+        // 3. Expandable detailed sensor list
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            DrawExpandedSensorList(g, fanSummaryY + LogicalToDeviceUnits(22), _detailedSensors, theme);
+        }
     }
 
     private static string FormatThroughput(float bytesPerSec)

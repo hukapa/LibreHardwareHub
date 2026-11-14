@@ -281,6 +281,7 @@ public sealed partial class MainForm : Form
         }
 
         backgroundUpdater.DoWork += BackgroundUpdater_DoWork;
+        backgroundUpdater.RunWorkerCompleted += BackgroundUpdater_RunWorkerCompleted;
         timer.Enabled = true;
 
         UserOption showHiddenSensors = new("hiddenMenuItem", false, hiddenMenuItem, _settings);
@@ -560,6 +561,10 @@ public sealed partial class MainForm : Form
         };
 
         Microsoft.Win32.SystemEvents.PowerModeChanged += PowerModeChanged;
+
+        ApplyAdaptivePolling();
+        if (!backgroundUpdater.IsBusy)
+            backgroundUpdater.RunWorkerAsync();
     }
 
 
@@ -576,6 +581,31 @@ public sealed partial class MainForm : Form
 
         if (Visible && WindowState != FormWindowState.Minimized && _showPlot != null && _showPlot.Value)
             _plotPanel.InvalidatePlot();
+    }
+
+    private void BackgroundUpdater_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+    {
+        bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
+        if (isFormVisible)
+        {
+            if (!_isVisualMode)
+                treeView.Invalidate();
+
+            UpdateShell();
+            if (_hardwareBentoPanel != null && _hardwareBentoPanel.Visible)
+                _hardwareBentoPanel.UpdateTelemetry(_computer);
+            if (_fanControlPanel != null && _fanControlPanel.Visible)
+                _fanControlPanel.UpdateTelemetry();
+            if (_cpuTuningPanel != null && _cpuTuningPanel.Visible)
+                _cpuTuningPanel.UpdateTelemetry();
+            if (_gpuTuningPanel != null && _gpuTuningPanel.Visible)
+                _gpuTuningPanel.UpdateTelemetry();
+        }
+
+        if (_overlayForm != null && _overlayForm.Visible)
+            _overlayForm.UpdateTelemetry(_computer);
+
+        _systemTray.Redraw();
     }
 
     private void PowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs eventArgs)
@@ -778,29 +808,6 @@ public sealed partial class MainForm : Form
 
     private void Timer_Tick(object sender, EventArgs e)
     {
-        bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
-
-        if (isFormVisible)
-        {
-            if (!_isVisualMode)
-                treeView.Invalidate();
-
-            UpdateShell();
-            if (_hardwareBentoPanel != null && _hardwareBentoPanel.Visible)
-                _hardwareBentoPanel.UpdateTelemetry(_computer);
-            if (_fanControlPanel != null && _fanControlPanel.Visible)
-                _fanControlPanel.UpdateTelemetry();
-            if (_cpuTuningPanel != null && _cpuTuningPanel.Visible)
-                _cpuTuningPanel.UpdateTelemetry();
-            if (_gpuTuningPanel != null && _gpuTuningPanel.Visible)
-                _gpuTuningPanel.UpdateTelemetry();
-        }
-
-        if (_overlayForm != null && _overlayForm.Visible)
-            _overlayForm.UpdateTelemetry(_computer);
-
-        _systemTray.Redraw();
-
         if (!backgroundUpdater.IsBusy)
             backgroundUpdater.RunWorkerAsync();
     }

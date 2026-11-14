@@ -4,6 +4,7 @@
 // All Rights Reserved.
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -15,10 +16,11 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
 /// <summary>
 /// Specialized Bento card for Graphics Cards (GPU) highlighting
-/// Core/HotSpot thermals, load, power, fans and a segmented VRAM visual bar.
+/// Core/HotSpot thermals, load, power, fans, VRAM bar, and an expandable detailed sensor list.
 /// </summary>
 public sealed class GpuBentoCard : BentoCardBase
 {
+    private readonly List<(string Name, string Value)> _detailedSensors = new();
     private float? _coreTemp;
     private float? _hotspotTemp;
     private float? _coreLoad;
@@ -99,7 +101,43 @@ public sealed class GpuBentoCard : BentoCardBase
             }
         }
 
+        // Detailed Sensors for expansion
+        _detailedSensors.Clear();
+        foreach (ISensor s in gpu.Sensors.Where(s => s.Value.HasValue))
+        {
+            if (s.SensorType == SensorType.Temperature)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} °C"));
+            else if (s.SensorType == SensorType.Clock)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} MHz"));
+            else if (s.SensorType == SensorType.Load)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} %"));
+            else if (s.SensorType == SensorType.Power)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} W"));
+            else if (s.SensorType == SensorType.Fan)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} RPM"));
+            else if (s.SensorType == SensorType.Control)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} %"));
+            else if (s.SensorType == SensorType.Data)
+            {
+                float? gb = ToGigabytes(s.Value);
+                _detailedSensors.Add((s.Name, $"{gb.GetValueOrDefault():F1} GB"));
+            }
+        }
+
+        RecalculateCardHeight();
         Invalidate();
+    }
+
+    protected override void RecalculateCardHeight()
+    {
+        int baseHeight = 260;
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / 2.0);
+            baseHeight += 32 + (extraRows * 22) + 16;
+        }
+
+        Height = LogicalToDeviceUnits(baseHeight);
     }
 
     protected override void DrawCardContent(Graphics g, Theme theme)
@@ -108,7 +146,7 @@ public sealed class GpuBentoCard : BentoCardBase
         int topY = LogicalToDeviceUnits(HeaderHeightLogical) + LogicalToDeviceUnits(6);
         int availWidth = Width - (pad * 2);
 
-        // 1. Top 4 KPI Boxes (2x2)
+        // 1. Top 4 KPI Boxes (2x2) with 1 decimal precision
         int kpiW = (availWidth - LogicalToDeviceUnits(10)) / 2;
         int kpiH = LogicalToDeviceUnits(48);
 
@@ -116,9 +154,9 @@ public sealed class GpuBentoCard : BentoCardBase
             ? (_coreTemp.Value >= 83f ? theme.StateHotColor : _coreTemp.Value >= 70f ? theme.StateWarmColor : theme.StateCoolColor)
             : null;
 
-        string tempVal = _coreTemp.HasValue ? $"{_coreTemp.Value:F0}" : "--";
+        string tempVal = _coreTemp.HasValue ? $"{_coreTemp.Value:F1}" : "--";
         if (_hotspotTemp.HasValue)
-            tempVal += $" (HS {_hotspotTemp.Value:F0})";
+            tempVal += $" (HS {_hotspotTemp.Value:F1})";
 
         Rectangle r1 = new(pad, topY, kpiW, kpiH);
         Rectangle r2 = new(pad + kpiW + LogicalToDeviceUnits(10), topY, kpiW, kpiH);
@@ -126,8 +164,8 @@ public sealed class GpuBentoCard : BentoCardBase
         Rectangle r4 = new(pad + kpiW + LogicalToDeviceUnits(10), topY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
 
         DrawKpiBox(g, r1, "Temp. Core", tempVal, "°C", _coreTemp / 100f, tempColor, theme);
-        DrawKpiBox(g, r2, "Carga Core", _coreLoad.HasValue ? $"{_coreLoad.Value:F0}" : "--", "%", _coreLoad / 100f, null, theme);
-        DrawKpiBox(g, r3, "Consumo GPU", _power.HasValue ? $"{_power.Value:F0}" : "--", "W", null, null, theme);
+        DrawKpiBox(g, r2, "Carga Core", _coreLoad.HasValue ? $"{_coreLoad.Value:F1}" : "--", "%", _coreLoad / 100f, null, theme);
+        DrawKpiBox(g, r3, "Consumo GPU", _power.HasValue ? $"{_power.Value:F1}" : "--", "W", null, null, theme);
         DrawKpiBox(g, r4, "Clock GPU", _coreClock.HasValue ? $"{_coreClock.Value:F0}" : "--", "MHz", null, null, theme);
 
         // 2. VRAM Bar Section
@@ -139,7 +177,7 @@ public sealed class GpuBentoCard : BentoCardBase
         float vramRatio = totalGb > 0.1f ? Math.Max(0f, Math.Min(1f, usedGb / totalGb)) : 0f;
 
         string vramText = totalGb > 0.1f
-            ? $"{usedGb:F1} GB de {totalGb:F1} GB ({vramRatio * 100f:F0}%)"
+            ? $"{usedGb:F1} / {totalGb:F1} GB ({vramRatio * 100f:F1}%)"
             : $"{usedGb:F1} GB";
 
         Rectangle vramTextRect = new(pad, vramY, availWidth, LogicalToDeviceUnits(14));
@@ -162,5 +200,11 @@ public sealed class GpuBentoCard : BentoCardBase
         Rectangle fanRect = new(pad, fanY, availWidth, LogicalToDeviceUnits(14));
         TextRenderer.DrawText(g, $"Ventilação Ativa: {fanVal}", FluentStyle.UiFontSmall, fanRect, theme.MutedForegroundColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+
+        // 4. Expandable detailed sensor list
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            DrawExpandedSensorList(g, fanY + LogicalToDeviceUnits(22), _detailedSensors, theme);
+        }
     }
 }

@@ -346,3 +346,38 @@
     - Compilacao da solucao com **0 Warnings e 0 Errors**.
     - Publicacao Single-File atualizada em `bin\Release\net8.0-windows\win-x64\publish\`.
     - Rigorosa observancia da regra de Zero Emojis.
+
+---
+
+## 20. Fase 20: Correcao do Topo Cortado, Atualizacao em Tempo Real sem Latencia e Cartoes Bento Expansiveis
+
+* **Objetivo:** Corrigir o corte geometrico dos botoes de topo da barra de ferramentas, eliminar a latencia na atualizacao dos sensores nos cartoes Bento comparativamente a tabela, alinhar as casas decimais de telemetria, corrigir a resolucao de memoria virtual e dotar todos os cartoes Bento de suporte a expansao interativa ao clique (`IsExpanded`).
+* **Acoes Efetuadas:**
+  - **Resolucao do Topo Cortado (`PageLayout.cs` e `MainForm.Layout.cs`):**
+    - Identificada causa raiz em `PageMetrics.ArrangeRow`: a propriedade `container.DisplayRectangle` do WinForms ja inclui o desconto do `Padding`. O codigo subtraia o `Padding` uma segunda vez, reduzindo a altura util e posicionando os botoes em `Y = -6px`.
+    - Substituido o calculo por coordenadas limpas baseadas em `container.ClientSize` e `container.Padding`.
+    - Ajustado `_toolbar` para `Height = 40px` com `Padding(0, 4px, 0, 4px)`, `_content` com `Padding(0, 8px, gutter, gutter)` e `_hardwareBentoPanel` com `Padding(0, 8px, 0, 0)`, eliminando qualquer corte no topo de `SearchBox`, `Vista Visual` e `Tabela Completa`.
+  - **Eliminacao do Atraso de Atualizacao dos Sensores:**
+    - `UpdateVisitor.cs`: Removido o throttling artificial de 2s a 15s em primeiro plano (`LowPowerMode == false`). Todos os componentes de hardware sao agora atualizados a cada ciclo. Os intervalos de poupanca energetica aplicam-se exclusivamente quando minimizado na System Tray (`LowPowerMode == true`).
+    - `MainForm.cs`: Subscrito o evento `backgroundUpdater.RunWorkerCompleted` para atualizar de imediato a UI (`_hardwareBentoPanel`, `treeView`, `UpdateShell`, paineis de tuning e ventoinhas) assim que a leitura assincrona termina. O `Timer_Tick` dispara de forma limpa o proximo ciclo de background, eliminando o atraso de 1 tick na interface.
+    - Chamada explicita de `ApplyAdaptivePolling()` e disparo do primeiro ciclo de atualizacao logo no final do construtor de `MainForm`.
+  - **Alinhamento de Precisao Decimal com a Tabela:**
+    - Temperaturas formatadas com 1 casa decimal (`:F1`, ex: `31,4 °C`).
+    - Cargas de CPU/GPU e percentagens formatadas com 1 casa decimal (`:F1`, ex: `1,4 %`).
+    - Potencia formatada com 1 casa decimal (`:F1`, ex: `4,2 W`).
+    - Tensao Vcore formatada com 3 casas decimais (`:F3`, ex: `0,732 V`) e linhas de tensao +12V/+5V com 2 casas decimais (`:F2`, ex: `12,04 V`).
+  - **Resolucao Visual e Dados de Memoria Virtual:**
+    - `MemoryBentoCard.cs`: Titulo da seccao alterado para `"MEMÓRIA FÍSICA"`, prevenindo colisao de texto. Atualizada a assinatura para receber a lista completa de hardwares, pesquisando sensores de memoria virtual no objeto correspondente (`Virtual Memory`) e exibindo a ocupacao real em GB (ex: `14,2 GB`) em vez de `-- GB`.
+    - `CpuBentoCard.cs`: Folga inferior de 28px na matriz de nucleos para impedir o encosto da ultima linha (`C15..C19`) a borda do cartao.
+  - **Cartoes Bento Interativos e Expansiveis (`IsExpanded`):**
+    - `BentoCardBase.cs`: Adicionadas as propriedades `IsExpanded`, evento `ExpansionChanged`, cursor `Hand`, realce suave da borda no hover (`1.5f`) sem piscar o fundo, indicacao discreta `"Clique para recolher ▲ / mais detalhes ▼"` e metodo `DrawExpandedSensorList` para desenho de grelha em 2 colunas com efeito zebrado.
+    - `CpuBentoCard.cs`: Expandivel para apresentar temperaturas individuais de todos os nucleos, frequencias por nucleo, VIDs e potencias por plano.
+    - `GpuBentoCard.cs`: Expandivel para apresentar HotSpot, memoria de video, frequencias de shader/video, motores D3D (3D, Copy, Video Decode), controlo de ventilador e VRAM livre/total.
+    - `MemoryBentoCard.cs`: Expandivel para detalhe completo de memoria fisica e virtual, cargas e temporizacoes SPD.
+    - `StorageBentoCard.cs`: Expandivel com taxas de transferencia, total de bytes lidos/escritos e lista de atributos S.M.A.R.T.
+    - `SystemBentoCard.cs`: Expandivel com todas as temperaturas da motherboard/superio, todas as tensoes secundarias, todas as ventoinhas em RPM e % e throughput de adaptadores de rede.
+    - `HardwareBentoPanel.cs`: Auto-expansao imediata do cartao correspondente quando o utilizador seleciona um dispositivo individual na barra lateral.
+  - **Validacao e Sincronizacao de Ficheiros:**
+    - Compilacao com `dotnet build` concluida com **0 Warnings e 0 Errors**.
+    - Binario Single-File compilado com sucesso em `bin\Publish-Release\`.
+    - Todos os ficheiros `.cs` e executavel sincronizados na pasta `C:\Users\tiago\Desktop\yea\LHH`.

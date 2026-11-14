@@ -4,6 +4,7 @@
 // All Rights Reserved.
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -15,10 +16,11 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
 /// <summary>
 /// Specialized Bento card for Storage units (SSD, NVMe, HDD) displaying
-/// temperature, health percentage, used space bar and live read/write activity.
+/// temperature, health percentage, space usage, live transfer rates, and expandable SMART telemetry.
 /// </summary>
 public sealed class StorageBentoCard : BentoCardBase
 {
+    private readonly List<(string Name, string Value)> _detailedSensors = new();
     private float? _temp;
     private float? _lifeRemaining;
     private float? _usedSpacePercent;
@@ -90,7 +92,43 @@ public sealed class StorageBentoCard : BentoCardBase
             BadgeColor = _temp.Value >= 65f ? Color.FromArgb(240, 180, 30) : Color.FromArgb(70, 200, 100);
         }
 
+        // Detailed Sensors for expansion (including SMART)
+        _detailedSensors.Clear();
+        foreach (ISensor s in storage.Sensors.Where(s => s.Value.HasValue))
+        {
+            if (s.SensorType == SensorType.Temperature)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} °C"));
+            else if (s.SensorType == SensorType.Load)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} %"));
+            else if (s.SensorType == SensorType.Level)
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} %"));
+            else if (s.SensorType == SensorType.Throughput)
+                _detailedSensors.Add((s.Name, FormatThroughput(s.Value.Value)));
+            else if (s.SensorType == SensorType.Data)
+            {
+                float? gb = ToGigabytes(s.Value);
+                _detailedSensors.Add((s.Name, $"{gb.GetValueOrDefault():F1} GB"));
+            }
+            else
+            {
+                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0}"));
+            }
+        }
+
+        RecalculateCardHeight();
         Invalidate();
+    }
+
+    protected override void RecalculateCardHeight()
+    {
+        int baseHeight = 260;
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / 2.0);
+            baseHeight += 32 + (extraRows * 22) + 16;
+        }
+
+        Height = LogicalToDeviceUnits(baseHeight);
     }
 
     protected override void DrawCardContent(Graphics g, Theme theme)
@@ -100,14 +138,14 @@ public sealed class StorageBentoCard : BentoCardBase
         int availWidth = Width - (pad * 2);
 
         // Space Used Bar Section
-        DrawSectionTitle(g, "ESPAÇO EM DISCO OCUPADO", pad, topY, theme);
+        DrawSectionTitle(g, "ESPAÇO EM DISCO", pad, topY, theme);
 
         float spaceRatio = _usedSpacePercent.HasValue ? Math.Max(0f, Math.Min(1f, _usedSpacePercent.Value / 100f)) : 0f;
         string spaceText;
         if (_totalGb.HasValue && _totalGb.Value > 1f)
         {
             float usedGb = Math.Max(0f, _totalGb.Value - _freeGb.GetValueOrDefault());
-            spaceText = $"{usedGb:F1} GB de {_totalGb.Value:F0} GB ({spaceRatio * 100f:F0}%)";
+            spaceText = $"{usedGb:F1} / {_totalGb.Value:F1} GB ({spaceRatio * 100f:F1}%)";
         }
         else if (_usedSpacePercent.HasValue)
         {
@@ -132,7 +170,7 @@ public sealed class StorageBentoCard : BentoCardBase
             DrawProgressBar(g, spaceBarBounds, spaceRatio, spaceFill, spaceBg);
         }
 
-        // 4 KPI Boxes (2x2)
+        // 4 KPI Boxes (2x2) with 1 decimal precision
         int kpiY = barY + barH + LogicalToDeviceUnits(14);
         int kpiW = (availWidth - LogicalToDeviceUnits(10)) / 2;
         int kpiH = LogicalToDeviceUnits(48);
@@ -149,10 +187,16 @@ public sealed class StorageBentoCard : BentoCardBase
         Rectangle r3 = new(pad, kpiY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
         Rectangle r4 = new(pad + kpiW + LogicalToDeviceUnits(10), kpiY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
 
-        DrawKpiBox(g, r1, "Temperatura", _temp.HasValue ? $"{_temp.Value:F0}" : "--", "°C", _temp / 100f, tempColor, theme);
+        DrawKpiBox(g, r1, "Temperatura", _temp.HasValue ? $"{_temp.Value:F1}" : "--", "°C", _temp / 100f, tempColor, theme);
         DrawKpiBox(g, r2, "Saúde SMART", _lifeRemaining.HasValue ? $"{_lifeRemaining.Value:F0}" : "100", "%", _lifeRemaining / 100f, null, theme);
         DrawKpiBox(g, r3, "Taxa Leitura", readVal, string.Empty, null, null, theme);
         DrawKpiBox(g, r4, "Taxa Escrita", writeVal, string.Empty, null, null, theme);
+
+        // Expandable detailed sensor list
+        if (IsExpanded && _detailedSensors.Count > 0)
+        {
+            DrawExpandedSensorList(g, kpiY + (kpiH * 2) + LogicalToDeviceUnits(18), _detailedSensors, theme);
+        }
     }
 
     private static string FormatThroughput(float bytesPerSec)

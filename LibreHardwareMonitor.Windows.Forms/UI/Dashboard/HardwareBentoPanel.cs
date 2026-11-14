@@ -46,9 +46,16 @@ public sealed class HardwareBentoPanel : Panel, IThemedControl
         };
 
         _cpuCard = new CpuBentoCard();
+        _cpuCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
+
         _gpuCard = new GpuBentoCard();
+        _gpuCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
+
         _memoryCard = new MemoryBentoCard();
+        _memoryCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
+
         _systemCard = new SystemBentoCard();
+        _systemCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
 
         _grid.Controls.Add(_cpuCard);
         _grid.Controls.Add(_gpuCard);
@@ -91,6 +98,27 @@ public sealed class HardwareBentoPanel : Panel, IThemedControl
             storageCard.Visible = matchHardware && MatchesCard(storageCard, "disco storage ssd nvme hdd smart");
         }
 
+        // Auto-expand card when a single component is filtered from sidebar
+        if (!showAll)
+        {
+            if (targetType == HardwareType.Cpu)
+                _cpuCard.IsExpanded = true;
+            else if (targetType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
+                _gpuCard.IsExpanded = true;
+            else if (targetType == HardwareType.Memory)
+                _memoryCard.IsExpanded = true;
+            else if (targetType is HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.Network)
+                _systemCard.IsExpanded = true;
+            else if (targetType == HardwareType.Storage)
+            {
+                foreach (StorageBentoCard sc in _storageCards)
+                {
+                    if (sc.Visible)
+                        sc.IsExpanded = true;
+                }
+            }
+        }
+
         _grid.ResumeLayout(true);
         _grid.PerformLayout();
     }
@@ -127,10 +155,8 @@ public sealed class HardwareBentoPanel : Panel, IThemedControl
         if (gpu != null && _gpuCard.Visible)
             _gpuCard.UpdateSensors(gpu);
 
-        IHardware mem = computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory && !h.Name.Contains("Virtual"))
-                        ?? computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
-        if (mem != null && _memoryCard.Visible)
-            _memoryCard.UpdateSensors(mem);
+        if (_memoryCard.Visible)
+            _memoryCard.UpdateSensors(computer.Hardware);
 
         if (_systemCard.Visible)
             _systemCard.UpdateSensors(computer.Hardware);
@@ -143,6 +169,7 @@ public sealed class HardwareBentoPanel : Panel, IThemedControl
         {
             StorageBentoCard sc = new();
             sc.ApplyTheme(Theme.Current);
+            sc.ExpansionChanged += delegate { _grid.PerformLayout(); };
             _storageCards.Add(sc);
             _grid.Controls.Add(sc);
             newStorageAdded = true;
