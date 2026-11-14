@@ -474,6 +474,21 @@ Apos o lancamento inicial dos Cartoes Bento e do HUD Overlay, foram identificada
    - Pinceis e canetas GDI+ reutilizaveis (`_paintBrush`, `_paintPen`), eliminando alocacoes GC e pausas durante sessoes de jogo.
    - Medicao precisa de largura de cada linha via `g.MeasureString` para evitar colisao entre rotulo e valor.
 
+---
+
+## 20. Correcao de Geometria e Altura dos Sensores Expandidos nos Cartoes Bento
+
+### 20.1 Diagnostico da Discrepancia Geometrica
+* **Corte da Lista ao Expandir:** No metodo `BentoCardBase.DrawExpandedSensorList()`, a expressao `availWidth > LogicalToDeviceUnits(480) ? 2 : 1` avaliava para `false` com larguras normais de grelha (~380px a 420px), fazendo com que os sensores fossem desenhados em 1 coluna vertical.
+* Contudo, o calculo de altura em `RecalculateCardHeight()` dividia os sensores por 2 (`Count / 2.0`), alocando espaco vertical apenas para metade das linhas. Em consequencia, a verificacao de limite inferior de renderizacao cortava prematuramente os sensores restantes.
+
+### 20.2 Resolucao Arquitetural
+1. **Unificacao da Deteccao de Colunas:**
+   - Ajustado o limiar em `BentoCardBase.DrawExpandedSensorList` para `cols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;`, acomodando com folga duas colunas compactas em qualquer resolucao desktop.
+   - Alinhado o calculo de `extraRows` em `RecalculateCardHeight()` de todos os 5 cartoes derivados (`CpuBentoCard`, `GpuBentoCard`, `MemoryBentoCard`, `StorageBentoCard`, `SystemBentoCard`) para utilizar exatamente a mesma formula baseada em `detCols`.
+2. **Re-layout Imediato da WrapGrid:**
+   - Nos metodos `UpdateSensors` de todos os cartoes, adicionada a comparacao `if (Height != prevHeight) Parent?.PerformLayout();`, assegurando que a grelha recalcula e reposiciona as linhas e colunas instantaneamente quando o estado de expansao ou a contagem de sensores se altera.
+
 
 
 

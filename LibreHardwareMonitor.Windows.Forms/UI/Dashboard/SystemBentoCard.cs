@@ -129,7 +129,11 @@ public sealed class SystemBentoCard : BentoCardBase
         BadgeText = _allFans.Count > 0 ? $"{_allFans.Count} Ventoinhas" : "Motherboard";
         BadgeColor = _allFans.Count > 0 ? Color.FromArgb(70, 200, 100) : Color.FromArgb(170, 170, 180);
 
+        int prevHeight = Height;
         RecalculateCardHeight();
+        if (Height != prevHeight)
+            Parent?.PerformLayout();
+
         Invalidate();
     }
 
@@ -153,7 +157,9 @@ public sealed class SystemBentoCard : BentoCardBase
         int baseHeight = 260;
         if (IsExpanded && _detailedSensors.Count > 0)
         {
-            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / 2.0);
+            int availWidth = Width > 0 ? Width - LogicalToDeviceUnits(28) : LogicalToDeviceUnits(380);
+            int detCols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;
+            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / (double)detCols);
             baseHeight += 32 + (extraRows * 22) + 16;
         }
 

@@ -417,3 +417,22 @@
     - Executavel Single-File gerado em `bin\Publish-Release\LibreHardwareMonitor.Windows.Forms.exe`.
     - Todos os ficheiros modificados e executavel sincronizados na pasta `C:\Users\tiago\Desktop\yea\LHH`.
     - Conformidade integral com a regra de Zero Emojis.
+
+---
+
+## 22. Fase 22: Correcao de Colunas e Ajuste de Altura na Lista Expandida dos Cartoes Bento
+
+* **Objetivo:** Resolver a discrepancia de calculo de colunas em `BentoCardBase.DrawExpandedSensorList()` que provocava o corte de sensores detalhados na expansao dos cartoes Bento e sincronizar a altura de linha da `WrapGrid` quando `Height` e alterado via `UpdateSensors`.
+* **Acoes Efetuadas:**
+  - **Ajuste do Limiar de Colunas em `BentoCardBase.cs`:**
+    - Alterada a condicao de deteccao de 2 colunas para `int cols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;` (anteriormente `> 480`). Com larguras tipicas de cartao de 380px a 420px na grelha, a lista detalhada e agora renderizada com consistencia em 2 colunas compactas.
+  - **Sincronizacao de Altura e Re-layout Imediato em `UpdateSensors`:**
+    - Em `CpuBentoCard.cs`, `GpuBentoCard.cs`, `MemoryBentoCard.cs`, `StorageBentoCard.cs` e `SystemBentoCard.cs`:
+      - Guardada a altura anterior `prevHeight = Height` antes de chamar `RecalculateCardHeight()`.
+      - Se a altura do cartao mudar durante o ciclo de telemetria, e invocado `Parent?.PerformLayout();`, forcando a `WrapGrid` a ajustar de imediato o espacamento e a altura da linha correspondente sem sobreposicoes.
+      - Alinhado o calculo de `extraRows` em `RecalculateCardHeight()` para usar a mesma regra de deteccao de colunas (`detCols`), garantindo proporcao matematica exata entre o espaco alocado e o numero de linhas desenhadas.
+  - **Validacao e Sincronizacao de Ficheiros:**
+    - Compilacao com `dotnet build` concluida com **0 Warnings e 0 Errors**.
+    - Binario Single-File atualizado em `bin\Publish-Release\LibreHardwareMonitor.Windows.Forms.exe`.
+    - Todos os ficheiros `.cs` atualizados e executavel sincronizados em `C:\Users\tiago\Desktop\yea\LHH`.
+    - Rigorosa observancia da regra de Zero Emojis.

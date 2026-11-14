@@ -320,7 +320,7 @@ public abstract class BentoCardBase : Control, IThemedControl
 
         int listY = titleY + LogicalToDeviceUnits(18);
         int rowH = LogicalToDeviceUnits(22);
-        int cols = availWidth > LogicalToDeviceUnits(480) ? 2 : 1;
+        int cols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;
         int colW = cols == 2 ? (availWidth - LogicalToDeviceUnits(12)) / 2 : availWidth;
 
         int rowCount = (int)Math.Ceiling(items.Count / (double)cols);

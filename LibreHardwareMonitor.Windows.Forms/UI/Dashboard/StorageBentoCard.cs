@@ -115,7 +115,11 @@ public sealed class StorageBentoCard : BentoCardBase
             }
         }
 
+        int prevHeight = Height;
         RecalculateCardHeight();
+        if (Height != prevHeight)
+            Parent?.PerformLayout();
+
         Invalidate();
     }
 
@@ -124,7 +128,9 @@ public sealed class StorageBentoCard : BentoCardBase
         int baseHeight = 260;
         if (IsExpanded && _detailedSensors.Count > 0)
         {
-            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / 2.0);
+            int availWidth = Width > 0 ? Width - LogicalToDeviceUnits(28) : LogicalToDeviceUnits(380);
+            int detCols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;
+            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / (double)detCols);
             baseHeight += 32 + (extraRows * 22) + 16;
         }
 
