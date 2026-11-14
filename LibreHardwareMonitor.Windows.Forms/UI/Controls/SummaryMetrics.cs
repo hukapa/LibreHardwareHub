@@ -1,104 +1,170 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// Copyright (C) LibreHardwareMonitor and Contributors.
+// All Rights Reserved.
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using LibreHardwareMonitor.Hardware;
 
-namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
-{
-    /// <summary>A headline metric shown as a card in the summary strip.</summary>
-    public sealed class SummaryMetric
-    {
-        public SummaryMetric(string title, IHardware hardware, ISensor sensor, Func<string> detail = null)
-        {
-            Title = title;
-            Hardware = hardware;
-            Sensor = sensor;
-            Detail = detail ?? (() => hardware.Name);
-        }
+namespace LibreHardwareMonitor.Windows.Forms.UI.Controls;
 
-        public string Title { get; }
-        public IHardware Hardware { get; }
-        public ISensor Sensor { get; }
-        public Func<string> Detail { get; }
+/// <summary>A headline metric shown as a card in the summary strip.</summary>
+public sealed class SummaryMetric
+{
+    public SummaryMetric(string title, IHardware hardware, ISensor sensor, Func<string> detail = null)
+    {
+        Title = title;
+        Hardware = hardware;
+        Sensor = sensor;
+        Detail = detail ?? (() => hardware?.Name ?? string.Empty);
     }
 
-    /// <summary>
-    /// Picks the most representative sensors (CPU, GPU, memory, power, voltage) from the detected hardware,
-    /// using well known sensor names with sensible fallbacks.
-    /// </summary>
-    public static class SummaryMetrics
+    public string Title { get; }
+    public IHardware Hardware { get; }
+    public ISensor Sensor { get; }
+    public Func<string> Detail { get; }
+}
+
+/// <summary>
+/// Picks the most representative sensors (CPU, GPU, memory, power, voltage) from the detected hardware,
+/// using robust recursive hardware discovery and flexible name matching.
+/// </summary>
+public static class SummaryMetrics
+{
+    public static IList<SummaryMetric> Resolve(IEnumerable<IHardware> hardware)
     {
-        private static readonly string[] CpuTemperatureNames = { "Core (Tctl/Tdie)", "CPU Package", "Core Max", "Core Average", "Tdie", "Tctl" };
-        private static readonly string[] GpuTemperatureNames = { "GPU Core", "GPU Hot Spot" };
+        if (hardware == null)
+            return Array.Empty<SummaryMetric>();
 
-        public static IList<SummaryMetric> Resolve(IEnumerable<IHardware> hardware)
+        List<IHardware> all = hardware.ToList();
+        List<SummaryMetric> metrics = new();
+
+        IHardware cpu = all.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
+        IHardware gpu = all.FirstOrDefault(h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd)
+                        ?? all.FirstOrDefault(h => h.HardwareType == HardwareType.GpuIntel);
+        IHardware memory = all.FirstOrDefault(h => h.HardwareType == HardwareType.Memory && h.Name.IndexOf("Virtual", StringComparison.OrdinalIgnoreCase) < 0)
+                           ?? all.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
+        IHardware motherboard = all.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
+
+        // 1. CPU Load
+        if (cpu != null)
         {
-            List<IHardware> all = hardware.ToList();
-            List<SummaryMetric> metrics = new();
+            ISensor cpuLoad = FindSensor(cpu, SensorType.Load, "Total", "CPU Total", "CPU");
+            Add(metrics, "Carga CPU", cpu, cpuLoad);
+        }
 
-            IHardware cpu = all.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
-            if (cpu != null)
+        // 2. CPU Temperature
+        if (cpu != null)
+        {
+            ISensor cpuTemp = FindSensor(cpu, SensorType.Temperature, "Package", "Core (Tctl/Tdie)", "Core Max", "Core Average", "Tdie", "Tctl", "CPU");
+            Add(metrics, "Temp. CPU", cpu, cpuTemp);
+        }
+
+        // 3. GPU Load
+        if (gpu != null)
+        {
+            ISensor gpuLoad = FindSensor(gpu, SensorType.Load, "Core", "D3D 3D", "GPU Core", "GPU");
+            Add(metrics, "Carga GPU", gpu, gpuLoad);
+        }
+
+        // 4. GPU Temperature
+        if (gpu != null)
+        {
+            ISensor gpuTemp = FindSensor(gpu, SensorType.Temperature, "Core", "GPU Core", "Hot Spot", "GPU");
+            Add(metrics, "Temp. GPU", gpu, gpuTemp);
+        }
+
+        // 5. Memory (RAM)
+        if (memory != null)
+        {
+            ISensor memLoad = FindSensor(memory, SensorType.Load, "Memory");
+            ISensor used = FindExactSensor(memory, SensorType.Data, "Memory Used");
+            ISensor available = FindExactSensor(memory, SensorType.Data, "Memory Available");
+            Add(metrics, "Memória RAM", memory, memLoad, () => FormatMemoryDetail(memory, used, available));
+        }
+
+        // 6. CPU Power
+        if (cpu != null)
+        {
+            ISensor cpuPower = FindSensor(cpu, SensorType.Power, "Package", "CPU Package", "Power");
+            Add(metrics, "Consumo CPU", cpu, cpuPower);
+        }
+
+        // 7. CPU Voltage (Check CPU first, fallback to Motherboard SuperIO)
+        if (cpu != null)
+        {
+            ISensor cpuVolt = FindSensor(cpu, SensorType.Voltage, "CPU Core", "VCore", "Core");
+            if (cpuVolt == null && motherboard != null)
+                cpuVolt = FindSensor(motherboard, SensorType.Voltage, "VCore", "CPU VCore", "CPU Core", "Core");
+
+            if (cpuVolt != null)
+                Add(metrics, "Voltagem CPU", cpu, cpuVolt);
+        }
+
+        return metrics;
+    }
+
+    private static void Add(List<SummaryMetric> metrics, string title, IHardware hardware, ISensor sensor, Func<string> detail = null)
+    {
+        if (sensor != null && hardware != null)
+            metrics.Add(new SummaryMetric(title, hardware, sensor, detail));
+    }
+
+    private static IEnumerable<ISensor> EnumerateSensors(IHardware hardware)
+    {
+        if (hardware == null)
+            yield break;
+
+        foreach (ISensor s in hardware.Sensors)
+            yield return s;
+
+        if (hardware.SubHardware != null)
+        {
+            foreach (IHardware sub in hardware.SubHardware)
             {
-                Add(metrics, "CPU Load", cpu, Find(cpu, SensorType.Load, "CPU Total"));
-                Add(metrics, "CPU Temperature", cpu, Find(cpu, SensorType.Temperature, CpuTemperatureNames));
-                Add(metrics, "CPU Voltage", cpu, Find(cpu, SensorType.Voltage, "CPU Core", "Core", "VCore"));
+                foreach (ISensor s in EnumerateSensors(sub))
+                    yield return s;
             }
+        }
+    }
 
-            IHardware gpu = all.FirstOrDefault(h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd)
-                            ?? all.FirstOrDefault(h => h.HardwareType == HardwareType.GpuIntel);
-            if (gpu != null)
-                Add(metrics, "GPU Load", gpu, Find(gpu, SensorType.Load, "GPU Core", "D3D 3D"));
+    private static ISensor FindExactSensor(IHardware hardware, SensorType type, string name)
+    {
+        return EnumerateSensors(hardware).FirstOrDefault(s => s.SensorType == type && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+    }
 
-            IHardware memory = all.FirstOrDefault(h => h.HardwareType == HardwareType.Memory && h.Name.IndexOf("Virtual", StringComparison.OrdinalIgnoreCase) < 0)
-                               ?? all.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
-            if (memory != null)
+    private static ISensor FindSensor(IHardware hardware, SensorType type, params string[] preferredKeywords)
+    {
+        List<ISensor> ofType = EnumerateSensors(hardware).Where(s => s.SensorType == type).ToList();
+        if (ofType.Count == 0)
+            return null;
+
+        foreach (string keyword in preferredKeywords)
+        {
+            ISensor match = ofType.FirstOrDefault(s => s.Name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (match != null)
+                return match;
+        }
+
+        return ofType.FirstOrDefault();
+    }
+
+    private static string FormatMemoryDetail(IHardware memory, ISensor used, ISensor available)
+    {
+        if (used?.Value is float u && available?.Value is float a)
+        {
+            // If values are reported in raw bytes (> 1MB), scale them
+            float total = u + a;
+            if (u > 1_000_000f)
             {
-                ISensor used = FindExact(memory, SensorType.Data, "Memory Used");
-                ISensor available = FindExact(memory, SensorType.Data, "Memory Available");
-                Add(metrics, "Memory", memory, Find(memory, SensorType.Load, "Memory"), () => MemoryDetail(memory, used, available));
+                const float toGb = 1024f * 1024f * 1024f;
+                return $"{u / toGb:F1} GB / {total / toGb:F1} GB";
             }
-
-            // Ordered by priority: the strip drops trailing cards when the window is narrow.
-            if (gpu != null)
-                Add(metrics, "GPU Temperature", gpu, Find(gpu, SensorType.Temperature, GpuTemperatureNames));
-
-            if (cpu != null)
-                Add(metrics, "CPU Power", cpu, Find(cpu, SensorType.Power, "CPU Package", "Package"));
-
-            return metrics;
+            return $"{u:F1} GB / {total:F1} GB";
         }
 
-        private static void Add(List<SummaryMetric> metrics, string title, IHardware hardware, ISensor sensor, Func<string> detail = null)
-        {
-            if (sensor != null)
-                metrics.Add(new SummaryMetric(title, hardware, sensor, detail));
-        }
-
-        private static ISensor FindExact(IHardware hardware, SensorType type, string name)
-        {
-            return hardware.Sensors.FirstOrDefault(s => s.SensorType == type && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-        }
-
-        /// <summary>Finds a sensor by preferred names, falling back to the first sensor of the type.</summary>
-        private static ISensor Find(IHardware hardware, SensorType type, params string[] names)
-        {
-            foreach (string name in names)
-            {
-                ISensor sensor = FindExact(hardware, type, name);
-                if (sensor != null)
-                    return sensor;
-            }
-
-            return hardware.Sensors.FirstOrDefault(s => s.SensorType == type);
-        }
-
-        private static string MemoryDetail(IHardware memory, ISensor used, ISensor available)
-        {
-            // Data sensors report bytes; reuse the tree's scaled formatting (KB, MB, GB...).
-            if (used?.Value is float u && available?.Value is float a)
-                return UnitManager.BytesToString(u) + " / " + UnitManager.BytesToString(u + a);
-
-            return memory.Name;
-        }
+        return memory?.Name ?? "RAM";
     }
 }

@@ -17,16 +17,52 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
         private static readonly Color DefaultAccent = Color.FromArgb(0, 103, 192);
         private static Font _uiFont;
         private static Font _uiFontSemibold;
+        private static Font _uiFontSmall;
+        private static Font _uiFontSmallBold;
+        private static Font _uiFontMini;
+        private static Font _monoFont;
+        private static Font _monoFontSmall;
+        private static Font _monoFontKpi;
         private static Color? _systemAccent;
 
-        /// <summary>Default UI font: Segoe UI Variable Text when installed, otherwise the system message font.</summary>
+        private static StringFormat _formatEllipsisNoWrap;
+        private static StringFormat _formatCenter;
+        private static StringFormat _formatFar;
+        private static StringFormat _formatNearCenter;
+        private static StringFormat _formatFarCenter;
+
         /// <summary>Corner radius shared by buttons, combo boxes and text fields (logical units; cards use the theme radius + 2).</summary>
         public const int ControlCornerLogical = 8;
 
+        /// <summary>Default UI font: Segoe UI Variable Text when installed, otherwise the system message font.</summary>
         public static Font UiFont => _uiFont ??= CreateUiFont(FontStyle.Regular);
 
         /// <summary>Semibold variant used for headings and group titles.</summary>
         public static Font UiFontSemibold => _uiFontSemibold ??= CreateUiFont(FontStyle.Bold);
+
+        /// <summary>8pt regular UI font for subtitles, metric labels and badges.</summary>
+        public static Font UiFontSmall => _uiFontSmall ??= CreateUiFont(FontStyle.Regular, 8f);
+
+        /// <summary>8pt bold UI font for group headers and category captions.</summary>
+        public static Font UiFontSmallBold => _uiFontSmallBold ??= CreateUiFont(FontStyle.Bold, 8f);
+
+        /// <summary>7pt regular UI font for compact core matrix labels.</summary>
+        public static Font UiFontMini => _uiFontMini ??= CreateUiFont(FontStyle.Regular, 7f);
+
+        /// <summary>9pt monospace font for telemetry numbers.</summary>
+        public static Font MonoFont => _monoFont ??= CreateMonoFont(9f, FontStyle.Bold);
+
+        /// <summary>7.5pt monospace font for compact core load badges.</summary>
+        public static Font MonoFontSmall => _monoFontSmall ??= CreateMonoFont(7.5f, FontStyle.Bold);
+
+        /// <summary>11.5pt monospace font for KPI metric values.</summary>
+        public static Font MonoFontKpi => _monoFontKpi ??= CreateMonoFont(11.5f, FontStyle.Bold);
+
+        public static StringFormat FormatEllipsisNoWrap => _formatEllipsisNoWrap ??= new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+        public static StringFormat FormatCenter => _formatCenter ??= new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        public static StringFormat FormatFar => _formatFar ??= new StringFormat { Alignment = StringAlignment.Far };
+        public static StringFormat FormatNearCenter => _formatNearCenter ??= new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
+        public static StringFormat FormatFarCenter => _formatFarCenter ??= new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center };
 
         /// <summary>The user's Windows accent color, read once from the DWM registry key.</summary>
         public static Color SystemAccentColor => _systemAccent ??= ReadSystemAccent();
@@ -42,6 +78,15 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
 
             Font system = SystemFonts.MessageBoxFont;
             return new Font(system.FontFamily, size, style, GraphicsUnit.Point);
+        }
+
+        public static Font CreateMonoFont(float size, FontStyle style = FontStyle.Bold)
+        {
+            if (HasFamily("Cascadia Mono"))
+                return new Font("Cascadia Mono", size, style, GraphicsUnit.Point);
+            if (HasFamily("Consolas"))
+                return new Font("Consolas", size, style, GraphicsUnit.Point);
+            return new Font(FontFamily.GenericMonospace, size, style, GraphicsUnit.Point);
         }
 
         /// <summary>Large display font for headline numbers (KPI values), semibold where available.</summary>

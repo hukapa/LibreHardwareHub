@@ -17,7 +17,9 @@ using Aga.Controls.Tree;
 using Aga.Controls.Tree.NodeControls;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Hardware.Storage;
+using LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
+using LibreHardwareMonitor.Windows.Forms.UI.Overlay;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 using LibreHardwareMonitor.Windows.Forms.UI.Tuning;
 using LibreHardwareMonitor.Windows.Forms.Utilities;
@@ -60,6 +62,9 @@ public sealed partial class MainForm : Form
     private readonly FanControlEngine _fanControlEngine;
     private readonly GpuTuningEngine _gpuTuningEngine;
     private readonly CpuTuningEngine _cpuTuningEngine;
+    private readonly OverlayConfig _overlayConfig;
+    private OverlayForm _overlayForm;
+    private GlobalHotkeyManager _hotkeyManager;
     private bool _isWorkingSetTrimmed;
 
     private int _delayCount;
@@ -78,6 +83,9 @@ public sealed partial class MainForm : Form
 
         _settings = new PersistentSettings();
         _settings.Load(Path.ChangeExtension(Application.ExecutablePath, ".config"));
+
+        _overlayConfig = new OverlayConfig();
+        _overlayConfig.Load(_settings);
 
         _unitManager = new UnitManager(_settings);
 
@@ -192,9 +200,6 @@ public sealed partial class MainForm : Form
         perSessionFileRotationMenuItem.Checked = _logger.FileRotationMethod == LoggerFileRotation.PerSession;
         dailyFileRotationMenuItem.Checked = _logger.FileRotationMethod == LoggerFileRotation.Daily;
 
-        _computer.HardwareAdded += HardwareAdded;
-        _computer.HardwareRemoved += HardwareRemoved;
-
         if (PawnIo.PawnIo.IsInstalled)
         {
             if (PawnIo.PawnIo.Version < new Version(2, 0, 0, 0))
@@ -212,6 +217,14 @@ public sealed partial class MainForm : Form
         }
 
         _computer.Open();
+
+        foreach (IHardware hardware in _computer.Hardware)
+            SubHardwareAdded(hardware, _root);
+
+        _computer.HardwareAdded += HardwareAdded;
+        _computer.HardwareRemoved += HardwareRemoved;
+
+        RefreshShell();
 
         static void InstallPawnIO()
         {
@@ -684,14 +697,97 @@ public sealed partial class MainForm : Form
     }
 
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        InitializeOverlayAndHotkeys();
+    }
+
+    private void InitializeOverlayAndHotkeys()
+    {
+        if (_hotkeyManager != null)
+            return;
+
+        _hotkeyManager = new GlobalHotkeyManager(Handle);
+        _hotkeyManager.HotkeyTriggered += OnGlobalHotkeyTriggered;
+        _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyOverlayToggle, _overlayConfig.Hotkey);
+        _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyClickThroughToggle, _overlayConfig.LockHotkey);
+
+        _overlayForm = new OverlayForm(_overlayConfig);
+        _overlayEditorPanel?.SetOverlayForm(_overlayForm);
+        if (_overlayConfig.Enabled)
+        {
+            _overlayForm.Show();
+            _overlayForm.RecalculateBounds();
+            _overlayForm.UpdateTelemetry(_computer);
+        }
+    }
+
+    private void OnGlobalHotkeyTriggered(int id)
+    {
+        if (id == GlobalHotkeyManager.HotkeyOverlayToggle)
+        {
+            _overlayConfig.Enabled = !_overlayConfig.Enabled;
+            if (_overlayForm != null)
+            {
+                if (_overlayConfig.Enabled)
+                {
+                    _overlayForm.Show();
+                    _overlayForm.RecalculateBounds();
+                    _overlayForm.UpdateTelemetry(_computer);
+                }
+                else
+                {
+                    _overlayForm.Hide();
+                }
+            }
+            ApplyAdaptivePolling();
+            _overlayEditorPanel?.Invalidate();
+        }
+        else if (id == GlobalHotkeyManager.HotkeyClickThroughToggle)
+        {
+            _overlayConfig.ClickThrough = !_overlayConfig.ClickThrough;
+            _overlayForm?.ApplyClickThrough();
+            _overlayEditorPanel?.Invalidate();
+        }
+    }
+
+    private void OnOverlayConfigChanged()
+    {
+        _overlayConfig.Save(_settings);
+        if (_hotkeyManager != null)
+        {
+            _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyOverlayToggle, _overlayConfig.Hotkey);
+            _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyClickThroughToggle, _overlayConfig.LockHotkey);
+        }
+        if (_overlayForm != null)
+        {
+            if (_overlayConfig.Enabled && !_overlayForm.Visible)
+            {
+                _overlayForm.Show();
+                _overlayForm.RecalculateBounds();
+                _overlayForm.UpdateTelemetry(_computer);
+            }
+            else if (!_overlayConfig.Enabled && _overlayForm.Visible)
+            {
+                _overlayForm.Hide();
+            }
+        }
+        ApplyAdaptivePolling();
+    }
+
     private void Timer_Tick(object sender, EventArgs e)
     {
         bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
 
         if (isFormVisible)
         {
-            treeView.Invalidate();
+            if (!_isVisualMode)
+                treeView.Invalidate();
+
             UpdateShell();
+            if (_hardwareBentoPanel != null && _hardwareBentoPanel.Visible)
+                _hardwareBentoPanel.UpdateTelemetry(_computer);
             if (_fanControlPanel != null && _fanControlPanel.Visible)
                 _fanControlPanel.UpdateTelemetry();
             if (_cpuTuningPanel != null && _cpuTuningPanel.Visible)
@@ -699,6 +795,9 @@ public sealed partial class MainForm : Form
             if (_gpuTuningPanel != null && _gpuTuningPanel.Visible)
                 _gpuTuningPanel.UpdateTelemetry();
         }
+
+        if (_overlayForm != null && _overlayForm.Visible)
+            _overlayForm.UpdateTelemetry(_computer);
 
         _systemTray.Redraw();
 
@@ -724,6 +823,7 @@ public sealed partial class MainForm : Form
     {
         bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
         bool fanControlActive = _fanControlEngine != null && _fanControlEngine.HasActiveControls;
+        bool overlayActive = _overlayForm != null && _overlayForm.Visible;
         _updateVisitor.ActiveFanControl = fanControlActive;
 
         if (isFormVisible)
@@ -733,8 +833,8 @@ public sealed partial class MainForm : Form
         }
         else
         {
-            _updateVisitor.LowPowerMode = true;
-            if (fanControlActive)
+            _updateVisitor.LowPowerMode = !overlayActive;
+            if (fanControlActive || overlayActive)
             {
                 timer.Interval = 1000;
             }

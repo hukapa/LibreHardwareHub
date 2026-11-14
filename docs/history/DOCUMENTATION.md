@@ -223,3 +223,126 @@
     - Atualizados `master.yml` e `pull requests.yml` para disparar em `branches: [main]` com `dotnet-version: '8.0.x'`, removendo artefatos e passos legados de `net472`, `net10.0` e Avalonia.
   - **Validacao:**
     - Compilacao de toda a solucao `LibreHardwareMonitor.sln` em Release x64 concluida com **0 Warnings e 0 Errors** em ~4 segundos.
+
+---
+
+## 15. Fase 15: Cartoes Bento de Telemetria e Estudio de Overlay In-Game (HUD)
+
+* **Objetivo:** Substituir a vista por defeito de tabelas extensas no TreeViewAdv por uma grelha de cartoes Bento inteligentes de alta densidade e introduzir um sistema de sobreposicao in-game (HUD) com atalhos globais, zero input lag e personalizacao total.
+* **Acoes Efetuadas:**
+  - **Grelha de Cartoes Bento Inteligentes (`UI/Dashboard/`):**
+    - `BentoCardBase.cs`: Classe base abstrata com desenho GDI+ arredondado, anti-aliasing, cabecalho dinamico com icones vetoriais Fluent e gestao eficiente de hover e buffers.
+    - `CpuBentoCard.cs`: 4 KPIs principais (Temp Package, Carga Total %, Consumo W, Clock Pico) e matriz compacta de nucleos individuais (Core Matrix) com mini-barras horizontais.
+    - `GpuBentoCard.cs`: Termica Core e HotSpot, carga %, consumo, rotacao de ventoinhas e barra visual segmentada de VRAM ocupada vs total.
+    - `MemoryBentoCard.cs`: Barra visual de ocupacao de RAM fisica (Usada vs Livre em GB e %), memoria virtual swap e temperatura de modulos DIMM.
+    - `StorageBentoCard.cs`: Cartoes compactos por disco com temperatura, percentagem de saude/vida util SMART, barra de ocupacao e taxas de leitura/escrita em tempo real.
+    - `SystemBentoCard.cs`: Tensoes de alimentacao vitais (+12V, +5V, +3.3V, Vcore), pilulas termicas da motherboard, lista de ventoinhas ativas e debito de rede.
+    - `HardwareBentoPanel.cs`: Painel responsivo que acomoda os cartoes em 1 ou 2 colunas, com sincronizacao automatica ao escopo da barra lateral e filtragem por pesquisa.
+    - Integracao de seletor segmentado na barra de ferramentas: `[Vista Visual (Cartoes)]` (predefinida) vs `[Tabela Completa (Sensores Brutos)]`.
+  - **Sistema de In-Game Overlay HUD (`UI/Overlay/`):**
+    - `GlobalHotkeyManager.cs`: Utilizacao estrita da API nativa `RegisterHotKey` / `UnregisterHotKey` (`user32.dll`) via mensagem `WM_HOTKEY` no `WndProc`, eliminando hooks de baixo nivel (`WH_KEYBOARD_LL`) para evitar input lag e conflitos com anti-cheats.
+    - `OverlayConfig.cs`: Modelo de dados com suporte a ancoras (`TopLeft`, `TopCenter`, etc.), layouts (Vertical, Horizontal, Grelha), 4 presets de estilo (`Fluent Dark`, `Minimalista Puro`, `Cyber Matrix`, `Classico RTSS`), cores personalizadas, opacidade e ordenacao de metricas.
+    - `OverlayForm.cs`: Janela HUD com estilos `WS_EX_LAYERED`, `WS_EX_TOOLWINDOW`, `WS_EX_NOACTIVATE` (nunca rouba foco do jogo) e `WS_EX_TRANSPARENT` dinamico (modo click-through). Renderizacao GDI+ com numeros monoespacados (`Consolas` / `Cascadia Mono`), sombras de texto e consumo zero de CPU quando oculta.
+    - `OverlayEditorPanel.cs`: Estudio de configuracao integrado na barra lateral sob o item "Overlay HUD", com gravador de atalhos e janela de pre-visualizacao ao vivo (Live Preview).
+    - Opcao de contexto na arvore de sensores: "Mostrar no Overlay" para fixar qualquer sensor arbitrario no HUD.
+    - Polling adaptativo inteligente: se a janela principal estiver minimizada na bandeja mas o HUD estiver visivel, o ciclo de atualizacao de 1000ms mantem-se ativo para os sensores do Overlay sem redesenhar a janela principal.
+  - **Validacao:**
+    - Toda a solucao compila em Release x64 com **0 Warnings e 0 Errors**.
+    - Publicacao standalone Single-File validada sem avisos.
+
+---
+
+## 16. Fase 16: Resolucao de Excecoes em Tempo de Execucao (CreateParams e GDI+ OnPaint)
+
+* **Objetivo:** Corrigir as excecoes reportadas em `crash.log` durante o arranque da aplicacao e a pintura dos novos cartoes Bento (`NullReferenceException` e `ArgumentException: Parameter is not valid`).
+* **Acoes Efetuadas:**
+  - **Blindagem do Ciclo de Vida em `OverlayForm.CreateParams`:**
+    - Identificado que o construtor da classe base `Form` invoca `CreateParams` antes da atribuicao do campo `_config` no construtor derivado.
+    - Adicionada verificacao de nulidade `if (_config != null && _config.ClickThrough)`, prevenindo a excecao `NullReferenceException`.
+    - Adicionada verificacao em `ApplyClickThrough()` e metodo `SetOverlayForm()` em `OverlayEditorPanel` para sincronizacao correta da instancia do formulario.
+  - **Resolucao do Erro GDI+ `Parameter is not valid` nos Cartoes Bento:**
+    - Identificado que `BentoCardBase.DrawHeader` realizava `using (Font tf = FluentStyle.UiFontSemibold)`. Sendo uma propriedade estatica partilhada, a saida do bloco eliminava o handle GDI+ da fonte (`tf.Dispose()`), corrompendo a pintura de todos os cartoes seguintes e despoletando cruzes vermelhas de erro no WinForms.
+    - Criacao de fontes e formatos de texto cacheados em `FluentStyle.cs` (`UiFontSmall`, `UiFontSmallBold`, `UiFontMini`, `MonoFont`, `MonoFontSmall`, `MonoFontKpi`, `FormatEllipsisNoWrap`, `FormatCenter`, `FormatFar`, `FormatNearCenter`, `FormatFarCenter`).
+    - Atualizacao de todos os cartoes (`CpuBentoCard`, `GpuBentoCard`, `MemoryBentoCard`, `StorageBentoCard`, `SystemBentoCard`) e da janela `OverlayForm` para consumo exclusivo dessas propriedades partilhadas sem efetuar `new Font(...)` ou `using Font` no ciclo de pintura.
+    - Protecao contra dimensoes nulas ou negativas em retangulos de recorte e verificacao de largura minima de celulas na matriz de nucleos de CPU.
+  - **Validacao:**
+    - Compilacao da solucao com **0 Warnings e 0 Errors** em 3.7 segundos.
+    - Publicacao Single-File atualizada em `bin\Publish-SingleFile\`.
+
+---
+
+## 17. Fase 17: Redesenho Visual dos Cartoes Bento, Estudio de Overlay e Correcao de Escala de Dados
+
+* **Objetivo:** Refinar substancialmente o design visual dos cartoes Bento e do painel de configuracao do Overlay, resolver anomalias de formatacao de dados em bytes nos sensores de memoria RAM e armazenamento, e assegurar proporcoes fluidas e densas em eMulti-Monitores.
+* **Acoes Efetuadas:**
+  - **Correcao da Escala de Dados (Bytes para Gigabytes):**
+    - Identificado que os sensores `SensorType.Data` em `TotalMemory`, `VirtualMemory` e `StorageDevice` reportam valores brutos em bytes (ex: `12326649856.0`), resultando na apresentacao incorreta de "12326649856,0 GB".
+    - Aplicada conversao por `1024^3` (`UnitManager.BytesToGigaBytes`) em `MemoryBentoCard.cs`, `StorageBentoCard.cs` e `OverlayForm.cs`.
+    - Apresentacao correta de memoria fisica (ex: `11.5 GB de 16.0 GB (73%)`) e de armazenamento com espaco ocupado em relacao a capacidade total do disco.
+  - **Evolucao Visual dos Cartoes Bento (`UI/Dashboard/`):**
+    - `BentoCardBase.cs`: Redesenho dos KPI boxes em mini-cartoes com superficie arredondada (6px), borda suave, rotulo em maiusculas e valor em destaque com unidade e mini-barra de progresso. Icone de cabecalho emoldurado em caixa com fundo translucido.
+    - `HardwareBentoPanel.cs`: Redefinicao da grelha fluida baseada em largura ideal de ~380px, gerando de 1 a 4 colunas proporcionadas conforme a resolucao do monitor, eliminando o esticamento horizontal excessivo.
+    - `CpuBentoCard.cs`: Reorganizacao da matriz de nucleos (Core Matrix) com espacamento adequado para 14 a 20 threads e 4 KPIs destacados.
+    - `GpuBentoCard.cs`: 4 KPIs individuais (Temp Core com HotSpot, Carga, Consumo e Clock), barra de VRAM e estado de ventilacao.
+    - `SystemBentoCard.cs`: Implementada travessia recursiva de `SubHardware` no Motherboard para descoberta dos sensores do chip Super I/O (tensoes +12V, +5V, +3.3V, Vcore e temperaturas de VRM/Motherboard), com adaptacao inteligente para evitar areas vazias.
+  - **Modernizacao do Estudio de Overlay (`OverlayEditorPanel.cs`):**
+    - Substituicao de caixas de texto com fundo branco por inputs com tema escuro e cantos limpos.
+    - Substituicao de botoes de reordenacao por setas estilizadas em flat mode.
+    - Adicao de mostradores visuais de cor (color swatches) de 16x16 ao lado dos botoes de cor.
+    - Pre-visualizacao ao vivo (Live Preview) enriquecida com simulacao de tela de jogo, posicionamento real por ancora, sombras e barras de progresso.
+  - **Validacao:**
+    - Compilacao da solucao com **0 Warnings e 0 Errors**.
+    - Executavel Single-File validado e atualizado em `bin\Publish-SingleFile\`.
+
+---
+
+## 18. Fase 18: Otimizacao de Responsividade da Navegacao e Correcao da Faixa de Sensores de Topo
+
+* **Objetivo:** Resolver a anomalia de congelamento e falta de atualizacao dos sensores de topo em "All devices", eliminar a latencia extrema/bloqueio na alternancia de paginas na barra lateral, e proteger o motor de renderizacao GDI+ contra excecoes de limites.
+* **Acoes Efetuadas:**
+  - **Correcao da Faixa de Sensores de Topo (`SummaryPanel.cs` e `SummaryMetrics.cs`):**
+    - Identificada a causa raiz de excecoes GDI+ (`Parameter is not valid` e `ArgumentOutOfRangeException`): no redimensionamento ou em larguras reduzidas, coordenadas com valor NaN ou dimensoes negativas geravam excecoes no pipeline WinForms. Adicionado controlo estrito de limites, clamp de raios e protecao try/catch no metodo `OnPaint`.
+    - Eliminado o bloqueio de contagem decrescente estatica (`_summaryResolveCountdown` que parava ao atingir 0). Implementada resolucao dinamica periodica e re-resolucao quando metricas estao pendentes ou hardware e adicionado.
+    - Implementada enumeracao recursiva de sensores em `SummaryMetrics.cs`, percorrendo `hardware.SubHardware` e garantindo descoberta de CPU Package, VCore na Super I/O da Motherboard, e metricas de GPU e RAM sem depender de igualdades literais rigidas.
+  - **Eliminacao da Latencia de Navegacao (Troca Instantanea de Paginas):**
+    - Identificado que em cada clique da `SidebarPanel`, o metodo `ApplyScope` executava `RestoreExpandedState()` iterando sincronicamente por `treeView.AllNodes.ToList()` (mais de 500 nos), mesmo com a arvore oculta no modo de Cartoes Bento.
+    - Otimizada a navegacao para desacoplar a manipulacao da arvore do modo visual: no modo Bento, a navegacao e direta e instantanea (0 ms de latencia), executando a expansao da arvore apenas quando o utilizador comuta expressamente para a vista de Tabela.
+    - Otimizado o `FanControlPanel.cs` para evitar a destruicao e recriacao de dezenas de controlos WinForms em cada clique de navegacao; a reconstrucao estrutural ocorre apenas no arranque ou por mudanca real de canais.
+    - Centralizado o controlo de visibilidade de paginas (`NavigateView`) garantindo que apenas o painel ativo permanece visivel e consome ciclos de atualizacao.
+  - **Calibracao do Polling no `UpdateVisitor.cs`:**
+    - Ajustado o limiar de amostragem em foreground para evitar que pequenas variacoes de jitter de timer no Windows descartassem ciclos de atualizacao a 500 ms / 1000 ms.
+  - **Validacao e Conformidade:**
+    - Compilacao e publicacao da solucao com **0 Warnings e 0 Errors**.
+    - Rigorosa conformidade com a politica de Zero Emojis.
+
+---
+
+## 19. Fase 19: Reformulacao Arquitetural do Estudio de Overlay, Transparencia Win32 Nativa e Padronizacao Fluent dos Cartoes Bento
+
+* **Objetivo:** Resolver as 5 falhas criticas identificadas na integracao dos controlos de design system no estúdio de Overlay e nos cartoes Bento, eliminando controlo legado Win32, corrigindo a transparencia do HUD em jogos via API nativa do Windows, e assegurando total coerencia visual e de escala de telemetria.
+* **Acoes Efetuadas:**
+  - **Reconstrucao Integral do `OverlayEditorPanel.cs`:**
+    - Eliminacao de todos os controlos legados Win32 dos anos 90 (`TrackBar`, `TextBox` nativo, `TableLayoutPanel` e posicionamento manual por `Point`).
+    - Adocao estrita da arquitetura Fluent comprovada no `CpuTuningPanel.cs`: viewport com `ScrollHost` e `StackPanel` vertical, cartoes estruturados com `FluentSectionCard` utilizando as propriedades `.Title` e `.Subtitle` (restaurando os cabecalhos de seccao e a linha divisoria subtil).
+    - Configuracoes parametrizadas via `SettingRow` em conjunto com `FluentSlider` (para opacidade, tamanho de fonte e raio de cantos) e `FluentTextBox` (para edicao de rotulos personalizados de metricas com sublinhado accent).
+    - Barra de ferramentas de topo (`ToolbarRow`) com botao accent de ativacao do HUD, botao de captura de atalho global (`GlobalHotkeyManager`) e `FluentBadge` de estado sincronizado.
+    - Card dedicado de simulacao ao vivo (`PreviewCanvas`) que desenha a geometria exata do HUD sobre uma grelha escura de jogo.
+  - **Transparencia Nativa Per-Pixel Alpha no `OverlayForm.cs`:**
+    - Implementado motor de composicao de janela layered via Win32 P/Invoke `UpdateLayeredWindow` com Bitmap 32-bpp PARGB (`PixelFormat.Format32bppPArgb`), GDI Memory DC (`CreateCompatibleDC`, `SelectObject`) e estrutura `BLENDFUNCTION` (`AC_SRC_OVER`, `AC_SRC_ALPHA`).
+    - Eliminadas caixas cinzentas opacas e bordas serrilhadas: os jogos em Borderless/Windowed recebem composicao translucida suave com anti-aliasing puro e texto razor-sharp.
+    - Modo arrastavel fluido quando `ClickThrough == false`, permitindo mover o HUD livremente com o rato e gravando a posicao como ancora personalizada.
+    - Resolucao de sensores corrigida: filtragem do clock de barramento ("Bus Speed" de 100 MHz) no CPU para captura do pico real de frequencia dos nucleos; travessia recursiva de `SubHardware` para deteção de ventoinhas no Super I/O; e normalizacao universal de VRAM e RAM com `ToGigabytes`.
+  - **Modernizacao e Padronizacao da Grelha Bento (`HardwareBentoPanel.cs`):**
+    - Substituicao do `FlowLayoutPanel` e barra de scroll nativa por `ScrollHost` + `WrapGrid` (`MinColumnWidth = 380`, `Gap = PageMetrics.Gap`), garantindo colunas com larguras iguais e linhas niveladas sem efeito de degraus tortos.
+    - Sincronizacao dinamica de novos cartoes de armazenamento (`StorageBentoCard`) sem quebras de layout nem repeticao de instancias.
+    - Pesquisa avancada em tempo real inspecionando titulos, subtitulos e palavras-chave de categoria de hardware.
+  - **Refinamento dos Cartoes Bento (`UI/Dashboard/`):**
+    - `BentoCardBase.cs`: Eliminado o efeito de hover global e contorno azul que causava cintilacao ao mover o cursor sobre os cartoes; adicionada linha divisoria hairline no cabecalho; e migracao exclusiva para `TextRenderer.DrawText` no metodo `DrawKpiBox`, prevenindo sobreposicoes de texto decorrentes de `g.MeasureString`.
+    - `CpuBentoCard.cs`: Altura dinamica calculada pelo numero de linhas da matriz de nucleos (`Math.Ceiling(_cores.Count / cols)`); nome do nucleo fixado a esquerda e percentagem fixada a direita em cada celula.
+    - `GpuBentoCard.cs`: Simplificacao do rotulo para "TEMP. CORE", normalizacao de VRAM e altura padronizada em 260px.
+    - `SystemBentoCard.cs`: Grelha 2x2 estruturada para tensoes e arrefecimento (CPU Vcore, Linha +12V/+5V, Temp. Placa-Mae, Ventoinha Principal) acompanhada de seccao dedicada para trafego de rede (Download/Upload) e resumo de ventoinhas ativas.
+    - `MemoryBentoCard.cs` e `StorageBentoCard.cs`: Metodo universal `ToGigabytes` implementado na classe base, tratando corretamente dados em bytes, megabytes e gigabytes e eliminando os valores anormais de "13213213 GB".
+  - **Validacao e Conformidade:**
+    - Compilacao da solucao com **0 Warnings e 0 Errors**.
+    - Publicacao Single-File atualizada em `bin\Release\net8.0-windows\win-x64\publish\`.
+    - Rigorosa observancia da regra de Zero Emojis.

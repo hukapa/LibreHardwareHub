@@ -45,6 +45,8 @@ public sealed partial class MainForm
         _systemTray.Dispose();
         _gpuTuningEngine?.Dispose();
         _cpuTuningEngine?.Dispose();
+        _hotkeyManager?.Dispose();
+        _overlayForm?.Dispose();
         timer.Dispose();
         backgroundUpdater.Dispose();
 
@@ -115,6 +117,13 @@ public sealed partial class MainForm
 
     protected override void WndProc(ref Message m)
     {
+        const int WM_HOTKEY = 0x0312;
+        if (m.Msg == WM_HOTKEY)
+        {
+            _hotkeyManager?.HandleWmHotkey(m.WParam.ToInt32());
+            return;
+        }
+
         const int WM_SYSCOMMAND = 0x112;
         const int WM_WININICHANGE = 0x001A;
         const int SC_MINIMIZE = 0xF020;

@@ -141,6 +141,20 @@ public sealed partial class MainForm
                     treeContextMenu.Items.Add(item);
                 }
 
+                if (_overlayConfig != null)
+                {
+                    string sensorId = node.Sensor.Identifier.ToString();
+                    ToolStripMenuItem overlayItem = new("Mostrar no Overlay") { Checked = _overlayConfig.HasCustomSensor(sensorId) };
+                    overlayItem.Click += delegate
+                    {
+                        _overlayConfig.ToggleCustomSensor(sensorId, node.Sensor.Name);
+                        _overlayConfig.Save(_settings);
+                        _overlayForm?.RecalculateBounds();
+                        _overlayForm?.UpdateTelemetry(_computer);
+                    };
+                    treeContextMenu.Items.Add(overlayItem);
+                }
+
 
                 if (node.Sensor.Control != null)
                 {

@@ -53,6 +53,19 @@ LibreHardwareMonitor/
 |   |   +-- AuthForm.cs                        # Dialogo para definicao de credenciais do servidor web
 |   |   +-- InterfacePortForm.cs               # Dialogo para definicao da porta e IP de escuta HTTP
 |   |   +-- ParameterForm.cs                   # Dialogo para ajuste fino de parametros de calibracao
+|   |   +-- Dashboard/                         # Painel de Cartoes Bento Inteligentes (Substituicao de Tabelas Brutas)
+|   |   |   +-- BentoCardBase.cs               # Classe base para cartoes Bento com renderizacao GDI+ e temas
+|   |   |   +-- CpuBentoCard.cs                # Cartao de CPU com KPIs de Package e Matriz de Nucleos (Core Matrix)
+|   |   |   +-- GpuBentoCard.cs                # Cartao de GPU com Core/Hotspot, carga, consumo e barra visual de VRAM
+|   |   |   +-- MemoryBentoCard.cs             # Cartao de RAM com barra segmentada Usada/Livre, swap e modulos
+|   |   |   +-- StorageBentoCard.cs            # Cartao de Armazenamento com saude SMART, espaco e taxa de leitura/escrita
+|   |   |   +-- SystemBentoCard.cs             # Cartao de Motherboard com tensoes principais (+12V, +5V, etc.), ventoinhas e rede
+|   |   |   \-- HardwareBentoPanel.cs          # Contentor responsivo de cartoes Bento com suporte a filtros e escopos
+|   |   +-- Overlay/                           # In-Game Overlay (HUD) e Keybind Global
+|   |   |   +-- GlobalHotkeyManager.cs         # Gestor nativo de atalhos globais via user32.dll RegisterHotKey (Zero Input Lag)
+|   |   |   +-- OverlayConfig.cs               # Modelo de dados e persistencia completa de personalizacao do Overlay
+|   |   |   +-- OverlayForm.cs                 # Janela HUD fantasma WS_EX_NOACTIVATE e WS_EX_TRANSPARENT com click-through
+|   |   |   \-- OverlayEditorPanel.cs          # Estudio de personalizacao visual do Overlay com Live Preview em tempo real
 |   |   +-- Controls/                          # Controlos Fluent personalizados
 |   |   |   +-- CardPanel.cs                   # Contentor de superficie arredondada com contorno suave
 |   |   |   +-- FluentBadge.cs                 # Indicador visual moderno em formato pilula (status, seguranca e alertas)

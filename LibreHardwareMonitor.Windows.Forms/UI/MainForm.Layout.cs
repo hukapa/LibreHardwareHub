@@ -10,8 +10,10 @@ using System.Windows.Forms;
 using Aga.Controls.Tree;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Controls;
+using LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 using LibreHardwareMonitor.Windows.Forms.UI.Icons;
+using LibreHardwareMonitor.Windows.Forms.UI.Overlay;
 using LibreHardwareMonitor.Windows.Forms.UI.Tuning;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI;
@@ -26,7 +28,6 @@ public sealed partial class MainForm
     private const int SidebarLogicalWidth = 232;
     private const int SidebarCompactLogicalWidth = 56;
     private const int CompactBreakpointLogical = 860;
-    private const int SummaryResolveTicks = 5;
     private const int SearchLogicalWidth = 300;
 
     private SidebarPanel _sidebar;
@@ -34,11 +35,16 @@ public sealed partial class MainForm
     private Panel _content;
     private CardPanel _treeCard;
     private SearchBox _search;
-    private Panel _toolbar;
+    private ToolbarRow _toolbar;
     private FanControlPanel _fanControlPanel;
     private GpuTuningPanel _gpuTuningPanel;
     private CpuTuningPanel _cpuTuningPanel;
-    private int _summaryResolveCountdown = SummaryResolveTicks;
+    private HardwareBentoPanel _hardwareBentoPanel;
+    private OverlayEditorPanel _overlayEditorPanel;
+    private FluentButton _btnVisualCards;
+    private FluentButton _btnRawTable;
+    private bool _isVisualMode = true;
+    private int _summaryTickCounter = 0;
 
     private void InitializeShell()
     {
@@ -48,6 +54,8 @@ public sealed partial class MainForm
         _treeCard = new CardPanel { Dock = DockStyle.Fill };
         _treeCard.Controls.Add(splitContainer);
 
+        _hardwareBentoPanel = new HardwareBentoPanel { Dock = DockStyle.Fill, Visible = true };
+        _overlayEditorPanel = new OverlayEditorPanel(_overlayConfig, _overlayForm, OnOverlayConfigChanged) { Dock = DockStyle.Fill, Visible = false };
         _fanControlPanel = new FanControlPanel { Dock = DockStyle.Fill, Visible = false };
         _gpuTuningPanel = new GpuTuningPanel { Dock = DockStyle.Fill, Visible = false };
         _cpuTuningPanel = new CpuTuningPanel { Dock = DockStyle.Fill, Visible = false };
@@ -57,16 +65,41 @@ public sealed partial class MainForm
         _summary.CardClicked += Summary_CardClicked;
 
         int gutter = LogicalToDeviceUnits(12);
-        _search = new SearchBox { Dock = DockStyle.Left, Width = LogicalToDeviceUnits(SearchLogicalWidth) };
+        _search = new SearchBox { Width = LogicalToDeviceUnits(SearchLogicalWidth) };
         _search.SearchChanged += Search_SearchChanged;
-        _toolbar = new Panel { Dock = DockStyle.Top, Height = _search.Height + gutter, Padding = new Padding(0, 0, 0, gutter) };
-        _toolbar.Controls.Add(_search);
 
-        // Docking runs from the back of the z-order: summary, then toolbar, then the tree card / fan panel / tuning panels.
+        _btnRawTable = PageMetrics.FitButton(new FluentButton
+        {
+            Text = "Tabela Completa",
+            Tag = PageMetrics.AlignRight
+        });
+        _btnRawTable.Click += (s, e) => SetViewMode(false);
+
+        _btnVisualCards = PageMetrics.FitButton(new FluentButton
+        {
+            Text = "Vista Visual",
+            Variant = FluentButtonVariant.Accent,
+            Tag = PageMetrics.AlignRight
+        });
+        _btnVisualCards.Click += (s, e) => SetViewMode(true);
+
+        _toolbar = new ToolbarRow
+        {
+            Dock = DockStyle.Top,
+            Height = LogicalToDeviceUnits(44),
+            Padding = new Padding(0, 0, 0, LogicalToDeviceUnits(12))
+        };
+        _toolbar.Controls.Add(_search);
+        _toolbar.Controls.Add(_btnRawTable);
+        _toolbar.Controls.Add(_btnVisualCards);
+
+        // Docking runs from the back of the z-order: summary, then toolbar, then panels.
         _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, LogicalToDeviceUnits(6), gutter, gutter) };
+        _content.Controls.Add(_overlayEditorPanel);
         _content.Controls.Add(_cpuTuningPanel);
         _content.Controls.Add(_gpuTuningPanel);
         _content.Controls.Add(_fanControlPanel);
+        _content.Controls.Add(_hardwareBentoPanel);
         _content.Controls.Add(_treeCard);
         _content.Controls.Add(_toolbar);
         _content.Controls.Add(_summary);
@@ -80,9 +113,49 @@ public sealed partial class MainForm
         _content.BringToFront();
         mainMenu.SendToBack();
 
+        string savedView = _settings.GetValue("ui.view_mode", "visual");
+        SetViewMode(savedView != "table");
+
         Resize += delegate { UpdateShellDensity(); };
         UpdateShellDensity();
         ResumeLayout(true);
+    }
+
+    private void SetViewMode(bool visual)
+    {
+        _isVisualMode = visual;
+        _btnVisualCards.Variant = visual ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
+        _btnRawTable.Variant = !visual ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
+
+        bool isToolPage = _sidebar?.SelectedItem?.Tag is string;
+        if (!isToolPage)
+        {
+            _hardwareBentoPanel.Visible = visual;
+            _treeCard.Visible = !visual;
+
+            if (visual)
+            {
+                if (_summary != null)
+                    _summary.Visible = false;
+                _hardwareBentoPanel.BringToFront();
+                _hardwareBentoPanel.UpdateTelemetry(_computer);
+            }
+            else
+            {
+                _treeCard.BringToFront();
+                HardwareNode scopeNode = _sidebar?.SelectedItem?.Tag as HardwareNode;
+                bool isAllDevices = scopeNode == null;
+                if (_summary != null)
+                {
+                    _summary.Visible = isAllDevices && _summary.HasMetrics;
+                    if (_summary.Visible)
+                        _summary.Invalidate();
+                }
+                ApplyScope(scopeNode, false);
+            }
+        }
+
+        _settings.SetValue("ui.view_mode", visual ? "visual" : "table");
     }
 
     private void UpdateShellDensity()
@@ -111,7 +184,8 @@ public sealed partial class MainForm
             new SidebarItem("All devices", FluentIcons.Computer, null),
             new SidebarItem("Fan Control", FluentIcons.ForSensorType(SensorType.Fan), "fan_control"),
             new SidebarItem("CPU Tuning", FluentIcons.ForHardware(HardwareType.Cpu), "cpu_tuning"),
-            new SidebarItem("GPU Tuning", FluentIcons.ForSensorType(SensorType.Clock), "gpu_tuning")
+            new SidebarItem("GPU Tuning", FluentIcons.ForSensorType(SensorType.Clock), "gpu_tuning"),
+            new SidebarItem("Overlay HUD", FluentIcons.ForSensorType(SensorType.Level), "overlay_hud")
         };
 
         foreach (HardwareNode node in _root.Nodes.OfType<HardwareNode>())
@@ -122,93 +196,140 @@ public sealed partial class MainForm
         }
 
         _sidebar.SetItems(items, scope);
-        ApplyScope(scope, false);
         ResolveSummary();
+        NavigateView(scope);
     }
 
     private void ResolveSummary()
     {
+        if (_summary == null || _computer == null)
+            return;
+
         _summary.SetMetrics(SummaryMetrics.Resolve(_computer.Hardware));
-        // Tool pages (fan control, tuning) are tagged with a string and have their own KPI strip.
         bool toolPage = _sidebar?.SelectedItem?.Tag is string;
-        _summary.Visible = _summary.HasMetrics && !toolPage;
+        bool isAllDevices = _sidebar?.SelectedItem?.Tag == null;
+        _summary.Visible = !_isVisualMode && isAllDevices && _summary.HasMetrics && !toolPage;
     }
 
-    /// <summary>Sensors may appear a few update cycles after the hardware; re-resolve briefly after startup.</summary>
+    /// <summary>Sensors may appear a few update cycles after the hardware; dynamically keeps KPIs resolved.</summary>
     private void UpdateShell()
     {
         if (_summary == null)
             return;
 
-        if (_summaryResolveCountdown > 0 && --_summaryResolveCountdown % 2 == 0)
+        _summaryTickCounter++;
+        if (!_summary.HasMetrics || _summaryTickCounter % 5 == 0)
             ResolveSummary();
 
-        _summary.Invalidate();
+        if (_summary.Visible)
+            _summary.Invalidate();
     }
 
     private HardwareNode TreeScope => (treeView.Model as TreeModel)?.Scope as HardwareNode;
 
     private void Sidebar_SelectionChanged(object sender, EventArgs e)
     {
-        if (_sidebar.SelectedItem?.Tag is string tag)
+        NavigateView(_sidebar.SelectedItem?.Tag);
+    }
+
+    private void NavigateView(object tag)
+    {
+        // 1. Tool Pages
+        if (tag is string toolTag)
         {
-            if (tag == "fan_control")
-            {
-                _treeCard.Visible = false;
-                if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = false;
-                if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = false;
-                if (_toolbar != null) _toolbar.Visible = false;
-                if (_summary != null) _summary.Visible = false;
-                if (_fanControlPanel != null)
-                {
-                    _fanControlPanel.Visible = true;
-                    _fanControlPanel.BringToFront();
-                    _fanControlPanel.RefreshChannels();
-                    _fanControlPanel.UpdateTelemetry();
-                }
-                return;
-            }
+            if (_summary != null) _summary.Visible = false;
+            if (_toolbar != null) _toolbar.Visible = false;
+            if (_hardwareBentoPanel != null) _hardwareBentoPanel.Visible = false;
+            if (_treeCard != null) _treeCard.Visible = false;
 
-            if (tag == "cpu_tuning")
-            {
-                _treeCard.Visible = false;
-                if (_fanControlPanel != null) _fanControlPanel.Visible = false;
-                if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = false;
-                if (_toolbar != null) _toolbar.Visible = false;
-                if (_summary != null) _summary.Visible = false;
-                if (_cpuTuningPanel != null)
-                {
-                    _cpuTuningPanel.Visible = true;
-                    _cpuTuningPanel.BringToFront();
-                    _cpuTuningPanel.UpdateTelemetry();
-                }
-                return;
-            }
+            if (_fanControlPanel != null) _fanControlPanel.Visible = toolTag == "fan_control";
+            if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = toolTag == "cpu_tuning";
+            if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = toolTag == "gpu_tuning";
+            if (_overlayEditorPanel != null) _overlayEditorPanel.Visible = toolTag == "overlay_hud";
 
-            if (tag == "gpu_tuning")
+            switch (toolTag)
             {
-                _treeCard.Visible = false;
-                if (_fanControlPanel != null) _fanControlPanel.Visible = false;
-                if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = false;
-                if (_toolbar != null) _toolbar.Visible = false;
-                if (_summary != null) _summary.Visible = false;
-                if (_gpuTuningPanel != null)
-                {
-                    _gpuTuningPanel.Visible = true;
-                    _gpuTuningPanel.BringToFront();
-                    _gpuTuningPanel.UpdateTelemetry();
-                }
-                return;
+                case "fan_control":
+                    if (_fanControlPanel != null)
+                    {
+                        _fanControlPanel.BringToFront();
+                        if (_fanControlPanel.CardCount == 0)
+                            _fanControlPanel.RefreshChannels();
+                        _fanControlPanel.UpdateTelemetry();
+                    }
+                    break;
+                case "cpu_tuning":
+                    if (_cpuTuningPanel != null)
+                    {
+                        _cpuTuningPanel.BringToFront();
+                        _cpuTuningPanel.UpdateTelemetry();
+                    }
+                    break;
+                case "gpu_tuning":
+                    if (_gpuTuningPanel != null)
+                    {
+                        _gpuTuningPanel.BringToFront();
+                        _gpuTuningPanel.UpdateTelemetry();
+                    }
+                    break;
+                case "overlay_hud":
+                    _overlayEditorPanel?.BringToFront();
+                    break;
             }
+            return;
         }
 
+        // 2. Hardware Navigation ("All devices" or specific HardwareNode)
         if (_fanControlPanel != null) _fanControlPanel.Visible = false;
         if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = false;
         if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = false;
+        if (_overlayEditorPanel != null) _overlayEditorPanel.Visible = false;
+
+        HardwareNode scopeNode = tag as HardwareNode;
+
         if (_toolbar != null) _toolbar.Visible = true;
-        if (_summary != null) _summary.Visible = _summary.HasMetrics;
-        _treeCard.Visible = true;
-        ApplyScope(_sidebar.SelectedItem?.Tag as HardwareNode, true);
+        if (_summary != null)
+        {
+            bool isAllDevices = scopeNode == null;
+            if (!_isVisualMode && isAllDevices)
+            {
+                if (!_summary.HasMetrics)
+                    ResolveSummary();
+                _summary.Visible = _summary.HasMetrics;
+                if (_summary.Visible)
+                    _summary.Invalidate();
+            }
+            else
+            {
+                _summary.Visible = false;
+            }
+        }
+
+        if (_hardwareBentoPanel != null)
+        {
+            _hardwareBentoPanel.Visible = _isVisualMode;
+            _hardwareBentoPanel.SetScope(scopeNode);
+            if (_isVisualMode)
+            {
+                _hardwareBentoPanel.BringToFront();
+                _hardwareBentoPanel.UpdateTelemetry(_computer);
+            }
+        }
+
+        if (_treeCard != null)
+        {
+            _treeCard.Visible = !_isVisualMode;
+            if (!_isVisualMode)
+            {
+                _treeCard.BringToFront();
+                ApplyScope(scopeNode, true);
+            }
+            else
+            {
+                // In visual mode, persist selection without heavy tree traversal
+                _settings.SetValue(ScopeSettingKey, scopeNode?.Hardware.Identifier.ToString() ?? string.Empty);
+            }
+        }
     }
 
     private void Summary_CardClicked(object sender, IHardware hardware)
@@ -235,11 +356,13 @@ public sealed partial class MainForm
 
     private void Search_SearchChanged(object sender, EventArgs e)
     {
-        if (treeView.Model is not TreeModel model)
-            return;
+        if (treeView.Model is TreeModel model)
+        {
+            model.Filter = _search.Query;
+            RestoreExpandedState();
+        }
 
-        model.Filter = _search.Query;
-        RestoreExpandedState();
+        _hardwareBentoPanel?.ApplyFilter(_search.Query);
     }
 
     /// <summary>

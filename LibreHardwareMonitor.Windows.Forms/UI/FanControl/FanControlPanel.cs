@@ -67,6 +67,8 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     private readonly FluentSectionCard _infoCard;
     private readonly Label _infoLabel;
 
+    public int CardCount => _cards.Count;
+
     public FanControlPanel() : this(null)
     {
     }
