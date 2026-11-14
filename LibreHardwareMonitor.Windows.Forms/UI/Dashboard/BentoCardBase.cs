@@ -107,6 +107,9 @@ public abstract class BentoCardBase : Control, IThemedControl
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        if (Width <= 1 || Height <= 1)
+            return;
+
         Graphics g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
@@ -193,7 +196,7 @@ public abstract class BentoCardBase : Control, IThemedControl
         g.DrawLine(divPen, pad, divY, Width - pad, divY);
 
         // Subtle interactive hint at bottom right
-        string hint = _isExpanded ? "Clique para recolher ▲" : "Clique para mais detalhes ▼";
+        string hint = _isExpanded ? "Clique para recolher [^]" : "Clique para mais detalhes [v]";
         int hintW = LogicalToDeviceUnits(140);
         int hintH = LogicalToDeviceUnits(14);
         Rectangle hintRect = new(Width - pad - hintW, Height - pad / 2 - hintH, hintW, hintH);

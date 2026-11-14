@@ -443,6 +443,37 @@ Apos o lancamento inicial dos Cartoes Bento e do HUD Overlay, foram identificada
 * **Metodo Universal `ToGigabytes`:** Normalizacao estavel de sensores `SensorType.Data`, tratando dados em bytes, megabytes e gigabytes e eliminando valores anormais de "13213213 GB" em discos e RAM.
 * **Evolucao de `CpuBentoCard`, `GpuBentoCard` e `SystemBentoCard`:** Altura dinamica proporcional a matriz de nucleos na CPU, rotulos concisos na GPU e grelha 2x2 estruturada com seccao de rede e arrefecimento na placa-mae.
 
+---
+
+## 19. Estudio HUD Interativo com FreeCanvas, Renderizacao Zero-Allocation e Blindagem GDI+
+
+### 19.1 Diagnostico dos Erros em Execucao
+1. **Excecao GDI+ "Parameter is not valid":**
+   - Ocorria em `FluentStyle.RoundedRectangle` quando um elemento do painel (ou cartao Bento) era desenhado antes do calculo dimensional do container ou com tamanho menor ou igual a zero (`bounds.Width <= 0`). A chamada nativa `path.AddRectangle(bounds)` ou `path.AddArc` com dimensoes invalidas provocava o encerramento do metodo com erro nativo, ativando o mecanismo de seguranca do WinForms que desenha um "X vermelho" sobre o controlo.
+2. **Excecao "NullReferenceException" em Segundo Plano:**
+   - Ocorria em iteracoes de `SubHardware` no `UpdateVisitor.cs` quando um dispositivo nao possuia subcomponentes instanciados, alem de chamadas cruzadas de threads a controlos WinForms em `BackgroundUpdater_DoWork`.
+3. **Quebra de Linha em Textos de Memoria RAM:**
+   - Os formatos centrais de texto em `FluentStyle.cs` nao tinham a flag `StringFormatFlags.NoWrap` ativa, provocando quebras de linha em resolucoes reduzidas.
+
+### 19.2 Medidas Corretivas e Funcionalidades Desenvolvidas
+1. **Blindagem GDI+ Rigorosa:**
+   - Adicionada validacao defensiva `if (bounds.Width <= 0f || bounds.Height <= 0f) return path;` em `FluentStyle.RoundedRectangle`.
+   - Validacao de dimensoes `if (Width <= 1 || Height <= 1) return;` em `BentoCardBase.OnPaint`.
+   - Adicionadas as flags `NoWrap` e `Trimming = None` a todos os formatos centrais em `FluentStyle.cs`.
+   - Seguranca total de threads em `MainForm.cs`, movendo todas as chamadas de UI para `RunWorkerCompleted`.
+   - Sistema de log dual em `Program.cs` (`BaseDirectory` e `%LOCALAPPDATA%\LibreHardwareHub\crash.log`).
+2. **Estudio HUD Interativo com `FreeCanvas` (Drag-and-Drop):**
+   - Adicionado o novo layout `OverlayLayout.FreeCanvas` com suporte a posicionamento arbitrario `(GridX, GridY)` para cada sensor.
+   - O `PreviewCanvas` agora deteta o clique e arrasto do utilizador com grelha magnetica com passo de 8px e linhas-guia de alinhamento em tempo real.
+   - Botoes de acao rapida para reconfiguracao automatica: `[Empilhar na Vertical]`, `[Fila Horizontal]` e `[Grelha 2 Colunas]`.
+   - Personalizacao cromatica avancada por sensor (cor de rotulo, cor de valor e alternador de cor termica dinamica).
+   - Seletor ciclico de formato de RAM: `[GB + %]`, `[So GB]` e `[Usado / Total]`.
+   - Corrigida a exibicao de "Hora" para apresentar a hora atual real (`DateTime.Now.ToString("HH:mm:ss")`).
+3. **Renderizacao Zero-Allocation no `OverlayForm.cs`:**
+   - Cache persistente do Bitmap e Graphics de composicao 32-bpp PARGB, reutilizados entre ticks e limpos com `Clear(Color.Transparent)`.
+   - Pinceis e canetas GDI+ reutilizaveis (`_paintBrush`, `_paintPen`), eliminando alocacoes GC e pausas durante sessoes de jogo.
+   - Medicao precisa de largura de cada linha via `g.MeasureString` para evitar colisao entre rotulo e valor.
+
 
 
 

@@ -104,17 +104,53 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
         _toolbar.Controls.Add(_btnRecordHotkey);
         _toolbar.Controls.Add(_statusBadge);
 
-        // Card 1: Preview
+        // Card 1: Preview Canvas with Alignment Controls
         _previewCard = new FluentSectionCard
         {
-            Title = "Pré-visualização do HUD em Tempo Real",
-            Subtitle = "Simulação da sobreposição com a geometria, transparência e estilo configurados.",
+            Title = "Estúdio HUD e Pré-visualização Interativa",
+            Subtitle = "Arraste os sensores diretamente no painel com o rato (grelha magnética de 8px) ou use os alinhamentos rápidos.",
             AutoHeight = true
         };
-        _previewCanvas = new PreviewCanvas(_config)
+
+        ToolbarRow alignRow = new() { OnSurface = true, Height = LogicalToDeviceUnits(32) };
+        FluentButton btnAlignVert = PageMetrics.FitButton(new FluentButton { Text = "Empilhar na Vertical" });
+        btnAlignVert.Click += (_, _) =>
+        {
+            _config.ApplyAutoLayout(OverlayLayout.VerticalList);
+            _cmbLayout.SelectedIndex = (int)OverlayLayout.VerticalList;
+            NotifyChange();
+        };
+
+        FluentButton btnAlignHoriz = PageMetrics.FitButton(new FluentButton { Text = "Fila Horizontal" });
+        btnAlignHoriz.Click += (_, _) =>
+        {
+            _config.ApplyAutoLayout(OverlayLayout.HorizontalBar);
+            _cmbLayout.SelectedIndex = (int)OverlayLayout.HorizontalBar;
+            NotifyChange();
+        };
+
+        FluentButton btnAlignGrid = PageMetrics.FitButton(new FluentButton { Text = "Grelha 2 Colunas" });
+        btnAlignGrid.Click += (_, _) =>
+        {
+            _config.ApplyAutoLayout(OverlayLayout.CompactGrid);
+            _cmbLayout.SelectedIndex = (int)OverlayLayout.CompactGrid;
+            NotifyChange();
+        };
+
+        alignRow.Controls.Add(btnAlignVert);
+        alignRow.Controls.Add(btnAlignHoriz);
+        alignRow.Controls.Add(btnAlignGrid);
+        _previewCard.Controls.Add(alignRow);
+
+        _previewCanvas = new PreviewCanvas(_config, () =>
+        {
+            if (_cmbLayout.SelectedIndex != (int)OverlayLayout.FreeCanvas)
+                _cmbLayout.SelectedIndex = (int)OverlayLayout.FreeCanvas;
+            NotifyChange();
+        })
         {
             Dock = DockStyle.Top,
-            Height = LogicalToDeviceUnits(170)
+            Height = LogicalToDeviceUnits(220)
         };
         _previewCard.Controls.Add(_previewCanvas);
 
@@ -178,12 +214,14 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
         {
             "Lista Vertical",
             "Barra Horizontal",
-            "Grelha Compacta (2 Colunas)"
+            "Grelha Compacta (2 Colunas)",
+            "Livre / Drag-and-Drop (Free Canvas)"
         });
-        _cmbLayout.SelectedIndex = (int)_config.Layout;
+        _cmbLayout.SelectedIndex = Math.Min((int)_config.Layout, 3);
         _cmbLayout.SelectedIndexChanged += (_, _) =>
         {
             _config.Layout = (OverlayLayout)_cmbLayout.SelectedIndex;
+            _config.ApplyAutoLayout(_config.Layout);
             NotifyChange();
         };
 
@@ -229,6 +267,17 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
         colorsRow.Controls.Add(btnColorBorder);
         colorsRow.Controls.Add(btnColorLabel);
         colorsRow.Controls.Add(btnColorVal);
+
+        ToolbarRow thermalColorsRow = new() { OnSurface = true, Height = LogicalToDeviceUnits(32) };
+        FluentButton btnColorCool = PageMetrics.FitButton(new FluentButton { Text = "Cor Fria" });
+        btnColorCool.Click += (_, _) => PickColor("Cor Normal / Fria", _config.CoolColor, c => _config.CoolColor = c);
+        FluentButton btnColorWarm = PageMetrics.FitButton(new FluentButton { Text = "Cor Quente" });
+        btnColorWarm.Click += (_, _) => PickColor("Cor Alerta / Quente", _config.WarmColor, c => _config.WarmColor = c);
+        FluentButton btnColorHot = PageMetrics.FitButton(new FluentButton { Text = "Cor Crítica" });
+        btnColorHot.Click += (_, _) => PickColor("Cor Crítica", _config.HotColor, c => _config.HotColor = c);
+        thermalColorsRow.Controls.Add(btnColorCool);
+        thermalColorsRow.Controls.Add(btnColorWarm);
+        thermalColorsRow.Controls.Add(btnColorHot);
 
         ToolbarRow optionsRow = new() { OnSurface = true, Height = LogicalToDeviceUnits(32) };
         _btnSeverity = PageMetrics.FitButton(new FluentButton { Text = "Cores por Severidade", IsActive = _config.ColorBySeverity });
@@ -277,7 +326,8 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
         appearanceRows.Controls.Add(_rowOpacity);
         appearanceRows.Controls.Add(_rowFontSize);
         appearanceRows.Controls.Add(_rowCornerRadius);
-        appearanceRows.Controls.Add(new SettingRow("Paleta de Cores", "Personalização cromática dos elementos", colorsRow, false));
+        appearanceRows.Controls.Add(new SettingRow("Cores Gerais", "Fundo, bordas, rótulos e valores base", colorsRow, false));
+        appearanceRows.Controls.Add(new SettingRow("Cores Térmicas", "Paleta dinâmica de temperaturas e cargas", thermalColorsRow, false));
         appearanceRows.Controls.Add(new SettingRow("Opções de Renderização", "Aprimoramentos visuais de leitura rápida", optionsRow, false));
 
         _appearanceCard.Controls.Add(appearanceRows);
@@ -415,7 +465,7 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
             {
                 Text = item.DefaultTitle,
                 Font = FluentStyle.UiFontSemibold,
-                Width = LogicalToDeviceUnits(130),
+                Width = LogicalToDeviceUnits(110),
                 Height = LogicalToDeviceUnits(28),
                 TextAlign = ContentAlignment.MiddleLeft
             };
@@ -423,7 +473,7 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
             FluentTextBox txtCustom = new()
             {
                 Text = item.DisplayName,
-                Width = LogicalToDeviceUnits(180),
+                Width = LogicalToDeviceUnits(140),
                 Height = LogicalToDeviceUnits(28)
             };
             txtCustom.TextChanged += (_, _) =>
@@ -432,9 +482,77 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
                 NotifyChange();
             };
 
+            FluentButton btnColorLbl = PageMetrics.FitButton(new FluentButton { Text = "Rótulo" }, 28);
+            btnColorLbl.Click += (_, _) =>
+            {
+                PickColor($"Cor do Rótulo ({item.DisplayName})", item.CustomLabelColor ?? _config.LabelColor, c => item.CustomLabelColor = c);
+            };
+
+            FluentButton btnColorVal = PageMetrics.FitButton(new FluentButton { Text = "Valor" }, 28);
+            btnColorVal.Click += (_, _) =>
+            {
+                PickColor($"Cor do Valor ({item.DisplayName})", item.CustomValueColor ?? _config.ValueColor, c => item.CustomValueColor = c);
+            };
+
+            FluentButton btnDynamic = PageMetrics.FitButton(new FluentButton
+            {
+                Text = "Térmico",
+                Variant = item.UseDynamicColor ? FluentButtonVariant.Accent : FluentButtonVariant.Standard
+            }, 28);
+            btnDynamic.Click += (_, _) =>
+            {
+                item.UseDynamicColor = !item.UseDynamicColor;
+                btnDynamic.Variant = item.UseDynamicColor ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
+                NotifyChange();
+            };
+
+            FluentButton btnBar = PageMetrics.FitButton(new FluentButton
+            {
+                Text = "Barra",
+                Variant = item.ShowBar ? FluentButtonVariant.Accent : FluentButtonVariant.Standard
+            }, 28);
+            btnBar.Click += (_, _) =>
+            {
+                item.ShowBar = !item.ShowBar;
+                btnBar.Variant = item.ShowBar ? FluentButtonVariant.Accent : FluentButtonVariant.Standard;
+                NotifyChange();
+            };
+
+            row.Controls.Add(btnActive);
+            row.Controls.Add(lblName);
+            row.Controls.Add(txtCustom);
+            row.Controls.Add(btnColorLbl);
+            row.Controls.Add(btnColorVal);
+            row.Controls.Add(btnDynamic);
+            row.Controls.Add(btnBar);
+
+            if (item.Id == "ram_used")
+            {
+                string fmtLabel = item.DisplayFormat switch
+                {
+                    1 => "[Só GB]",
+                    2 => "[Usado / Total]",
+                    _ => "[GB + %]"
+                };
+                FluentButton btnFmt = PageMetrics.FitButton(new FluentButton { Text = fmtLabel }, 28);
+                btnFmt.Click += (_, _) =>
+                {
+                    item.DisplayFormat = (item.DisplayFormat + 1) % 3;
+                    btnFmt.Text = item.DisplayFormat switch
+                    {
+                        1 => "[Só GB]",
+                        2 => "[Usado / Total]",
+                        _ => "[GB + %]"
+                    };
+                    PageMetrics.FitButton(btnFmt, 28);
+                    NotifyChange();
+                };
+                row.Controls.Add(btnFmt);
+            }
+
             FluentButton btnUp = new()
             {
-                Text = "▲",
+                Text = "[^]",
                 Width = LogicalToDeviceUnits(32),
                 Height = LogicalToDeviceUnits(28),
                 Enabled = index > 0
@@ -451,7 +569,7 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
 
             FluentButton btnDown = new()
             {
-                Text = "▼",
+                Text = "[v]",
                 Width = LogicalToDeviceUnits(32),
                 Height = LogicalToDeviceUnits(28),
                 Enabled = index < sorted.Count - 1
@@ -466,9 +584,6 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
                 }
             };
 
-            row.Controls.Add(btnActive);
-            row.Controls.Add(lblName);
-            row.Controls.Add(txtCustom);
             row.Controls.Add(btnUp);
             row.Controls.Add(btnDown);
 
@@ -496,17 +611,102 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
     }
 
     /// <summary>
-    /// Custom canvas control rendering live overlay simulation inside the editor card.
+    /// Custom interactive canvas rendering live HUD simulation with drag-and-drop metric positioning.
     /// </summary>
     private sealed class PreviewCanvas : Control
     {
         private readonly OverlayConfig _config;
+        private readonly Action _onDragged;
 
-        public PreviewCanvas(OverlayConfig config)
+        private OverlayMetricItem _draggedItem;
+        private Point _dragOffset;
+        private bool _isDragging;
+
+        public PreviewCanvas(OverlayConfig config, Action onDragged)
         {
             _config = config;
+            _onDragged = onDragged;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                      ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+            Cursor = Cursors.Default;
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            var active = _config.MetricItems.Where(m => m.Enabled).OrderBy(m => m.Order).ToList();
+            int itemH = LogicalToDeviceUnits(22);
+            int padding = LogicalToDeviceUnits(12);
+
+            for (int i = active.Count - 1; i >= 0; i--)
+            {
+                OverlayMetricItem item = active[i];
+                Rectangle itemRect;
+                if (_config.Layout == OverlayLayout.FreeCanvas)
+                {
+                    itemRect = new Rectangle(item.GridX, item.GridY, LogicalToDeviceUnits(180), itemH);
+                }
+                else if (_config.Layout == OverlayLayout.HorizontalBar)
+                {
+                    int itemW = LogicalToDeviceUnits(140);
+                    itemRect = new Rectangle(padding + (i * (itemW + padding)), padding, itemW, itemH);
+                }
+                else if (_config.Layout == OverlayLayout.CompactGrid)
+                {
+                    int col = i % 2;
+                    int row = i / 2;
+                    int itemW = LogicalToDeviceUnits(160);
+                    itemRect = new Rectangle(padding + (col * (itemW + padding)), padding + (row * (itemH + 4)), itemW, itemH);
+                }
+                else
+                {
+                    itemRect = new Rectangle(padding, padding + (i * (itemH + 4)), LogicalToDeviceUnits(220), itemH);
+                }
+
+                if (itemRect.Contains(e.Location))
+                {
+                    _draggedItem = item;
+                    _dragOffset = new Point(e.X - itemRect.X, e.Y - itemRect.Y);
+                    _isDragging = true;
+                    Capture = true;
+                    Cursor = Cursors.SizeAll;
+                    Invalidate();
+                    break;
+                }
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (_isDragging && _draggedItem != null)
+            {
+                int snapX = Math.Max(12, ((e.X - _dragOffset.X + 4) / 8) * 8);
+                int snapY = Math.Max(12, ((e.Y - _dragOffset.Y + 4) / 8) * 8);
+
+                _draggedItem.GridX = snapX;
+                _draggedItem.GridY = snapY;
+                _config.Layout = OverlayLayout.FreeCanvas;
+
+                _onDragged?.Invoke();
+                Invalidate();
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (_isDragging)
+            {
+                _isDragging = false;
+                _draggedItem = null;
+                Capture = false;
+                Cursor = Cursors.Default;
+                Invalidate();
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -516,9 +716,9 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
             Theme theme = Theme.Current;
+            Rectangle bounds = ClientRectangle;
 
             // Draw game canvas simulation backdrop
-            Rectangle bounds = ClientRectangle;
             using (SolidBrush meshBg = new(Color.FromArgb(16, 18, 22)))
                 g.FillRectangle(meshBg, bounds);
 
@@ -531,22 +731,54 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
                     g.DrawLine(meshPen, 0, y, bounds.Width, y);
             }
 
-            // HUD Container Bounds
-            int hudPad = LogicalToDeviceUnits(16);
-            var activeItems = _config.MetricItems.Where(m => m.Enabled).OrderBy(m => m.Order).Take(6).ToList();
+            var activeItems = _config.MetricItems.Where(m => m.Enabled).OrderBy(m => m.Order).ToList();
             if (activeItems.Count == 0)
             {
-                Rectangle emptyRect = new(hudPad, hudPad, bounds.Width - (hudPad * 2), bounds.Height - (hudPad * 2));
-                TextRenderer.DrawText(g, "Nenhuma métrica ativada no HUD.", FluentStyle.UiFont, emptyRect, theme.MutedForegroundColor,
+                TextRenderer.DrawText(g, "Nenhuma métrica ativada no HUD.", FluentStyle.UiFont, bounds, theme.MutedForegroundColor,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;
             }
 
             int itemH = LogicalToDeviceUnits(22);
-            int hudW = Math.Min(bounds.Width - (hudPad * 2), LogicalToDeviceUnits(260));
-            int hudH = (activeItems.Count * itemH) + LogicalToDeviceUnits(16);
+            int pad = LogicalToDeviceUnits(12);
 
-            Rectangle hudRect = new(hudPad, hudPad, hudW, Math.Min(bounds.Height - (hudPad * 2), hudH));
+            // Compute HUD container bounds
+            Rectangle hudRect;
+            if (_config.Layout == OverlayLayout.FreeCanvas)
+            {
+                int minX = int.MaxValue, minY = int.MaxValue;
+                int maxX = 0, maxY = 0;
+                foreach (OverlayMetricItem m in activeItems)
+                {
+                    minX = Math.Min(minX, m.GridX);
+                    minY = Math.Min(minY, m.GridY);
+                    maxX = Math.Max(maxX, m.GridX + LogicalToDeviceUnits(180));
+                    maxY = Math.Max(maxY, m.GridY + itemH);
+                }
+                int hx = Math.Max(pad, minX - pad / 2);
+                int hy = Math.Max(pad, minY - pad / 2);
+                int hw = Math.Min(bounds.Width - hx - pad, Math.Max(120, (maxX - minX) + pad));
+                int hh = Math.Min(bounds.Height - hy - pad, Math.Max(30, (maxY - minY) + pad));
+                hudRect = new Rectangle(hx, hy, hw, hh);
+            }
+            else if (_config.Layout == OverlayLayout.HorizontalBar)
+            {
+                int itemW = LogicalToDeviceUnits(140);
+                int hw = (activeItems.Count * (itemW + pad)) + pad;
+                hudRect = new Rectangle(pad, pad, Math.Min(bounds.Width - (pad * 2), hw), itemH + (pad * 2));
+            }
+            else if (_config.Layout == OverlayLayout.CompactGrid)
+            {
+                int itemW = LogicalToDeviceUnits(160);
+                int rows = (int)Math.Ceiling(activeItems.Count / 2.0);
+                hudRect = new Rectangle(pad, pad, (itemW * 2) + (pad * 3), (rows * (itemH + 4)) + (pad * 2));
+            }
+            else // VerticalList
+            {
+                int hw = LogicalToDeviceUnits(240);
+                int hh = (activeItems.Count * (itemH + 4)) + (pad * 2);
+                hudRect = new Rectangle(pad, pad, hw, Math.Min(bounds.Height - (pad * 2), hh));
+            }
 
             int alpha = (int)(_config.BackgroundOpacity / 100f * 255);
             Color hudBg = Color.FromArgb(alpha, _config.BackgroundColor);
@@ -566,28 +798,72 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
                 }
             }
 
-            // Simulated values
-            string[] mockValues = { "62 °C", "48 %", "85 W", "5200 MHz", "68 °C", "72 %" };
+            // Magnetic alignment guidelines during drag
+            if (_isDragging && _draggedItem != null)
+            {
+                using Pen guidePen = new(Color.FromArgb(160, theme.AccentColor), 1f) { DashStyle = DashStyle.Dash };
+                g.DrawLine(guidePen, 0, _draggedItem.GridY, bounds.Width, _draggedItem.GridY);
+                g.DrawLine(guidePen, _draggedItem.GridX, 0, _draggedItem.GridX, bounds.Height);
+            }
+
             Font lblFont = FluentStyle.CreateUiFont(FontStyle.Regular, _config.FontSize);
             Font valFont = _config.UseMonospaceNumbers
                 ? FluentStyle.CreateMonoFont(_config.FontSize, FontStyle.Bold)
                 : FluentStyle.CreateUiFont(FontStyle.Bold, _config.FontSize);
 
-            using SolidBrush lblBrush = new(_config.LabelColor);
-            using SolidBrush valBrush = new(_config.ValueColor);
             using SolidBrush shadowBrush = new(Color.FromArgb(180, Color.Black));
 
-            int rowY = hudRect.Y + LogicalToDeviceUnits(8);
             for (int i = 0; i < activeItems.Count; i++)
             {
-                if (rowY + itemH > hudRect.Bottom)
+                OverlayMetricItem item = activeItems[i];
+                string val = GetMockValue(item);
+
+                Rectangle itemRect;
+                if (_config.Layout == OverlayLayout.FreeCanvas)
+                {
+                    itemRect = new Rectangle(item.GridX, item.GridY, LogicalToDeviceUnits(180), itemH);
+                }
+                else if (_config.Layout == OverlayLayout.HorizontalBar)
+                {
+                    int itemW = LogicalToDeviceUnits(140);
+                    itemRect = new Rectangle(pad + (i * (itemW + pad)), pad + pad / 2, itemW, itemH);
+                }
+                else if (_config.Layout == OverlayLayout.CompactGrid)
+                {
+                    int col = i % 2;
+                    int row = i / 2;
+                    int itemW = LogicalToDeviceUnits(160);
+                    itemRect = new Rectangle(pad + (col * (itemW + pad)), pad + (row * (itemH + 4)), itemW, itemH);
+                }
+                else
+                {
+                    itemRect = new Rectangle(pad + 4, pad + (i * (itemH + 4)), hudRect.Width - 8, itemH);
+                }
+
+                if (itemRect.Bottom > bounds.Bottom)
                     break;
 
-                OverlayMetricItem item = activeItems[i];
-                string val = i < mockValues.Length ? mockValues[i] : "--";
+                Color lblColor = item.CustomLabelColor ?? _config.LabelColor;
+                Color valColor = item.CustomValueColor ?? _config.ValueColor;
+                if (item.UseDynamicColor && _config.ColorBySeverity)
+                {
+                    if (item.Id.Contains("temp"))
+                        valColor = _config.WarmColor;
+                    else if (item.Id.Contains("load"))
+                        valColor = _config.CoolColor;
+                }
 
-                Rectangle lr = new(hudRect.X + LogicalToDeviceUnits(10), rowY, hudRect.Width / 2, itemH);
-                Rectangle vr = new(hudRect.X + (hudRect.Width / 2), rowY, (hudRect.Width / 2) - LogicalToDeviceUnits(10), itemH);
+                using SolidBrush lblBrush = new(lblColor);
+                using SolidBrush valBrush = new(valColor);
+
+                SizeF lblSize = g.MeasureString(item.DisplayName, lblFont, PointF.Empty, FluentStyle.FormatNearCenter);
+                SizeF valSize = g.MeasureString(val, valFont, PointF.Empty, FluentStyle.FormatFarCenter);
+
+                int lw = (int)Math.Ceiling(lblSize.Width);
+                int vw = (int)Math.Ceiling(valSize.Width);
+
+                Rectangle lr = new(itemRect.X, itemRect.Y, Math.Min(itemRect.Width, lw + 4), itemRect.Height);
+                Rectangle vr = new(itemRect.Right - vw - 2, itemRect.Y, vw + 2, itemRect.Height);
 
                 if (_config.ShowTextShadow)
                 {
@@ -600,21 +876,51 @@ public sealed class OverlayEditorPanel : UserControl, IThemedControl
                 g.DrawString(item.DisplayName, lblFont, lblBrush, lr, FluentStyle.FormatNearCenter);
                 g.DrawString(val, valFont, valBrush, vr, FluentStyle.FormatFarCenter);
 
-                if (_config.ShowProgressBars)
+                if (_config.ShowProgressBars && item.ShowBar)
                 {
                     int barH = Math.Max(2, (int)(_config.FontSize * 0.2f));
                     int barY = lr.Bottom - barH;
-                    using SolidBrush barBg = new(Color.FromArgb(50, _config.LabelColor));
-                    using SolidBrush barFill = new(_config.ValueColor);
-                    g.FillRectangle(barBg, lr.X, barY, hudRect.Width - LogicalToDeviceUnits(20), barH);
-                    g.FillRectangle(barFill, lr.X, barY, (hudRect.Width - LogicalToDeviceUnits(20)) * 0.55f, barH);
+                    using SolidBrush barBg = new(Color.FromArgb(50, lblColor));
+                    using SolidBrush barFill = new(valColor);
+                    g.FillRectangle(barBg, itemRect.X, barY, itemRect.Width, barH);
+                    g.FillRectangle(barFill, itemRect.X, barY, itemRect.Width * 0.60f, barH);
                 }
 
-                rowY += itemH;
+                if (_draggedItem == item)
+                {
+                    using Pen selPen = new(theme.AccentColor, 1.5f);
+                    g.DrawRectangle(selPen, itemRect.X - 2, itemRect.Y - 2, itemRect.Width + 4, itemRect.Height + 4);
+                }
             }
 
             lblFont.Dispose();
             valFont.Dispose();
+        }
+
+        private static string GetMockValue(OverlayMetricItem item)
+        {
+            return item.Id switch
+            {
+                "cpu_temp" => "62 °C",
+                "cpu_load" => "48 %",
+                "cpu_power" => "85 W",
+                "cpu_clock" => "5200 MHz",
+                "gpu_temp" => "65 °C",
+                "gpu_load" => "72 %",
+                "gpu_power" => "175 W",
+                "gpu_clock" => "1850 MHz",
+                "vram_used" => "2,1 GB",
+                "ram_used" => item.DisplayFormat switch
+                {
+                    1 => "9,4 GB",
+                    2 => "9,4 / 15,7 GB",
+                    _ => "9,4 GB (60%)"
+                },
+                "fan_rpm" => "1650 RPM",
+                "net_speed" => "D:12 M/s U:2 M/s",
+                "system_time" => DateTime.Now.ToString("HH:mm:ss"),
+                _ => "100"
+            };
         }
     }
 }

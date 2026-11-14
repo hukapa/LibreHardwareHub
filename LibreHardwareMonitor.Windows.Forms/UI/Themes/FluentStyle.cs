@@ -59,10 +59,10 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
         public static Font MonoFontKpi => _monoFontKpi ??= CreateMonoFont(11.5f, FontStyle.Bold);
 
         public static StringFormat FormatEllipsisNoWrap => _formatEllipsisNoWrap ??= new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-        public static StringFormat FormatCenter => _formatCenter ??= new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        public static StringFormat FormatFar => _formatFar ??= new StringFormat { Alignment = StringAlignment.Far };
-        public static StringFormat FormatNearCenter => _formatNearCenter ??= new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
-        public static StringFormat FormatFarCenter => _formatFarCenter ??= new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center };
+        public static StringFormat FormatCenter => _formatCenter ??= new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap, Trimming = StringTrimming.None };
+        public static StringFormat FormatFar => _formatFar ??= new StringFormat { Alignment = StringAlignment.Far, FormatFlags = StringFormatFlags.NoWrap, Trimming = StringTrimming.None };
+        public static StringFormat FormatNearCenter => _formatNearCenter ??= new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap, Trimming = StringTrimming.None };
+        public static StringFormat FormatFarCenter => _formatFarCenter ??= new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap, Trimming = StringTrimming.None };
 
         /// <summary>The user's Windows accent color, read once from the DWM registry key.</summary>
         public static Color SystemAccentColor => _systemAccent ??= ReadSystemAccent();
@@ -136,6 +136,9 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
         public static GraphicsPath RoundedRectangle(RectangleF bounds, float radius)
         {
             GraphicsPath path = new();
+            if (bounds.Width <= 0f || bounds.Height <= 0f)
+                return path;
+
             float diameter = Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height));
             if (diameter <= 0.5f)
             {

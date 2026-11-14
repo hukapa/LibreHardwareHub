@@ -27,14 +27,20 @@ public class UpdateVisitor : IVisitor
 
     public void VisitHardware(IHardware hardware)
     {
+        if (hardware == null)
+            return;
+
         if (ShouldUpdate(hardware, _currentTickMs))
         {
             hardware.Update();
             _lastUpdateTicks[hardware] = _currentTickMs;
         }
 
-        foreach (IHardware subHardware in hardware.SubHardware)
-            subHardware.Accept(this);
+        if (hardware.SubHardware != null)
+        {
+            foreach (IHardware subHardware in hardware.SubHardware)
+                subHardware.Accept(this);
+        }
     }
 
     private bool ShouldUpdate(IHardware hardware, long now)

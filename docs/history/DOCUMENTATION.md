@@ -370,7 +370,7 @@
     - `MemoryBentoCard.cs`: Titulo da seccao alterado para `"MEMÓRIA FÍSICA"`, prevenindo colisao de texto. Atualizada a assinatura para receber a lista completa de hardwares, pesquisando sensores de memoria virtual no objeto correspondente (`Virtual Memory`) e exibindo a ocupacao real em GB (ex: `14,2 GB`) em vez de `-- GB`.
     - `CpuBentoCard.cs`: Folga inferior de 28px na matriz de nucleos para impedir o encosto da ultima linha (`C15..C19`) a borda do cartao.
   - **Cartoes Bento Interativos e Expansiveis (`IsExpanded`):**
-    - `BentoCardBase.cs`: Adicionadas as propriedades `IsExpanded`, evento `ExpansionChanged`, cursor `Hand`, realce suave da borda no hover (`1.5f`) sem piscar o fundo, indicacao discreta `"Clique para recolher ▲ / mais detalhes ▼"` e metodo `DrawExpandedSensorList` para desenho de grelha em 2 colunas com efeito zebrado.
+    - `BentoCardBase.cs`: Adicionadas as propriedades `IsExpanded`, evento `ExpansionChanged`, cursor `Hand`, realce suave da borda no hover (`1.5f`) sem piscar o fundo, indicacao discreta `"Clique para recolher [^] / mais detalhes [v]"` e metodo `DrawExpandedSensorList` para desenho de grelha em 2 colunas com efeito zebrado.
     - `CpuBentoCard.cs`: Expandivel para apresentar temperaturas individuais de todos os nucleos, frequencias por nucleo, VIDs e potencias por plano.
     - `GpuBentoCard.cs`: Expandivel para apresentar HotSpot, memoria de video, frequencias de shader/video, motores D3D (3D, Copy, Video Decode), controlo de ventilador e VRAM livre/total.
     - `MemoryBentoCard.cs`: Expandivel para detalhe completo de memoria fisica e virtual, cargas e temporizacoes SPD.
@@ -381,3 +381,39 @@
     - Compilacao com `dotnet build` concluida com **0 Warnings e 0 Errors**.
     - Binario Single-File compilado com sucesso em `bin\Publish-Release\`.
     - Todos os ficheiros `.cs` e executavel sincronizados na pasta `C:\Users\tiago\Desktop\yea\LHH`.
+
+---
+
+## 21. Fase 21: Estudio de HUD Interativo com Drag-and-Drop, Renderizacao Zero-Allocation e Blindagem GDI+
+
+* **Objetivo:** Implementar o estudio de HUD interativo com posicionamento livre de sensores por arrasto do rato (`FreeCanvas`), personalizacao de cores por sensor, modo de cores termicas dinamicas, formatos selecionaveis de memoria RAM, eliminacao definitiva de quebras de linha em textos de telemetria, renderizacao sem alocacoes GC por tick no `OverlayForm.cs` e blindagem completa contra excecoes GDI+ (`Parameter is not valid` e `NullReferenceException`).
+* **Acoes Efetuadas:**
+  - **Blindagem GDI+ e Prevencao de Erros de Execucao:**
+    - `FluentStyle.RoundedRectangle`: Adicionada protecao explicita contra dimensoes nulas ou negativas (`bounds.Width <= 0 || bounds.Height <= 0`), eliminando a excecao nativa `Parameter is not valid` do GDI+ que causava o "X vermelho" nos cartoes WinForms.
+    - `BentoCardBase.cs`: Adicionada guarda em `OnPaint` (`Width <= 1 || Height <= 1`) e substituidos simbolos unicode remanescentes por `[^]` e `[v]`.
+    - `FluentStyle.cs`: Configuradas as flags `FormatFlags = StringFormatFlags.NoWrap` e `Trimming = StringTrimming.None` em todos os formatos centrais e alinhados (`FormatCenter`, `FormatFar`, `FormatNearCenter`, `FormatFarCenter`), impedindo que textos longos sofram quebra de linha ou colisao vertical.
+    - `UpdateVisitor.cs`: Verificacao defensiva de `hardware.SubHardware != null` e `hardware != null` antes da iteracao, prevenindo `NullReferenceException`.
+    - `MainForm.cs`: Transferida a invalidacao de graficos (`_plotPanel.InvalidatePlot()`) para `BackgroundUpdater_RunWorkerCompleted`, garantindo execucao estrita na thread de UI e prevenindo operacoes cross-thread.
+    - `Program.cs`: Mecanismo robusto `LogCrash` com escrita concorrente em `BaseDirectory\crash.log` e `%LOCALAPPDATA%\LibreHardwareHub\crash.log`.
+  - **Estudio HUD e Posicionamento Drag-and-Drop (`FreeCanvas`):**
+    - `OverlayConfig.cs`:
+      - Introduzido o novo modo de layout `OverlayLayout.FreeCanvas`.
+      - Expandida a classe `OverlayMetricItem` com `CustomLabelColor`, `CustomValueColor`, `UseDynamicColor`, `ShowBar`, `GridX`, `GridY` e `DisplayFormat`.
+      - Adicionado o assistente `ApplyAutoLayout(OverlayLayout layout)` para recalcular coordenadas em grelha, horizontal ou vertical.
+      - Configuraveis os limiares termicos (`TempWarnC`, `TempCritC`, `CoolColor`, `WarmColor`, `HotColor`).
+      - Serializacao e desserializacao completas com compatibilidade retroativa em `Save()` e `Load()`.
+    - `OverlayEditorPanel.cs`:
+      - `PreviewCanvas`: Suporte completo a arrasto interativo com o rato (`MouseDown`, `MouseMove`, `MouseUp`), grelha magnetica com passo de 8px e linhas-guia tracejadas de alinhamento em tempo real.
+      - Barra de alinhamento rapido no topo do cartao de preview: `[Empilhar na Vertical]`, `[Fila Horizontal]` e `[Grelha 2 Colunas]`.
+      - Linhas de configuracao de metricas em `RebuildMetricsList`: seletor de visibilidade, edicao de titulo personalizado, seletor de cor do rotulo, seletor de cor do valor, alternador dinamico de cor termica, seletor de formato de RAM cíclico (`[GB + %]`, `[So GB]`, `[Usado / Total]`), alternador de barra de progresso e ordenacao `[^]` / `[v]`.
+      - Valores simulados contextualizados no preview por tipo de sensor, corrigindo a exibicao de "Hora" para relogio real `HH:mm:ss`.
+  - **Renderizacao Zero-Allocation no `OverlayForm.cs`:**
+    - Implementado cache persistente de bitmap 32bpp (`_cachedBitmap`) e contexto grafico (`_cachedGraphics`), realocados apenas quando as dimensoes uteis mudam e limpos a cada ciclo com `Clear(Color.Transparent)`.
+    - Pinceis e canetas GDI+ reutilizaveis (`_paintBrush`, `_paintPen`), zerando a pressao no Garbage Collector durante jogos.
+    - Medicao dimensional precisa com `probeG.MeasureString` para ajuste dinamico das dimensoes da janela layered a geometria exata do texto sem cortes.
+    - Suporte a `FreeCanvas`, cores customizadas por item e modos de cores por severidade termica configuraveis.
+  - **Validacao e Sincronizacao de Ficheiros:**
+    - Compilacao da solucao com **0 Warnings e 0 Errors**.
+    - Executavel Single-File gerado em `bin\Publish-Release\LibreHardwareMonitor.Windows.Forms.exe`.
+    - Todos os ficheiros modificados e executavel sincronizados na pasta `C:\Users\tiago\Desktop\yea\LHH`.
+    - Conformidade integral com a regra de Zero Emojis.

@@ -26,7 +26,8 @@ public enum OverlayLayout
 {
     VerticalList,
     HorizontalBar,
-    CompactGrid
+    CompactGrid,
+    FreeCanvas
 }
 
 public enum OverlayThemePreset
@@ -57,6 +58,14 @@ public sealed class OverlayMetricItem
     public int Order { get; set; }
     public bool IsCustom { get; }
 
+    public Color? CustomLabelColor { get; set; }
+    public Color? CustomValueColor { get; set; }
+    public bool UseDynamicColor { get; set; } = true;
+    public bool ShowBar { get; set; } = true;
+    public int GridX { get; set; } = 12;
+    public int GridY { get; set; } = 10;
+    public int DisplayFormat { get; set; } = 0; // 0: "9,4 GB (60%)", 1: "9,4 GB", 2: "9,4 / 15,7 GB"
+
     public string DisplayName => string.IsNullOrWhiteSpace(CustomTitle) ? DefaultTitle : CustomTitle;
 }
 
@@ -84,6 +93,12 @@ public sealed class OverlayConfig
     public Color LabelColor { get; set; } = Color.FromArgb(175, 180, 195);
     public Color ValueColor { get; set; } = Color.FromArgb(245, 245, 250);
 
+    public int TempWarnC { get; set; } = 70;
+    public int TempCritC { get; set; } = 85;
+    public Color CoolColor { get; set; } = Color.FromArgb(80, 220, 110);
+    public Color WarmColor { get; set; } = Color.FromArgb(255, 190, 40);
+    public Color HotColor { get; set; } = Color.FromArgb(255, 75, 75);
+
     public bool ColorBySeverity { get; set; } = true;
     public bool ShowProgressBars { get; set; } = true;
     public bool ShowTextShadow { get; set; } = true;
@@ -94,6 +109,48 @@ public sealed class OverlayConfig
     public OverlayConfig()
     {
         InitializeDefaultMetrics();
+    }
+
+    public void ApplyAutoLayout(OverlayLayout layout)
+    {
+        Layout = layout;
+        if (layout == OverlayLayout.FreeCanvas)
+            return;
+
+        var active = MetricItems.Where(m => m.Enabled).OrderBy(m => m.Order).ToList();
+        int pad = 12;
+        int rowH = Math.Max(22, (int)(FontSize * 1.8f) + 6);
+        int itemW = (int)(FontSize * 15f);
+
+        switch (layout)
+        {
+            case OverlayLayout.VerticalList:
+                for (int i = 0; i < active.Count; i++)
+                {
+                    active[i].GridX = pad;
+                    active[i].GridY = pad + (i * rowH);
+                }
+                break;
+
+            case OverlayLayout.HorizontalBar:
+                for (int i = 0; i < active.Count; i++)
+                {
+                    active[i].GridX = pad + (i * (itemW + pad));
+                    active[i].GridY = pad;
+                }
+                break;
+
+            case OverlayLayout.CompactGrid:
+                int cols = 2;
+                for (int i = 0; i < active.Count; i++)
+                {
+                    int c = i % cols;
+                    int r = i / cols;
+                    active[i].GridX = pad + (c * (itemW + pad));
+                    active[i].GridY = pad + (r * rowH);
+                }
+                break;
+        }
     }
 
     private void InitializeDefaultMetrics()
@@ -113,6 +170,8 @@ public sealed class OverlayConfig
         MetricItems.Add(new OverlayMetricItem("fan_rpm", "Ventoinha", false, order++));
         MetricItems.Add(new OverlayMetricItem("net_speed", "Rede D/U", false, order++));
         MetricItems.Add(new OverlayMetricItem("system_time", "Hora", true, order++));
+
+        ApplyAutoLayout(OverlayLayout.VerticalList);
     }
 
     public void ApplyPreset(OverlayThemePreset preset)
@@ -217,6 +276,12 @@ public sealed class OverlayConfig
         LabelColor = Color.FromArgb(settings.GetValue(Prefix + "label_color", LabelColor.ToArgb()));
         ValueColor = Color.FromArgb(settings.GetValue(Prefix + "value_color", ValueColor.ToArgb()));
 
+        TempWarnC = settings.GetValue(Prefix + "temp_warn", TempWarnC);
+        TempCritC = settings.GetValue(Prefix + "temp_crit", TempCritC);
+        CoolColor = Color.FromArgb(settings.GetValue(Prefix + "cool_color", CoolColor.ToArgb()));
+        WarmColor = Color.FromArgb(settings.GetValue(Prefix + "warm_color", WarmColor.ToArgb()));
+        HotColor = Color.FromArgb(settings.GetValue(Prefix + "hot_color", HotColor.ToArgb()));
+
         ColorBySeverity = settings.GetValue(Prefix + "severity", ColorBySeverity);
         ShowProgressBars = settings.GetValue(Prefix + "progress_bars", ShowProgressBars);
         ShowTextShadow = settings.GetValue(Prefix + "text_shadow", ShowTextShadow);
@@ -235,14 +300,39 @@ public sealed class OverlayConfig
                     bool en = parts[1] == "1";
                     string custom = parts[2];
                     OverlayMetricItem m = MetricItems.FirstOrDefault(x => x.Id == id);
+                    if (m == null && parts.Length >= 4 && parts[3] == "custom")
+                    {
+                        m = new OverlayMetricItem(id, custom, en, MetricItems.Count, true);
+                        MetricItems.Add(m);
+                    }
+
                     if (m != null)
                     {
                         m.Enabled = en;
                         m.CustomTitle = custom;
-                    }
-                    else if (parts.Length >= 4 && parts[3] == "custom")
-                    {
-                        MetricItems.Add(new OverlayMetricItem(id, custom, en, MetricItems.Count, true));
+
+                        if (parts.Length >= 6)
+                        {
+                            if (int.TryParse(parts[4], out int gx)) m.GridX = gx;
+                            if (int.TryParse(parts[5], out int gy)) m.GridY = gy;
+                        }
+
+                        if (parts.Length >= 8)
+                        {
+                            if (int.TryParse(parts[6], out int clc)) m.CustomLabelColor = Color.FromArgb(clc);
+                            if (int.TryParse(parts[7], out int cvc)) m.CustomValueColor = Color.FromArgb(cvc);
+                        }
+
+                        if (parts.Length >= 10)
+                        {
+                            m.UseDynamicColor = parts[8] != "0";
+                            m.ShowBar = parts[9] != "0";
+                        }
+
+                        if (parts.Length >= 11 && int.TryParse(parts[10], out int df))
+                        {
+                            m.DisplayFormat = df;
+                        }
                     }
                 }
             }
@@ -276,12 +366,19 @@ public sealed class OverlayConfig
         settings.SetValue(Prefix + "label_color", LabelColor.ToArgb());
         settings.SetValue(Prefix + "value_color", ValueColor.ToArgb());
 
+        settings.SetValue(Prefix + "temp_warn", TempWarnC);
+        settings.SetValue(Prefix + "temp_crit", TempCritC);
+        settings.SetValue(Prefix + "cool_color", CoolColor.ToArgb());
+        settings.SetValue(Prefix + "warm_color", WarmColor.ToArgb());
+        settings.SetValue(Prefix + "hot_color", HotColor.ToArgb());
+
         settings.SetValue(Prefix + "severity", ColorBySeverity);
         settings.SetValue(Prefix + "progress_bars", ShowProgressBars);
         settings.SetValue(Prefix + "text_shadow", ShowTextShadow);
         settings.SetValue(Prefix + "monospace", UseMonospaceNumbers);
 
-        string serialized = string.Join(";", MetricItems.Select(m => $"{m.Id}|{(m.Enabled ? "1" : "0")}|{m.CustomTitle}|{(m.IsCustom ? "custom" : "std")}"));
+        string serialized = string.Join(";", MetricItems.Select(m =>
+            $"{m.Id}|{(m.Enabled ? "1" : "0")}|{m.CustomTitle}|{(m.IsCustom ? "custom" : "std")}|{m.GridX}|{m.GridY}|{(m.CustomLabelColor.HasValue ? m.CustomLabelColor.Value.ToArgb().ToString() : "")}|{(m.CustomValueColor.HasValue ? m.CustomValueColor.Value.ToArgb().ToString() : "")}|{(m.UseDynamicColor ? "1" : "0")}|{(m.ShowBar ? "1" : "0")}|{m.DisplayFormat}"));
         settings.SetValue(Prefix + "metrics", serialized);
     }
 }

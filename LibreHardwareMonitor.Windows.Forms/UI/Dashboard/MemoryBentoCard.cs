@@ -153,7 +153,7 @@ public sealed class MemoryBentoCard : BentoCardBase
 
         Rectangle barTextRect = new(pad, topY, availWidth, LogicalToDeviceUnits(14));
         TextRenderer.DrawText(g, barText, FluentStyle.MonoFont, barTextRect, theme.ForegroundColor,
-            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
 
         int barY = topY + LogicalToDeviceUnits(18);
         int barH = LogicalToDeviceUnits(8);

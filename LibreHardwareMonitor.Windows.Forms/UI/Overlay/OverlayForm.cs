@@ -101,6 +101,11 @@ public sealed class OverlayForm : Form
     private Font _labelFont;
     private Font _valueFont;
 
+    private Bitmap _cachedBitmap;
+    private Graphics _cachedGraphics;
+    private readonly SolidBrush _paintBrush = new(Color.White);
+    private readonly Pen _paintPen = new(Color.White, 1f);
+
     public OverlayForm(OverlayConfig config)
     {
         _config = config;
@@ -261,11 +266,25 @@ public sealed class OverlayForm : Form
             else if (hw.HardwareType == HardwareType.Memory)
             {
                 ISensor used = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Used"));
+                ISensor avail = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Available"));
                 ISensor load = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Load && s.Name.Contains("Memory"));
                 if (used != null)
                 {
                     float? usedGb = BentoCardBase.ToGigabytes(used.Value);
-                    SetMetric("ram_used", $"{usedGb.GetValueOrDefault():F1} GB ({load?.Value.GetValueOrDefault():F0}%)", load?.Value / 100f, null);
+                    float? availGb = BentoCardBase.ToGigabytes(avail?.Value);
+                    float totalGb = usedGb.GetValueOrDefault() + availGb.GetValueOrDefault();
+                    float pct = load?.Value ?? (totalGb > 0.1f ? (usedGb.GetValueOrDefault() / totalGb * 100f) : 0f);
+
+                    var ramItem = _config.MetricItems.FirstOrDefault(m => m.Id == "ram_used");
+                    int fmt = ramItem?.DisplayFormat ?? 0;
+                    string ramText = fmt switch
+                    {
+                        1 => $"{usedGb.GetValueOrDefault():F1} GB",
+                        2 when totalGb > 0.1f => $"{usedGb.GetValueOrDefault():F1} / {totalGb:F1} GB",
+                        _ => $"{usedGb.GetValueOrDefault():F1} GB ({pct:F0}%)"
+                    };
+
+                    SetMetric("ram_used", ramText, pct / 100f, SeverityForLoad(pct));
                 }
             }
             else if (hw.HardwareType == HardwareType.Network)
@@ -334,11 +353,11 @@ public sealed class OverlayForm : Form
     {
         if (!_config.ColorBySeverity || !temp.HasValue)
             return null;
-        if (temp.Value >= 85f)
-            return Color.FromArgb(255, 75, 75);
-        if (temp.Value >= 70f)
-            return Color.FromArgb(255, 190, 40);
-        return Color.FromArgb(80, 220, 110);
+        if (temp.Value >= _config.TempCritC)
+            return _config.HotColor;
+        if (temp.Value >= _config.TempWarnC)
+            return _config.WarmColor;
+        return _config.CoolColor;
     }
 
     private Color? SeverityForLoad(float? load)
@@ -346,9 +365,9 @@ public sealed class OverlayForm : Form
         if (!_config.ColorBySeverity || !load.HasValue)
             return null;
         if (load.Value >= 90f)
-            return Color.FromArgb(255, 75, 75);
+            return _config.HotColor;
         if (load.Value >= 70f)
-            return Color.FromArgb(255, 190, 40);
+            return _config.WarmColor;
         return null;
     }
 
@@ -365,27 +384,72 @@ public sealed class OverlayForm : Form
         }
 
         int padding = _config.Compactness switch { 0 => 4, 2 => 10, _ => 6 };
-        int itemHeight = (int)(_config.FontSize * 1.8f) + padding;
-        int estimatedWidth = (int)(_config.FontSize * 15f);
+        int itemHeight = Math.Max(18, (int)(_config.FontSize * 1.8f) + padding);
+
+        // Pre-measure all active items using offscreen graphics for zero wrapping and accurate bounds
+        List<(OverlayMetricItem Item, string ValueText, float? Ratio, Color? Severity, int Width, int Height)> measured = new(activeItems.Count);
+        using (Bitmap probeBmp = new(1, 1))
+        using (Graphics probeG = Graphics.FromImage(probeBmp))
+        {
+            foreach (OverlayMetricItem item in activeItems)
+            {
+                _telemetry.TryGetValue(item.Id, out var data);
+                string valText = string.IsNullOrEmpty(data.Value) ? "--" : data.Value;
+                SizeF lblSize = probeG.MeasureString(item.DisplayName, _labelFont, PointF.Empty, FluentStyle.FormatNearCenter);
+                SizeF valSize = probeG.MeasureString(valText, _valueFont, PointF.Empty, FluentStyle.FormatFarCenter);
+                int reqW = (int)Math.Ceiling(lblSize.Width + 14 + valSize.Width);
+                measured.Add((item, valText, data.Ratio, data.SeverityColor, Math.Max(80, reqW), itemHeight));
+            }
+        }
 
         int totalWidth, totalHeight;
 
-        if (_config.Layout == OverlayLayout.HorizontalBar)
+        if (_config.Layout == OverlayLayout.FreeCanvas)
         {
-            totalWidth = (activeItems.Count * (estimatedWidth + padding)) + (padding * 2);
+            int maxX = 0;
+            int maxY = 0;
+            for (int i = 0; i < measured.Count; i++)
+            {
+                var m = measured[i];
+                int right = m.Item.GridX + m.Width;
+                int bottom = m.Item.GridY + m.Height;
+                if (right > maxX) maxX = right;
+                if (bottom > maxY) maxY = bottom;
+            }
+            totalWidth = Math.Max(100, maxX + padding);
+            totalHeight = Math.Max(24, maxY + padding);
+        }
+        else if (_config.Layout == OverlayLayout.HorizontalBar)
+        {
+            int sumWidths = 0;
+            for (int i = 0; i < measured.Count; i++)
+                sumWidths += measured[i].Width;
+
+            totalWidth = sumWidths + (padding * (measured.Count + 1));
             totalHeight = itemHeight + (padding * 2);
         }
         else if (_config.Layout == OverlayLayout.CompactGrid)
         {
-            int cols = 2;
-            int rows = (int)Math.Ceiling(activeItems.Count / (double)cols);
-            totalWidth = (cols * estimatedWidth) + (padding * 3);
+            int col1W = 0;
+            int col2W = 0;
+            for (int i = 0; i < measured.Count; i++)
+            {
+                if (i % 2 == 0) col1W = Math.Max(col1W, measured[i].Width);
+                else col2W = Math.Max(col2W, measured[i].Width);
+            }
+            int cols = measured.Count > 1 ? 2 : 1;
+            int rows = (int)Math.Ceiling(measured.Count / (double)cols);
+            totalWidth = (cols == 2 ? col1W + col2W : col1W) + (padding * (cols + 1));
             totalHeight = (rows * itemHeight) + (padding * 2);
         }
-        else
+        else // VerticalList
         {
-            totalWidth = estimatedWidth + (padding * 2);
-            totalHeight = (activeItems.Count * itemHeight) + (padding * 2);
+            int maxItemW = 0;
+            for (int i = 0; i < measured.Count; i++)
+                maxItemW = Math.Max(maxItemW, measured[i].Width);
+
+            totalWidth = maxItemW + (padding * 2);
+            totalHeight = (measured.Count * itemHeight) + (padding * 2);
         }
 
         int w = Math.Max(80, totalWidth);
@@ -397,77 +461,106 @@ public sealed class OverlayForm : Form
             UpdatePosition();
         }
 
-        using Bitmap bmp = new(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
-        using (Graphics g = Graphics.FromImage(bmp))
+        // Cache persistent bitmap to eliminate GC allocation pressure
+        if (_cachedBitmap == null || _cachedBitmap.Width != w || _cachedBitmap.Height != h)
         {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            _cachedGraphics?.Dispose();
+            _cachedBitmap?.Dispose();
+            _cachedBitmap = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            _cachedGraphics = Graphics.FromImage(_cachedBitmap);
+            _cachedGraphics.SmoothingMode = SmoothingMode.AntiAlias;
+            _cachedGraphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        }
 
-            int alpha = (int)(_config.BackgroundOpacity / 100f * 255);
-            Color bg = Color.FromArgb(alpha, _config.BackgroundColor);
+        _cachedGraphics.Clear(Color.Transparent);
 
-            RectangleF boundsF = new(0, 0, w - 1, h - 1);
-            if (_config.CornerRadius > 0)
+        int alpha = (int)(_config.BackgroundOpacity / 100f * 255);
+        Color bg = Color.FromArgb(alpha, _config.BackgroundColor);
+
+        RectangleF boundsF = new(0, 0, w - 1, h - 1);
+        if (_config.CornerRadius > 0)
+        {
+            using GraphicsPath path = FluentStyle.RoundedRectangle(boundsF, _config.CornerRadius);
+            if (alpha > 0)
             {
-                using GraphicsPath path = FluentStyle.RoundedRectangle(boundsF, _config.CornerRadius);
-                if (alpha > 0)
-                {
-                    using SolidBrush bgBrush = new(bg);
-                    g.FillPath(bgBrush, path);
-                }
-
-                if (_config.BorderThickness > 0 && _config.BorderColor != Color.Transparent)
-                {
-                    using Pen borderPen = new(_config.BorderColor, _config.BorderThickness);
-                    g.DrawPath(borderPen, path);
-                }
-            }
-            else
-            {
-                if (alpha > 0)
-                {
-                    using SolidBrush bgBrush = new(bg);
-                    g.FillRectangle(bgBrush, boundsF);
-                }
-
-                if (_config.BorderThickness > 0 && _config.BorderColor != Color.Transparent)
-                {
-                    using Pen borderPen = new(_config.BorderColor, _config.BorderThickness);
-                    g.DrawRectangle(borderPen, 0, 0, w - 1, h - 1);
-                }
+                _paintBrush.Color = bg;
+                _cachedGraphics.FillPath(_paintBrush, path);
             }
 
-            for (int i = 0; i < activeItems.Count; i++)
+            if (_config.BorderThickness > 0 && _config.BorderColor != Color.Transparent)
             {
-                OverlayMetricItem item = activeItems[i];
-                _telemetry.TryGetValue(item.Id, out var data);
-                string valText = string.IsNullOrEmpty(data.Value) ? "--" : data.Value;
+                _paintPen.Color = _config.BorderColor;
+                _paintPen.Width = _config.BorderThickness;
+                _cachedGraphics.DrawPath(_paintPen, path);
+            }
+        }
+        else
+        {
+            if (alpha > 0)
+            {
+                _paintBrush.Color = bg;
+                _cachedGraphics.FillRectangle(_paintBrush, boundsF);
+            }
 
-                Rectangle itemRect;
-                if (_config.Layout == OverlayLayout.HorizontalBar)
-                {
-                    int itemW = (w - (padding * (activeItems.Count + 1))) / activeItems.Count;
-                    itemRect = new Rectangle(padding + (i * (itemW + padding)), padding, itemW, itemHeight);
-                }
-                else if (_config.Layout == OverlayLayout.CompactGrid)
-                {
-                    int col = i % 2;
-                    int row = i / 2;
-                    int itemW = (w - (padding * 3)) / 2;
-                    itemRect = new Rectangle(padding + (col * (itemW + padding)), padding + (row * itemHeight), itemW, itemHeight);
-                }
-                else
-                {
-                    itemRect = new Rectangle(padding, padding + (i * itemHeight), w - (padding * 2), itemHeight);
-                }
+            if (_config.BorderThickness > 0 && _config.BorderColor != Color.Transparent)
+            {
+                _paintPen.Color = _config.BorderColor;
+                _paintPen.Width = _config.BorderThickness;
+                _cachedGraphics.DrawRectangle(_paintPen, 0, 0, w - 1, h - 1);
+            }
+        }
 
-                DrawMetricRow(g, item.DisplayName, valText, data.Ratio, data.SeverityColor, itemRect);
+        // Render each metric row with custom colors and zero-allocation brushes
+        if (_config.Layout == OverlayLayout.FreeCanvas)
+        {
+            for (int i = 0; i < measured.Count; i++)
+            {
+                var m = measured[i];
+                Rectangle itemRect = new(m.Item.GridX, m.Item.GridY, m.Width, m.Height);
+                DrawMetricRow(_cachedGraphics, m.Item, m.ValueText, m.Ratio, m.Severity, itemRect);
+            }
+        }
+        else if (_config.Layout == OverlayLayout.HorizontalBar)
+        {
+            int curX = padding;
+            for (int i = 0; i < measured.Count; i++)
+            {
+                var m = measured[i];
+                Rectangle itemRect = new(curX, padding, m.Width, itemHeight);
+                DrawMetricRow(_cachedGraphics, m.Item, m.ValueText, m.Ratio, m.Severity, itemRect);
+                curX += m.Width + padding;
+            }
+        }
+        else if (_config.Layout == OverlayLayout.CompactGrid)
+        {
+            int col1W = 0;
+            for (int i = 0; i < measured.Count; i += 2)
+                col1W = Math.Max(col1W, measured[i].Width);
+
+            for (int i = 0; i < measured.Count; i++)
+            {
+                var m = measured[i];
+                int col = i % 2;
+                int row = i / 2;
+                int rx = col == 0 ? padding : padding + col1W + padding;
+                Rectangle itemRect = new(rx, padding + (row * itemHeight), m.Width, itemHeight);
+                DrawMetricRow(_cachedGraphics, m.Item, m.ValueText, m.Ratio, m.Severity, itemRect);
+            }
+        }
+        else // VerticalList
+        {
+            int fullW = w - (padding * 2);
+            for (int i = 0; i < measured.Count; i++)
+            {
+                var m = measured[i];
+                Rectangle itemRect = new(padding, padding + (i * itemHeight), fullW, itemHeight);
+                DrawMetricRow(_cachedGraphics, m.Item, m.ValueText, m.Ratio, m.Severity, itemRect);
             }
         }
 
         IntPtr screenDc = GetDC(IntPtr.Zero);
         IntPtr memDc = CreateCompatibleDC(screenDc);
-        IntPtr hBitmap = bmp.GetHbitmap(Color.FromArgb(0));
+        IntPtr hBitmap = _cachedBitmap.GetHbitmap(Color.FromArgb(0));
         IntPtr oldBitmap = SelectObject(memDc, hBitmap);
 
         try
@@ -495,46 +588,54 @@ public sealed class OverlayForm : Form
         }
     }
 
-    private void DrawMetricRow(Graphics g, string label, string value, float? ratio, Color? severityColor, Rectangle rect)
+    private void DrawMetricRow(Graphics g, OverlayMetricItem item, string valueText, float? ratio, Color? severityColor, Rectangle rect)
     {
         if (rect.Width <= 0 || rect.Height <= 0)
             return;
 
-        Color valColor = severityColor ?? _config.ValueColor;
-        using SolidBrush labelBrush = new(_config.LabelColor);
-        using SolidBrush valBrush = new(valColor);
-        using SolidBrush shadowBrush = new(Color.FromArgb(180, Color.Black));
+        Color labelColor = item.CustomLabelColor ?? _config.LabelColor;
+        Color valColor = (item.UseDynamicColor && severityColor.HasValue)
+            ? severityColor.Value
+            : (item.CustomValueColor ?? _config.ValueColor);
 
-        int split = (rect.Width * 50) / 100;
-        Rectangle labelRect = new(rect.X, rect.Y, split, rect.Height);
-        Rectangle valRect = new(rect.X + split, rect.Y, rect.Width - split, rect.Height);
+        string displayLabel = item.DisplayName ?? string.Empty;
+        string displayVal = valueText ?? "--";
 
-        StringFormat sfLeft = FluentStyle.FormatNearCenter;
-        StringFormat sfRight = FluentStyle.FormatFarCenter;
+        SizeF lblSize = g.MeasureString(displayLabel, _labelFont, PointF.Empty, FluentStyle.FormatNearCenter);
+        SizeF valSize = g.MeasureString(displayVal, _valueFont, PointF.Empty, FluentStyle.FormatFarCenter);
 
-        string displayLabel = label ?? string.Empty;
-        string displayVal = value ?? "--";
+        int lblW = (int)Math.Ceiling(lblSize.Width);
+        int valW = (int)Math.Ceiling(valSize.Width);
+
+        Rectangle labelRect = new(rect.X, rect.Y, Math.Min(rect.Width, lblW + 4), rect.Height);
+        Rectangle valRect = new(rect.Right - valW - 2, rect.Y, valW + 2, rect.Height);
 
         if (_config.ShowTextShadow)
         {
+            _paintBrush.Color = Color.FromArgb(180, Color.Black);
             Rectangle labelShadow = new(labelRect.X + 1, labelRect.Y + 1, labelRect.Width, labelRect.Height);
             Rectangle valShadow = new(valRect.X + 1, valRect.Y + 1, valRect.Width, valRect.Height);
-            g.DrawString(displayLabel, _labelFont, shadowBrush, labelShadow, sfLeft);
-            g.DrawString(displayVal, _valueFont, shadowBrush, valShadow, sfRight);
+            g.DrawString(displayLabel, _labelFont, _paintBrush, labelShadow, FluentStyle.FormatNearCenter);
+            g.DrawString(displayVal, _valueFont, _paintBrush, valShadow, FluentStyle.FormatFarCenter);
         }
 
-        g.DrawString(displayLabel, _labelFont, labelBrush, labelRect, sfLeft);
-        g.DrawString(displayVal, _valueFont, valBrush, valRect, sfRight);
+        _paintBrush.Color = labelColor;
+        g.DrawString(displayLabel, _labelFont, _paintBrush, labelRect, FluentStyle.FormatNearCenter);
 
-        if (_config.ShowProgressBars && ratio.HasValue)
+        _paintBrush.Color = valColor;
+        g.DrawString(displayVal, _valueFont, _paintBrush, valRect, FluentStyle.FormatFarCenter);
+
+        if (_config.ShowProgressBars && item.ShowBar && ratio.HasValue)
         {
             int barH = Math.Max(2, (int)(_config.FontSize * 0.2f));
             int barY = rect.Bottom - barH - 1;
-            using SolidBrush barBg = new(Color.FromArgb(50, _config.LabelColor));
-            using SolidBrush barFill = new(valColor);
-            g.FillRectangle(barBg, rect.X, barY, rect.Width, barH);
+
+            _paintBrush.Color = Color.FromArgb(50, labelColor);
+            g.FillRectangle(_paintBrush, rect.X, barY, rect.Width, barH);
+
             float fillW = Math.Max(0, Math.Min(rect.Width, rect.Width * ratio.Value));
-            g.FillRectangle(barFill, rect.X, barY, fillW, barH);
+            _paintBrush.Color = valColor;
+            g.FillRectangle(_paintBrush, rect.X, barY, fillW, barH);
         }
     }
 
@@ -576,6 +677,10 @@ public sealed class OverlayForm : Form
     {
         if (disposing)
         {
+            _cachedGraphics?.Dispose();
+            _cachedBitmap?.Dispose();
+            _paintBrush?.Dispose();
+            _paintPen?.Dispose();
             _labelFont?.Dispose();
             _valueFont?.Dispose();
         }

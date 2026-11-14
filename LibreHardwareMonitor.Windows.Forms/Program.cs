@@ -20,6 +20,24 @@ public static class Program
 {
     private const string SingleInstanceMutexName = "Global\\LibreHardwareMonitor_SingleInstance_Mutex";
 
+    private static void LogCrash(string category, Exception ex)
+    {
+        string logText = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {category}: {ex}\n";
+        try
+        {
+            File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), logText);
+        }
+        catch { }
+
+        try
+        {
+            string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LibreHardwareHub");
+            Directory.CreateDirectory(appData);
+            File.AppendAllText(Path.Combine(appData, "crash.log"), logText);
+        }
+        catch { }
+    }
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -28,9 +46,9 @@ public static class Program
             UI.FanControl.FanControlEngine.RestoreAllControlsToDefault();
             if (e.ExceptionObject is Exception ex)
             {
+                LogCrash("Unhandled Exception", ex);
                 try
                 {
-                    File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), $"[{DateTime.Now}] Unhandled Exception: {ex}\n");
                     MessageBox.Show($"Ocorreu um erro ao iniciar o LibreHardwareMonitor:\n\n{ex.Message}\n\nConsulte crash.log para mais detalhes.", "Erro LibreHardwareMonitor", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 catch { }
@@ -41,9 +59,9 @@ public static class Program
         Application.ThreadException += (s, e) =>
         {
             UI.FanControl.FanControlEngine.RestoreAllControlsToDefault();
+            LogCrash("Thread Exception", e.Exception);
             try
             {
-                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), $"[{DateTime.Now}] Thread Exception: {e.Exception}\n");
                 MessageBox.Show($"Ocorreu um erro no LibreHardwareMonitor:\n\n{e.Exception.Message}\n\nConsulte crash.log para mais detalhes.", "Erro LibreHardwareMonitor", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             catch { }
