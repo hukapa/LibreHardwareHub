@@ -19,7 +19,7 @@ namespace LibreHardwareMonitor.Windows.Forms;
 
 public static class Program
 {
-    private const string SingleInstanceMutexName = "Global\\LibreHardwareMonitor_SingleInstance_Mutex";
+    private const string SingleInstanceMutexName = "Global\\LibreHardwareHub_SingleInstance_Mutex";
 
     private static void LogCrash(string category, Exception ex)
     {
@@ -177,6 +177,11 @@ public static class Program
             {
                 using (exitEvent)
                     exitEvent.Set();
+            }
+            if (EventWaitHandle.TryOpenExisting("Global\\LibreHardware_Exit_Event", out EventWaitHandle oldExitEvent))
+            {
+                using (oldExitEvent)
+                    oldExitEvent.Set();
             }
 
             int currentPid = Environment.ProcessId;

@@ -95,7 +95,9 @@ public sealed partial class MainForm : Form
         splitContainer.Dock = DockStyle.Fill;
         InitializeShell();
 
-        Text = $"{AppInfo.Name} {AppInfo.Version}";
+        string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
+        DateTime buildTime = File.Exists(exePath) ? File.GetLastWriteTime(exePath) : DateTime.Now;
+        Text = $"{AppInfo.Name} v{Application.ProductVersion} [Build: {buildTime:yyyy-MM-dd HH:mm}]";
 
         Font = FluentStyle.UiFont;
         treeView.Font = FluentStyle.UiFont;
@@ -200,14 +202,22 @@ public sealed partial class MainForm : Form
         {
             if (PawnIo.PawnIo.Version < new Version(2, 0, 0, 0))
             {
-                DialogResult result = MessageBox.Show("PawnIO is outdated, do you want to update it?", AppInfo.Name, MessageBoxButtons.OKCancel);
+                DialogResult result = MessageBox.Show(
+                    "O driver PawnIO esta desatualizado. Deseja atualiza-lo agora?",
+                    AppInfo.Name,
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Question);
                 if (result == DialogResult.OK)
                     InstallPawnIO();
             }
         }
         else
         {
-            DialogResult result = MessageBox.Show("PawnIO is not installed, do you want to install it?", AppInfo.Name, MessageBoxButtons.OKCancel);
+            DialogResult result = MessageBox.Show(
+                "O driver de baixo nivel PawnIO nao esta instalado.\n\nDeseja instalar agora para permitir a leitura completa de sensores da motherboard e processador?",
+                AppInfo.Name,
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Question);
             if (result == DialogResult.OK)
                 InstallPawnIO();
         }
@@ -224,7 +234,20 @@ public sealed partial class MainForm : Form
 
         static void InstallPawnIO()
         {
-            string path = ExtractPawnIO();
+            string shipped = Path.Combine(AppInfo.ExeDirectory, "PawnIO_setup.exe");
+            string path;
+            bool isTemporary = false;
+
+            if (File.Exists(shipped))
+            {
+                path = shipped;
+            }
+            else
+            {
+                path = ExtractPawnIO();
+                isTemporary = !string.IsNullOrEmpty(path);
+            }
+
             if (string.IsNullOrEmpty(path))
                 return;
 
@@ -238,22 +261,25 @@ public sealed partial class MainForm : Form
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
-                // ERROR_CANCELLED: the user declined the UAC prompt; continue without PawnIO.
+                // ERROR_CANCELLED: o utilizador recusou o prompt de UAC; continua sem o PawnIO.
             }
             catch (Win32Exception ex)
             {
-                MessageBox.Show("PawnIO installation failed: " + ex.Message, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Falha ao instalar o driver PawnIO: " + ex.Message, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally
             {
-                try
+                if (isTemporary && !string.IsNullOrEmpty(path))
                 {
-                    File.Delete(path);
+                    try
+                    {
+                        File.Delete(path);
+                    }
+                    catch (IOException)
+                    { }
+                    catch (UnauthorizedAccessException)
+                    { }
                 }
-                catch (IOException)
-                { }
-                catch (UnauthorizedAccessException)
-                { }
             }
         }
 
@@ -265,13 +291,6 @@ public sealed partial class MainForm : Form
 
             try
             {
-                string shipped = Path.Combine(AppInfo.ExeDirectory, fileName);
-                if (File.Exists(shipped))
-                {
-                    File.Copy(shipped, destination, true);
-                    return destination;
-                }
-
                 using Stream resourceStream = typeof(MainForm).Assembly.GetManifestResourceStream("LibreHardwareMonitor.Windows.Forms.Resources." + fileName);
                 if (resourceStream == null)
                     return null;
@@ -935,6 +954,7 @@ public sealed partial class MainForm : Form
     private void SaveReportMenuItem_Click(object sender, EventArgs e)
     {
         string report = _computer.GetReport();
+        saveFileDialog.FileName = "LibreHardwareHub.Report.txt";
         if (saveFileDialog.ShowDialog() == DialogResult.OK)
         {
             using (TextWriter w = new StreamWriter(saveFileDialog.FileName))

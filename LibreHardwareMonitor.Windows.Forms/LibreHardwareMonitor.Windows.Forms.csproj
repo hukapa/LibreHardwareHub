@@ -4,13 +4,14 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Platforms>x64;x86;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-x86;win-arm64</RuntimeIdentifiers>
-    <AssemblyName>LibreHardware</AssemblyName>
-    <AssemblyTitle>Libre Hardware</AssemblyTitle>
-    <Product>Libre Hardware</Product>
-    <Company>Libre Hardware</Company>
+    <AssemblyName>LibreHardwareHub</AssemblyName>
+    <RootNamespace>LibreHardwareMonitor.Windows.Forms</RootNamespace>
+    <AssemblyTitle>LibreHardwareHub</AssemblyTitle>
+    <Product>LibreHardwareHub</Product>
+    <Company>LibreHardwareHub</Company>
     <Description>Monitorizacao de hardware, controlo de ventoinhas e overlay</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Copyright>LibreHardwareMonitor</Copyright>
+    <Copyright>LibreHardwareHub Contributors</Copyright>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
     <ApplicationManifest>Resources\app.manifest</ApplicationManifest>

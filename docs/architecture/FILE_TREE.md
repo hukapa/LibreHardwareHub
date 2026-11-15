@@ -1,6 +1,6 @@
-# LibreHardwareMonitor — Arvore de Ficheiros e Registo Arquitetural
+# LibreHardwareHub — Arvore de Ficheiros e Registo Arquitetural
 
-> **Finalidade:** Registo central de consulta rapida de toda a codebase do LibreHardwareMonitor.  
+> **Finalidade:** Registo central de consulta rapida de toda a codebase do LibreHardwareHub.  
 > **Regra de Limites de Linhas:** Ficheiros devem respeitar o intervalo de **250 a 450 linhas** sempre que possivel.  
 > **Regra Fundamental:** Zero Emojis e responsabilidade unica (SRP).  
 

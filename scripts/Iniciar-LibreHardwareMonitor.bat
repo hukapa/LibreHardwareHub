@@ -1,12 +1,17 @@
 @echo off
 setlocal
 
-set "EXE_PATH=%~dp0..\bin\Publish-SingleFile\LibreHardware.exe"
+set "EXE_PATH=%~dp0..\bin\Publish-SingleFile\LibreHardwareHub.exe"
 set "WORK_DIR=%~dp0..\bin\Publish-SingleFile"
 
 if not exist "%EXE_PATH%" (
-    set "EXE_PATH=%~dp0..\bin\Release\net8.0-windows\LibreHardware.exe"
+    set "EXE_PATH=%~dp0..\bin\Release\net8.0-windows\LibreHardwareHub.exe"
     set "WORK_DIR=%~dp0..\bin\Release\net8.0-windows"
+)
+
+if not exist "%EXE_PATH%" (
+    set "EXE_PATH=%~dp0..\bin\Publish-SingleFile\LibreHardware.exe"
+    set "WORK_DIR=%~dp0..\bin\Publish-SingleFile"
 )
 
 if not exist "%EXE_PATH%" (

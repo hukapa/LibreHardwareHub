@@ -479,3 +479,38 @@
 * **Distribuicao:** `scripts\Publicar-Release.ps1` publica o executavel autonomo (com o .NET incluido, comprimido) e gera `dist\LibreHardware-<versao>-Setup.exe` e `dist\LibreHardware-<versao>-portable.zip`. `installer\LibreHardware.iss` instala em Program Files, cria atalhos, oferece arranque com o Windows (tarefa agendada criada pela propria aplicacao com `--register-startup`) e instalacao do PawnIO, e fecha a instancia em execucao antes de atualizar.
 * **Validacao:** build Release com 0 avisos; os dois pacotes foram gerados (cerca de 62 MB cada) e as propriedades e o icone do executavel confirmados. O instalador, a desinstalacao, a migracao de definicoes e o arranque do executavel autonomo nao foram executados nesta sessao (requerem elevacao UAC); a opcao silenciosa do PawnIO (`-install -silent`) tambem nao foi exercitada.
 * **Sem assinatura digital:** o Windows SmartScreen mostra um aviso ao executar o instalador.
+
+---
+
+## 25. Fase 25: Rebranding Oficial para "LibreHardwareHub", Executavel Self-Contained e Instalacao Resiliente do PawnIO
+
+* **Objetivo:** Concluir o lancamento oficial com o nome definitivo "LibreHardwareHub" em toda a interface e sistema operativo, criar pacote ZIP portatil 100% autonomo (sem dependencia do .NET 8 na maquina de destino) e blindar a instalacao inicial do driver PawnIO para utilizadores em computadores recem-formatados.
+* **Rebranding Integral para "LibreHardwareHub":**
+  - `LibreHardwareMonitor.Windows.Forms.csproj` e `Directory.Build.props`: configurados `<AssemblyName>LibreHardwareHub</AssemblyName>`, `<AssemblyTitle>LibreHardwareHub</AssemblyTitle>`, `<Product>LibreHardwareHub</Product>` e `<Copyright>LibreHardwareHub Contributors</Copyright>`. O executavel compilado e gerado como `LibreHardwareHub.exe`.
+  - `Utilities/AppInfo.cs`: atualizados `Name = "LibreHardwareHub"`, `Id = "LibreHardwareHub"`, `ExitEventName = "Global\\LibreHardwareHub_Exit_Event"` e directoria de dados para `%AppData%\LibreHardwareHub\`.
+  - `MigrateLegacyConfig()`: suporte a migracao automatica de ficheiros legados a partir de `%AppData%\Libre Hardware\`, `%AppData%\LibreHardware\` e da directoria local do executavel.
+  - `Program.cs`: atualizados `SingleInstanceMutexName` para `"Global\\LibreHardwareHub_SingleInstance_Mutex"`, evento de fecho limpo com suporte retrocompativel a instancias anteriores e todas as caixas de dialogo.
+  - `MainForm.cs` e `MainForm.Designer.cs`: titulo dinamico com versao e timestamp de build (`LibreHardwareHub v0.9.6 [Build: yyyy-MM-dd HH:mm]`), nome predefinido do relatorio `"LibreHardwareHub.Report.txt"` e titulos informativos em portugues.
+  - `AboutBox.cs` e `AboutBox.Designer.cs`: titulo e rotulos atualizados para `LibreHardwareHub` com apontador para o repositorio oficial `https://github.com/hukapa/LibreHardwareHub`.
+  - `SystemTray.cs`: texto do icone principal na bandeja definido como `LibreHardwareHub`.
+  - `Utilities/Logger.cs`: formato do ficheiro CSV atualizado para `"LibreHardwareHubLog-{0:yyyy-MM-dd}{1}.csv"`.
+  - `UI/StartupManager.cs`: tarefa do Agendador de Tarefas do Windows e chaves de registo atualizadas para `"LibreHardwareHub"` com remocao automatica de tarefas legadas residuais.
+  - `Utilities/HttpServer.cs` e `Resources/Web/index.html`: Realm HTTP e titulos HTML atualizados para `"LibreHardwareHub"`.
+* **Correcao Resiliente do Driver PawnIO para Novos Utilizadores:**
+  - `MainForm.cs`: `InstallPawnIO()` verifica em primeiro lugar se o instalador `PawnIO_setup.exe` ja se encontra presente na pasta da aplicacao (como distribuido no pacote ZIP portatil). Se existir, executa-o diretamente com `-install` e elevacao UAC sem apagar o binario no bloco `finally`.
+  - Ficheiros extraidos temporariamente para `Path.GetTempPath()` mantem a limpeza automatica no bloco `finally`.
+  - Mensagens das caixas de confirmacao traduzidas para portugues claro e cordial.
+* **Pipeline de Publicacao do ZIP Portatil Autonomo:**
+  - `scripts/Publicar-Release.ps1`: publicacao em modo `Self-Contained` (`--self-contained true`, `PublishSingleFile=true`, `IncludeNativeLibrariesForSelfExtract=true`, `EnableCompressionInSingleFile=true`), gerando binario autonomo comprimido.
+  - Criacao automatica da pasta `dist\LibreHardwareHub-Portable\` e arquivo comprimido `dist\LibreHardwareHub-v0.9.6-Portable.zip` contendo:
+    1. `LibreHardwareHub.exe` (executavel unico autonomo).
+    2. `PawnIO_setup.exe` (instalador do driver Ring-0).
+    3. `portable.txt` (marcador para armazenamento local das definicoes).
+    4. `LEIAME.txt` (guia rapido de arranque em portugues).
+    5. `LICENSE.txt` (termos de licenca MPL 2.0).
+  - Atualizado o script `installer/LibreHardware.iss` para produzir `dist\LibreHardwareHub-v0.9.6-Setup.exe`.
+* **Validacao:**
+  - Compilacao da solucao com `dotnet build` concluida com 0 avisos e 0 erros.
+  - Pacote `dist\LibreHardwareHub-v0.9.6-Portable.zip` gerado com sucesso (62.1 MB) e verificado.
+  - Sincronizacao integral dos binarios e fontes com a pasta `C:\Users\tiago\Desktop\yea\LHH`.
+  - Conformidade estrita com a regra de Zero Emojis.

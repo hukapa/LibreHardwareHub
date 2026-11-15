@@ -16,18 +16,18 @@ namespace LibreHardwareMonitor.Windows.Forms.Utilities;
 public static class AppInfo
 {
     /// <summary>Name shown to the user (window title, tray, installer).</summary>
-    public const string Name = "Libre Hardware";
+    public const string Name = "LibreHardwareHub";
 
     /// <summary>Executable and process name, also used for file names.</summary>
-    public const string Id = "LibreHardware";
+    public const string Id = "LibreHardwareHub";
 
     /// <summary>Signalled to ask the running instance to close cleanly (fans are handed back to the BIOS).</summary>
-    public const string ExitEventName = "Global\\LibreHardware_Exit_Event";
+    public const string ExitEventName = "Global\\LibreHardwareHub_Exit_Event";
 
     private const string PortableMarker = "portable.txt";
 
     /// <summary>Process names of this and of earlier builds, for single-instance handling.</summary>
-    public static readonly string[] ProcessNames = { Id, "LibreHardwareMonitor.Windows.Forms", "LibreHardwareMonitor" };
+    public static readonly string[] ProcessNames = { Id, "LibreHardware", "LibreHardwareMonitor.Windows.Forms", "LibreHardwareMonitor" };
 
     private static string _dataDirectory;
 
@@ -76,6 +76,28 @@ public static class AppInfo
         if (File.Exists(ConfigFile))
             return;
 
+        // 1. Check legacy directories in %AppData% (e.g. "%AppData%\Libre Hardware\LibreHardware.config")
+        try
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string[] legacyAppDataDirs = { "Libre Hardware", "LibreHardware", "LibreHardwareMonitor" };
+            foreach (string legacyDir in legacyAppDataDirs)
+            {
+                foreach (string name in ProcessNames)
+                {
+                    string legacyPath = Path.Combine(appData, legacyDir, name + ".config");
+                    if (File.Exists(legacyPath))
+                    {
+                        File.Copy(legacyPath, ConfigFile, true);
+                        return;
+                    }
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { }
+
+        // 2. Check beside the executable (earlier builds or portable mode)
         foreach (string name in ProcessNames)
         {
             string legacy = Path.Combine(ExeDirectory, name + ".config");
@@ -84,7 +106,7 @@ public static class AppInfo
 
             try
             {
-                File.Copy(legacy, ConfigFile);
+                File.Copy(legacy, ConfigFile, true);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             { }

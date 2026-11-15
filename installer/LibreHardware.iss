@@ -1,15 +1,15 @@
-; Libre Hardware - instalador Inno Setup 6.
-; Compilado por scripts\Publicar-Release.ps1, que publica a aplicacao em bin\Publish\LibreHardware
+; LibreHardwareHub - instalador Inno Setup 6.
+; Compilado por scripts\Publicar-Release.ps1, que publica a aplicacao em bin\Publish-SingleFile
 ; e passa a versao com /DAppVersion=x.y.z.
 
-#define AppName "Libre Hardware"
-#define AppExe "LibreHardware.exe"
-#define ExitEvent "Global\LibreHardware_Exit_Event"
+#define AppName "LibreHardwareHub"
+#define AppExe "LibreHardwareHub.exe"
+#define ExitEvent "Global\LibreHardwareHub_Exit_Event"
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 #ifndef SourceDir
-  #define SourceDir "..\bin\Publish\LibreHardware"
+  #define SourceDir "..\bin\Publish-SingleFile"
 #endif
 
 [Setup]
@@ -24,7 +24,7 @@ UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 SetupIconFile=..\LibreHardwareMonitor.Windows.Forms\Resources\icon.ico
 OutputDir=..\dist
-OutputBaseFilename=LibreHardware-{#AppVersion}-Setup
+OutputBaseFilename=LibreHardwareHub-v{#AppVersion}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -46,8 +46,8 @@ portuguese.TaskDriver=Instalar o driver PawnIO (necessario para sensores da moth
 english.TaskDriver=Install the PawnIO driver (required for motherboard and CPU sensors)
 portuguese.StatusDriver=A instalar o driver PawnIO...
 english.StatusDriver=Installing the PawnIO driver...
-portuguese.StatusClosing=A fechar o Libre Hardware em execucao...
-english.StatusClosing=Closing the running Libre Hardware...
+portuguese.StatusClosing=A fechar o LibreHardwareHub em execucao...
+english.StatusClosing=Closing the running LibreHardwareHub...
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

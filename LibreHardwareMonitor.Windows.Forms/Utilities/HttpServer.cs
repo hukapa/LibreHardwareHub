@@ -120,7 +120,7 @@ public class HttpServer
 
             _listener.Prefixes.Clear();
             _listener.Prefixes.Add(prefix);
-            _listener.Realm = "Libre Hardware Monitor";
+            _listener.Realm = "LibreHardwareHub";
             _listener.AuthenticationSchemes = AuthEnabled ? AuthenticationSchemes.Basic : AuthenticationSchemes.Anonymous;
             _listener.Start();
 
@@ -520,7 +520,7 @@ public class HttpServer
     private async Task ServeResourceFileAsync(HttpListenerResponse response, string name, string ext)
     {
         // resource names do not support the hyphen
-        name = Assembly.GetExecutingAssembly().GetName().Name + ".Resources." +
+        name = "LibreHardwareMonitor.Windows.Forms.Resources." +
                name.Replace("custom-theme", "custom_theme");
 
         string[] names = Assembly.GetExecutingAssembly().GetManifestResourceNames();
@@ -561,7 +561,7 @@ public class HttpServer
 
     private async Task ServeResourceImageAsync(HttpListenerResponse response, string name)
     {
-        name = Assembly.GetExecutingAssembly().GetName().Name + ".Resources." + name;
+        name = "LibreHardwareMonitor.Windows.Forms.Resources." + name;
 
         string[] names = Assembly.GetExecutingAssembly().GetManifestResourceNames();
 

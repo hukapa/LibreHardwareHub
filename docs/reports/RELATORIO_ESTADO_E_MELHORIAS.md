@@ -535,3 +535,30 @@ Barra lateral por seccoes recolhiveis, modo compacto manual, teclado e atalhos `
 * Icone com tamanho maximo de 48x48: recomenda-se uma versao com 256x256.
 * Sem assinatura digital: aviso do SmartScreen na instalacao.
 * Licenca de redistribuicao do `PawnIO_setup.exe` por confirmar antes de publicar os pacotes fora de uso pessoal.
+
+---
+
+## 21. Rebranding Oficial para LibreHardwareHub e Pacote Portatil 100% Autonomo
+
+### 21.1 Identidade Global LibreHardwareHub
+A suite foi formalmente consolidada sob a identidade unica **LibreHardwareHub**:
+
+| Componente | Designacao Anterior | Nova Designacao Oficial |
+|---|---|---|
+| Nome do Executavel | `LibreHardware.exe` / `LibreHardwareMonitor.Windows.Forms.exe` | `LibreHardwareHub.exe` |
+| Titulo da Janela Principal | `Libre Hardware 0.9.6` | `LibreHardwareHub v0.9.6 [Build: yyyy-MM-dd HH:mm]` |
+| Pasta de Dados do Utilizador | `%AppData%\Libre Hardware\` | `%AppData%\LibreHardwareHub\` |
+| Ficheiro de Configuracoes | `LibreHardware.config` | `LibreHardwareHub.config` (com migracao automatica) |
+| Mutex e IPC de Encerramento | `Global\LibreHardware_Exit_Event` | `Global\LibreHardwareHub_Exit_Event` e `SingleInstance_Mutex` |
+| Tarefa no Agendador do Windows | `LibreHardware` / `LibreHardwareMonitor` | `LibreHardwareHub` (com limpeza de legados) |
+| Servidor Web e Dashboard | `Libre Hardware Monitor` | `LibreHardwareHub` (Realm e titulos em index.html) |
+| Log de Sensores | `LibreHardwareMonitorLog-*.csv` | `LibreHardwareHubLog-*.csv` |
+
+### 21.2 Correcao da Instalacao do Driver PawnIO para Novos Utilizadores
+1. **Problema Identificado:** Quando um utilizador descarregava a aplicacao para um sistema limpo, o metodo `ExtractPawnIO()` tentava ler recursos embutidos inexistentes e, caso utilizasse o ficheiro ao lado do executavel, o bloco `finally` invocava `File.Delete(path)`, eliminando o instalador do driver do disco.
+2. **Solucao Implementada:** O metodo `InstallPawnIO()` verifica primeiro se `PawnIO_setup.exe` existe na pasta do executavel (`AppInfo.ExeDirectory`). Se existir, executa-o diretamente com `-install` e elevacao sem o apagar no `finally`. Apenas ficheiros temporarios extraidos para `Path.GetTempPath()` sao limpos.
+3. **Localizacao em Portugues:** Dialogos informativos e claros para instalacao ou atualizacao do driver.
+
+### 21.3 Pacote Portatil Autonomo (`Self-Contained Single-File`)
+* O executavel compilado em modo `Self-Contained` embute e compacta todo o runtime .NET 8 e bibliotecas nativas, dispensando a instalacao prévia de runtimes pelo utilizador final.
+* Ficheiro gerado em `dist/LibreHardwareHub-v0.9.6-Portable.zip` (62.1 MB) acompanhado de `portable.txt`, `PawnIO_setup.exe`, `LEIAME.txt` e `LICENSE.txt`.

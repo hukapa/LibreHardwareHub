@@ -19,6 +19,8 @@ namespace LibreHardwareMonitor.Windows.Forms.UI;
 public class StartupManager
 {
     private const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string TaskName = "LibreHardwareHub";
+    private static readonly string[] LegacyTaskNames = { "LibreHardware", "LibreHardwareMonitor", "LibreHardwareMonitor-CrystalStudio" };
     private bool _startup;
 
     public StartupManager()
@@ -52,7 +54,8 @@ public class StartupManager
             {
                 using (RegistryKey registryKey = Registry.CurrentUser.OpenSubKey(RegistryPath))
                 {
-                    string value = (string)registryKey?.GetValue(nameof(LibreHardwareMonitor));
+                    string value = (string)registryKey?.GetValue(TaskName)
+                                ?? (string)registryKey?.GetValue(nameof(LibreHardwareMonitor));
 
                     if (value != null)
                         _startup = value == Application.ExecutablePath;
@@ -86,7 +89,12 @@ public class StartupManager
             else
             {
                 DeleteTask();
-                Registry.CurrentUser.OpenSubKey(RegistryPath, true)?.DeleteValue(nameof(LibreHardwareMonitor), false);
+                using RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, true);
+                if (key != null)
+                {
+                    key.DeleteValue(TaskName, false);
+                    key.DeleteValue(nameof(LibreHardwareMonitor), false);
+                }
             }
         }
         catch (Exception)
@@ -157,7 +165,18 @@ public class StartupManager
     {
         try
         {
-            return TaskService.Instance.AllTasks.FirstOrDefault(x => x.Name.Equals(nameof(LibreHardwareMonitor), StringComparison.OrdinalIgnoreCase));
+            Task current = TaskService.Instance.AllTasks.FirstOrDefault(x => x.Name.Equals(TaskName, StringComparison.OrdinalIgnoreCase));
+            if (current != null)
+                return current;
+
+            foreach (string legacyName in LegacyTaskNames)
+            {
+                Task legacy = TaskService.Instance.AllTasks.FirstOrDefault(x => x.Name.Equals(legacyName, StringComparison.OrdinalIgnoreCase));
+                if (legacy != null)
+                    return legacy;
+            }
+
+            return null;
         }
         catch
         {
@@ -167,8 +186,10 @@ public class StartupManager
 
     private void CreateTask()
     {
+        DeleteTask();
+
         TaskDefinition taskDefinition = TaskService.Instance.NewTask();
-        taskDefinition.RegistrationInfo.Description = "Starts Libre Hardware on Windows startup.";
+        taskDefinition.RegistrationInfo.Description = "Starts LibreHardwareHub on Windows startup.";
 
         taskDefinition.Triggers.Add(new LogonTrigger());
 
@@ -183,24 +204,36 @@ public class StartupManager
 
         taskDefinition.Actions.Add(new ExecAction(Application.ExecutablePath, "", Path.GetDirectoryName(Application.ExecutablePath)));
 
-        TaskService.Instance.RootFolder.RegisterTaskDefinition(nameof(LibreHardwareMonitor), taskDefinition);
+        TaskService.Instance.RootFolder.RegisterTaskDefinition(TaskName, taskDefinition);
     }
 
     private static void DeleteTask()
     {
-        Task task = GetTask();
-        task?.Folder.DeleteTask(task.Name, false);
+        try
+        {
+            Task task = GetTask();
+            task?.Folder.DeleteTask(task.Name, false);
+
+            foreach (string legacyName in LegacyTaskNames)
+            {
+                Task legacy = TaskService.Instance.AllTasks.FirstOrDefault(x => x.Name.Equals(legacyName, StringComparison.OrdinalIgnoreCase));
+                legacy?.Folder.DeleteTask(legacy.Name, false);
+            }
+        }
+        catch
+        { }
     }
 
     private static void CreateRegistryKey()
     {
         RegistryKey registryKey = Registry.CurrentUser.CreateSubKey(RegistryPath);
-        registryKey?.SetValue(nameof(LibreHardwareMonitor), Application.ExecutablePath);
+        registryKey?.SetValue(TaskName, Application.ExecutablePath);
     }
 
     private static void DeleteRegistryKey()
     {
         RegistryKey registryKey = Registry.CurrentUser.CreateSubKey(RegistryPath);
-        registryKey?.DeleteValue(nameof(LibreHardwareMonitor));
+        registryKey?.DeleteValue(TaskName, false);
+        registryKey?.DeleteValue(nameof(LibreHardwareMonitor), false);
     }
 }

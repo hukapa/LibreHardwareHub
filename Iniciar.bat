@@ -1,10 +1,10 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Libre Hardware
+title LibreHardwareHub
 cd /d "%~dp0"
 
 set "TARGET_DIR=%~dp0bin\Publish-SingleFile"
-set "TARGET_EXE=%TARGET_DIR%\LibreHardware.exe"
+set "TARGET_EXE=%TARGET_DIR%\LibreHardwareHub.exe"
 
 if exist "%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe" (
     set "DOTNET_ROOT=%LOCALAPPDATA%\Microsoft\dotnet"
@@ -12,7 +12,7 @@ if exist "%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe" (
 )
 
 echo ==========================================================
-echo                      Libre Hardware
+echo                      LibreHardwareHub
 echo ==========================================================
 echo  [1] Compilar e Iniciar (Garante todas as alteracoes)
 echo  [2] Iniciar Rapido (Sem compilar)
@@ -39,7 +39,7 @@ call :CLOSE_APP
 if exist "%TARGET_EXE%" (
     del /f /q "%TARGET_EXE%" >nul 2>&1
     if exist "%TARGET_EXE%" (
-        powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardware.exe' -Verb RunAs -Wait" >nul 2>&1
+        powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardwareHub.exe' -Verb RunAs -Wait" >nul 2>&1
         timeout /t 1 /nobreak >nul 2>&1
         del /f /q "%TARGET_EXE%" >nul 2>&1
     )
@@ -49,7 +49,7 @@ echo.
 echo ==========================================================
 echo  [2/3] A compilar e publicar versao atualizada (.NET 8.0)...
 echo ==========================================================
-dotnet publish LibreHardwareMonitor.Windows.Forms\LibreHardwareMonitor.Windows.Forms.csproj -c Release -f net8.0-windows -r win-x64 --self-contained false -p:PublishSingleFile=true -p:Platform=x64 -o "bin\Publish-SingleFile"
+dotnet publish LibreHardwareMonitor.Windows.Forms\LibreHardwareMonitor.Windows.Forms.csproj -c Release -f net8.0-windows -r win-x64 --self-contained true -p:Platform=x64 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -p:DebugSymbols=false -o "bin\Publish-SingleFile"
 if !errorlevel! neq 0 (
     echo.
     echo [ERRO] Falha na compilacao. Verifique as mensagens de erro acima.
@@ -86,7 +86,7 @@ goto END
 
 :LAUNCH_APP
 if exist "%TARGET_EXE%" (
-    echo [INFO] A iniciar Libre Hardware com permissoes de Administrador...
+    echo [INFO] A iniciar LibreHardwareHub com permissoes de Administrador...
     start "" /D "%TARGET_DIR%" "%TARGET_EXE%"
     exit /b 0
 ) else (
@@ -105,20 +105,26 @@ exit /b 0
 :: ==========================================================
 :CLOSE_APP
 call :IS_RUNNING || goto :eof
+taskkill /im LibreHardwareHub.exe >nul 2>&1
 taskkill /im LibreHardware.exe >nul 2>&1
 call :WAIT_EXIT 5
 call :IS_RUNNING || goto :eof
 :: A app corre como Administrador: pedir o fecho normal com elevacao
+powershell -Command "Start-Process taskkill -ArgumentList '/im LibreHardwareHub.exe' -Verb RunAs -Wait" >nul 2>&1
 powershell -Command "Start-Process taskkill -ArgumentList '/im LibreHardware.exe' -Verb RunAs -Wait" >nul 2>&1
 call :WAIT_EXIT 8
 call :IS_RUNNING || goto :eof
 echo [AVISO] A app nao fechou normalmente. A terminar a forca...
+taskkill /f /im LibreHardwareHub.exe >nul 2>&1
 taskkill /f /im LibreHardware.exe >nul 2>&1
 call :IS_RUNNING || goto :eof
+powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardwareHub.exe' -Verb RunAs -Wait" >nul 2>&1
 powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardware.exe' -Verb RunAs -Wait" >nul 2>&1
 goto :eof
 
 :IS_RUNNING
+tasklist /fi "imagename eq LibreHardwareHub.exe" 2>nul | find /i "LibreHardwareHub.exe" >nul
+if %errorlevel% == 0 exit /b 0
 tasklist /fi "imagename eq LibreHardware.exe" 2>nul | find /i "LibreHardware.exe" >nul
 exit /b %errorlevel%
 

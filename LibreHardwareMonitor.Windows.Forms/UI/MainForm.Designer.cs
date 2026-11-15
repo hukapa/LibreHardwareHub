@@ -1084,7 +1084,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI
             // saveFileDialog
             //
             this.saveFileDialog.DefaultExt = "txt";
-            this.saveFileDialog.FileName = "LibreHardwareMonitor.Report.txt";
+            this.saveFileDialog.FileName = "LibreHardwareHub.Report.txt";
             this.saveFileDialog.Filter = "Text Documents|*.txt|All Files|*.*";
             this.saveFileDialog.RestoreDirectory = true;
             this.saveFileDialog.Title = "Save Report As";

@@ -1,6 +1,7 @@
-# Libre Hardware — Guia Master do Projeto e Navegacao de Documentacao
+# LibreHardwareHub — Guia Master do Projeto e Navegacao de Documentacao
 
-> **Versao:** 0.9.6.0 (Fork hukapa)  
+> **Versao:** 0.9.6 (Fork hukapa)  
+> **Nome Oficial do Produto:** LibreHardwareHub  
 > **Arquitetura:** .NET 8.0 LTS Exclusivo (`net8.0` / `net8.0-windows`) + WinForms + Web Server HTTP Embutido  
 > **Publico:** Desenvolvedores, Engenheiros de Software e Agentes de IA  
 > **Regra Fundamental:** Zero Emojis em toda a documentacao, codigo e commits.  
@@ -9,7 +10,7 @@
 
 ## 1. Visao Geral do Sistema
 
-O **LibreHardwareMonitor (Fork hukapa)** e uma suite avancada, moderna e resiliente de monitorizacao de hardware para Windows, desenhada para inspecionar em tempo real os sensores de Motherboard, Processador (CPU), Placa Grafica (GPU), Memoria RAM, Discos (HDD/SSD/NVMe), Controladores de Ventoinhas, Fontes de Alimentacao (PSU) e Baterias.
+O **LibreHardwareHub** e uma suite avancada, moderna e resiliente de monitorizacao de hardware para Windows, desenhada para inspecionar em tempo real os sensores de Motherboard, Processador (CPU), Placa Grafica (GPU), Memoria RAM, Discos (HDD/SSD/NVMe), Controladores de Ventoinhas, Fontes de Alimentacao (PSU) e Baterias.
 
 Este fork mantem o foco na modernizacao do ecossistema para .NET 8.0 LTS, melhorias de usabilidade na interface desktop, desacoplamento arquitetural e um servidor web embutido completamente redesenhado.
 
@@ -99,7 +100,7 @@ LibreHardwareMonitor/
 * Inno Setup 6 (apenas para gerar o instalador): `winget install JRSoftware.InnoSetup`
 
 ### Ciclo de desenvolvimento
-`Iniciar.bat` compila e arranca a aplicacao a partir de `bin\Publish-SingleFile\LibreHardware.exe` (build rapida, dependente do .NET instalado).
+`Iniciar.bat` compila e arranca a aplicacao a partir de `bin\Publish-SingleFile\LibreHardwareHub.exe` (build rapida, dependente do .NET instalado).
 
 ```powershell
 dotnet build LibreHardwareMonitor.sln -c Release /p:Platform=x64
@@ -110,18 +111,18 @@ dotnet build LibreHardwareMonitor.sln -c Release /p:Platform=x64
 scripts\Publicar-Release.bat
 ```
 Gera em `dist\` (pasta ignorada pelo Git):
-* `LibreHardware-<versao>-Setup.exe`: instalador (Program Files, atalho no Menu Iniciar, desinstalador, opcoes de atalho no ambiente de trabalho, arranque com o Windows e driver PawnIO).
-* `LibreHardware-<versao>-portable.zip`: copia portatil; o ficheiro `portable.txt` faz com que as definicoes fiquem na propria pasta.
+* `LibreHardwareHub-v<versao>-Setup.exe`: instalador (Program Files, atalho no Menu Iniciar, desinstalador, opcoes de atalho no ambiente de trabalho, arranque com o Windows e driver PawnIO).
+* `LibreHardwareHub-v<versao>-Portable.zip`: copia portatil 100% autonoma; o ficheiro `portable.txt` faz com que as definicoes fiquem na propria pasta.
 
-O executavel distribuido e autonomo (inclui o .NET) e nao requer nada instalado no PC de destino. A versao vem de `Directory.Build.props`.
+O executavel distribuido e autonomo (inclui o runtime do .NET 8 embutido e compactado) e nao requer nada instalado no PC de destino. A versao vem de `Directory.Build.props`.
 
 ### Onde ficam os dados
 | Modo | Definicoes, registos CSV e `crash.log` |
 |---|---|
-| Instalado ou desenvolvimento | `%AppData%\Libre Hardware\` |
+| Instalado ou desenvolvimento | `%AppData%\LibreHardwareHub\` |
 | Portatil (`portable.txt` ao lado do executavel) | Pasta do executavel |
 
-Na primeira execucao, um `.config` antigo existente ao lado do executavel e copiado para a nova localizacao.
+Na primeira execucao, um ficheiro `.config` antigo existente em `%AppData%\Libre Hardware\` ou ao lado do executavel e copiado automaticamente para a nova localizacao.
 
 ### Linha de comandos
 | Argumento | Efeito |

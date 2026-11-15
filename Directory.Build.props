@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <Version>0.9.6</Version>
-    <Copyright>LibreHardwareMonitor</Copyright>
+    <Product>LibreHardwareHub</Product>
+    <Copyright>LibreHardwareHub Contributors</Copyright>
   </PropertyGroup>
 </Project>

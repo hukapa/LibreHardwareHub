@@ -75,7 +75,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(117, 13);
             this.label1.TabIndex = 2;
-            this.label1.Text = "Libre Hardware";
+            this.label1.Text = "LibreHardwareHub";
             //
             // label2
             //
@@ -85,7 +85,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(250, 13);
             this.label2.TabIndex = 3;
-            this.label2.Text = "Copyright © LibreHardwareMonitor and Contributors";
+            this.label2.Text = "Copyright © LibreHardwareHub Contributors";
             //
             // label3
             //
