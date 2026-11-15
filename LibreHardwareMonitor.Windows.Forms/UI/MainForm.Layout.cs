@@ -25,6 +25,8 @@ namespace LibreHardwareMonitor.Windows.Forms.UI;
 public sealed partial class MainForm
 {
     private const string ScopeSettingKey = "navigation.scope";
+    private const string SidebarModeSettingKey = "navigation.sidebar";
+    private const string SidebarCollapsedSettingKey = "navigation.collapsed";
     private const int SidebarLogicalWidth = 232;
     private const int SidebarCompactLogicalWidth = 56;
     private const int CompactBreakpointLogical = 860;
@@ -105,7 +107,14 @@ public sealed partial class MainForm
         _content.Controls.Add(_summary);
 
         _sidebar = new SidebarPanel { Dock = DockStyle.Left, Width = LogicalToDeviceUnits(SidebarLogicalWidth) };
+        _sidebar.CollapsedSections = _settings.GetValue(SidebarCollapsedSettingKey, "Rede");
         _sidebar.SelectionChanged += Sidebar_SelectionChanged;
+        _sidebar.CollapsedSectionsChanged += delegate { _settings.SetValue(SidebarCollapsedSettingKey, _sidebar.CollapsedSections); };
+        _sidebar.CompactToggleRequested += delegate
+        {
+            _settings.SetValue(SidebarModeSettingKey, _sidebar.Compact ? "wide" : "compact");
+            UpdateShellDensity();
+        };
 
         // Docking runs from the back of the z-order: menu first, then sidebar, then content.
         Controls.Add(_content);
@@ -139,6 +148,7 @@ public sealed partial class MainForm
                     _summary.Visible = false;
                 _hardwareBentoPanel.BringToFront();
                 _hardwareBentoPanel.UpdateTelemetry(_computer);
+                _hardwareBentoPanel.SetScope(_sidebar?.SelectedItem?.Tag as HardwareNode);
             }
             else
             {
@@ -148,7 +158,6 @@ public sealed partial class MainForm
                 if (_summary != null)
                 {
                     _summary.Visible = isAllDevices && _summary.HasMetrics;
-                _hardwareBentoPanel.SetScope(_sidebar?.SelectedItem?.Tag as HardwareNode);
                     if (_summary.Visible)
                         _summary.Invalidate();
                 }
@@ -164,9 +173,22 @@ public sealed partial class MainForm
         if (_sidebar == null)
             return;
 
-        bool compact = ClientSize.Width < LogicalToDeviceUnits(CompactBreakpointLogical);
+        // Automatic by window width unless the user chose a mode with the navigation button.
+        string mode = _settings.GetValue(SidebarModeSettingKey, "auto");
+        bool compact = mode == "auto" ? ClientSize.Width < LogicalToDeviceUnits(CompactBreakpointLogical) : mode == "compact";
         _sidebar.Compact = compact;
         _sidebar.Width = LogicalToDeviceUnits(compact ? SidebarCompactLogicalWidth : SidebarLogicalWidth);
+    }
+
+    private static string SidebarSection(HardwareType type)
+    {
+        return type switch
+        {
+            HardwareType.Memory => "Memória",
+            HardwareType.Storage => "Armazenamento",
+            HardwareType.Network => "Rede",
+            _ => "Hardware"
+        };
     }
 
     /// <summary>Rebuilds the device list and summary cards after hardware was added or removed.</summary>
@@ -175,25 +197,36 @@ public sealed partial class MainForm
         if (_sidebar == null)
             return;
 
+        _overlayTelemetry.Invalidate();
+
         HardwareNode scope = TreeScope;
         if (scope != null && !_root.Nodes.Contains(scope))
             scope = null;
 
+        // The first entries keep a fixed position: Ctrl+1..5 jump to them.
+        const string tools = "Ferramentas";
         string savedScope = _settings.GetValue(ScopeSettingKey, string.Empty);
         List<SidebarItem> items = new()
         {
-            new SidebarItem("All devices", FluentIcons.Computer, null),
-            new SidebarItem("Fan Control", FluentIcons.ForSensorType(SensorType.Fan), "fan_control"),
-            new SidebarItem("CPU Tuning", FluentIcons.ForHardware(HardwareType.Cpu), "cpu_tuning"),
-            new SidebarItem("GPU Tuning", FluentIcons.ForSensorType(SensorType.Clock), "gpu_tuning"),
-            new SidebarItem("Overlay HUD", FluentIcons.ForSensorType(SensorType.Level), "overlay_hud")
+            new SidebarItem("Visão geral", FluentIcons.Computer, null),
+            new SidebarItem("Ventoinhas", FluentIcons.ForSensorType(SensorType.Fan), "fan_control", tools),
+            new SidebarItem("Ajuste de CPU", FluentIcons.ForHardware(HardwareType.Cpu), "cpu_tuning", tools),
+            new SidebarItem("Ajuste de GPU", FluentIcons.ForSensorType(SensorType.Clock), "gpu_tuning", tools),
+            new SidebarItem("Overlay HUD", FluentIcons.ForSensorType(SensorType.Level), "overlay_hud", tools)
         };
 
-        foreach (HardwareNode node in _root.Nodes.OfType<HardwareNode>())
+        // Devices grouped by kind, so the many memory modules and network adapters do not bury the main components.
+        foreach (string section in new[] { "Hardware", "Memória", "Armazenamento", "Rede" })
         {
-            items.Add(new SidebarItem(node.Text, node.Image, node));
-            if (scope == null && savedScope.Length > 0 && node.Hardware.Identifier.ToString() == savedScope)
-                scope = node;
+            foreach (HardwareNode node in _root.Nodes.OfType<HardwareNode>())
+            {
+                if (SidebarSection(node.Hardware.HardwareType) != section)
+                    continue;
+
+                items.Add(new SidebarItem(node.Text, node.Image, node, section));
+                if (scope == null && savedScope.Length > 0 && node.Hardware.Identifier.ToString() == savedScope)
+                    scope = node;
+            }
         }
 
         _sidebar.SetItems(items, scope);
@@ -385,6 +418,14 @@ public sealed partial class MainForm
         if (keyData == (Keys.Control | Keys.F) && _search != null)
         {
             _search.FocusSearch();
+            return true;
+        }
+
+        // Ctrl+1..5: overview and the four tool pages.
+        int shortcut = (int)(keyData & Keys.KeyCode) - (int)Keys.D1;
+        if ((keyData & Keys.Modifiers) == Keys.Control && shortcut is >= 0 and < 5 && _sidebar != null)
+        {
+            _sidebar.SelectIndex(shortcut);
             return true;
         }
 

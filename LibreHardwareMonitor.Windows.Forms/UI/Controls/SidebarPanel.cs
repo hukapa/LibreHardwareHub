@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -7,60 +7,78 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
 {
-    /// <summary>A navigation entry of the <see cref="SidebarPanel" />.</summary>
-    public sealed class SidebarItem
-    {
-        public SidebarItem(string text, Image image, object tag)
-        {
-            Text = text;
-            Image = image;
-            Tag = tag;
-        }
-
-        public string Text { get; }
-        public Image Image { get; }
-        public object Tag { get; }
-    }
-
     /// <summary>
-    /// Fluent navigation pane: rounded hover and selection highlights with an accent pill,
-    /// a section caption, mouse wheel scrolling and an icon-only compact mode.
+    /// Fluent navigation pane: entries grouped in collapsible sections, rounded hover and selection highlights
+    /// with an accent pill, a button to switch to the icon-only compact mode, keyboard navigation
+    /// (Up/Down/Home/End) and mouse wheel scrolling with a thin scroll indicator.
     /// </summary>
-    public sealed class SidebarPanel : Control, IThemedControl
+    public sealed partial class SidebarPanel : Control, IThemedControl
     {
         private const int ItemLogicalHeight = 36;
-        private const int CaptionLogicalHeight = 34;
+        private const int HeaderLogicalHeight = 30;
+        private const int TopLogicalHeight = 44;
+
+        // A row is either a section caption (Item == null) or an entry.
+        private struct Row
+        {
+            public SidebarItem Item;
+            public string Section;
+            public int Top;
+            public int Height;
+            public int Hidden;
+        }
 
         private readonly List<SidebarItem> _items = new();
-        private int _selectedIndex = -1;
-        private int _hoverIndex = -1;
+        private readonly List<Row> _rows = new();
+        private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
+        private ToolTip _toolTip;
+        private SidebarItem _selected;
+        private int _hoverRow = -1; // -2 = compact toggle
+        private int _contentHeight;
         private int _scrollOffset;
         private bool _compact;
 
         public SidebarPanel()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
-            Caption = "Devices";
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                     ControlStyles.UserPaint | ControlStyles.Selectable, true);
+            TabStop = true;
         }
 
         public event EventHandler SelectionChanged;
 
-        public string Caption { get; set; }
+        /// <summary>Raised when the user asks to switch between the wide and the icon-only mode.</summary>
+        public event EventHandler CompactToggleRequested;
 
-        public IReadOnlyList<SidebarItem> Items => _items;
+        /// <summary>Raised when a section was collapsed or expanded (see <see cref="CollapsedSections" />).</summary>
+        public event EventHandler CollapsedSectionsChanged;
 
-        public SidebarItem SelectedItem => _selectedIndex >= 0 && _selectedIndex < _items.Count ? _items[_selectedIndex] : null;
+        public SidebarItem SelectedItem => _selected;
 
         public bool Compact
         {
-            get { return _compact; }
+            get => _compact;
             set
             {
                 if (_compact == value)
                     return;
 
                 _compact = value;
-                Invalidate();
+                BuildRows();
+            }
+        }
+
+        /// <summary>Names of the collapsed sections joined with '|', for persistence.</summary>
+        public string CollapsedSections
+        {
+            get => string.Join("|", _collapsed);
+            set
+            {
+                _collapsed.Clear();
+                foreach (string section in (value ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries))
+                    _collapsed.Add(section);
+
+                BuildRows();
             }
         }
 
@@ -69,24 +87,29 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
         {
             _items.Clear();
             _items.AddRange(items);
-            _selectedIndex = _items.FindIndex(i => Equals(i.Tag, selectedTag));
-            if (_selectedIndex < 0 && _items.Count > 0)
-                _selectedIndex = 0;
-
-            _hoverIndex = -1;
-            ClampScroll();
-            Invalidate();
+            _selected = _items.Find(i => Equals(i.Tag, selectedTag)) ?? (_items.Count > 0 ? _items[0] : null);
+            _hoverRow = -1;
+            BuildRows();
         }
 
         /// <summary>Selects the item carrying <paramref name="tag" /> and raises <see cref="SelectionChanged" /> when it changes.</summary>
-        public void SelectTag(object tag)
+        public void SelectTag(object tag) => Select(_items.Find(i => Equals(i.Tag, tag)));
+
+        /// <summary>Selects the item at <paramref name="index" /> (in the order given to <see cref="SetItems" />).</summary>
+        public void SelectIndex(int index)
         {
-            int index = _items.FindIndex(i => Equals(i.Tag, tag));
-            if (index < 0 || index == _selectedIndex)
+            if (index >= 0 && index < _items.Count)
+                Select(_items[index]);
+        }
+
+        private void Select(SidebarItem item)
+        {
+            if (item == null || item == _selected)
                 return;
 
-            _selectedIndex = index;
-            Invalidate();
+            _selected = item;
+            BuildRows();
+            EnsureVisible(item);
             SelectionChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -97,127 +120,202 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             Invalidate();
         }
 
-        private int ItemHeight => LogicalToDeviceUnits(ItemLogicalHeight);
+        // ---- Layout ----
 
-        private int ItemsTop => _compact ? LogicalToDeviceUnits(8) : LogicalToDeviceUnits(CaptionLogicalHeight);
+        private int TopHeight => LogicalToDeviceUnits(TopLogicalHeight);
 
-        private Rectangle ItemBounds(int index)
+        private void BuildRows()
+        {
+            _rows.Clear();
+            int y = 0;
+            string section = string.Empty;
+            int header = -1;
+
+            foreach (SidebarItem item in _items)
+            {
+                if (item.Section != section)
+                {
+                    section = item.Section;
+                    header = -1;
+                    if (section.Length > 0)
+                    {
+                        // In compact mode a caption is just a hairline separator.
+                        int height = LogicalToDeviceUnits(_compact ? 13 : HeaderLogicalHeight);
+                        header = _rows.Count;
+                        _rows.Add(new Row { Section = section, Top = y, Height = height });
+                        y += height;
+                    }
+                }
+
+                // A collapsed section still shows the selected entry, so the user never loses track of where they are.
+                if (!_compact && _collapsed.Contains(section) && item != _selected)
+                {
+                    if (header >= 0)
+                    {
+                        Row caption = _rows[header];
+                        caption.Hidden++;
+                        _rows[header] = caption;
+                    }
+
+                    continue;
+                }
+
+                int itemHeight = LogicalToDeviceUnits(ItemLogicalHeight);
+                _rows.Add(new Row { Item = item, Section = section, Top = y, Height = itemHeight });
+                y += itemHeight;
+            }
+
+            _contentHeight = y + LogicalToDeviceUnits(8);
+            ClampScroll();
+            Invalidate();
+        }
+
+        private Rectangle RowBounds(Row row)
         {
             int margin = LogicalToDeviceUnits(6);
-            return new Rectangle(margin, ItemsTop + (index * ItemHeight) - _scrollOffset, Width - (margin * 2), ItemHeight - LogicalToDeviceUnits(2));
+            return new Rectangle(margin, TopHeight + row.Top - _scrollOffset, Width - (margin * 2), row.Height - LogicalToDeviceUnits(2));
+        }
+
+        private Rectangle ToggleBounds => new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), LogicalToDeviceUnits(44), LogicalToDeviceUnits(32));
+
+        private int MaxScroll => Math.Max(0, _contentHeight - (Height - TopHeight));
+
+        private void ClampScroll() => _scrollOffset = Math.Clamp(_scrollOffset, 0, MaxScroll);
+
+        private void EnsureVisible(SidebarItem item)
+        {
+            int index = _rows.FindIndex(r => r.Item == item);
+            if (index < 0)
+                return;
+
+            Row row = _rows[index];
+            int view = Height - TopHeight;
+            if (row.Top < _scrollOffset)
+                _scrollOffset = row.Top;
+            else if (row.Top + row.Height > _scrollOffset + view)
+                _scrollOffset = row.Top + row.Height - view;
+
+            ClampScroll();
+            Invalidate();
         }
 
         private int HitTest(Point point)
         {
-            for (int i = 0; i < _items.Count; i++)
+            if (ToggleBounds.Contains(point))
+                return -2;
+
+            if (point.Y < TopHeight)
+                return -1;
+
+            for (int i = 0; i < _rows.Count; i++)
             {
-                if (ItemBounds(i).Contains(point))
+                if (RowBounds(_rows[i]).Contains(point))
                     return i;
             }
 
             return -1;
         }
 
-        private void ClampScroll()
-        {
-            int content = ItemsTop + (_items.Count * ItemHeight) + LogicalToDeviceUnits(8);
-            _scrollOffset = Math.Max(0, Math.Min(_scrollOffset, content - Height));
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            Theme theme = Theme.Current;
-            Graphics g = e.Graphics;
-            g.Clear(theme.BackgroundColor);
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-
-            if (!_compact && !string.IsNullOrEmpty(Caption))
-            {
-                Rectangle caption = new(LogicalToDeviceUnits(16), 0, Width - LogicalToDeviceUnits(24), ItemsTop);
-                TextRenderer.DrawText(g, Caption, FluentStyle.UiFontSemibold, caption, theme.MutedForegroundColor,
-                                      TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-            }
-
-            for (int i = 0; i < _items.Count; i++)
-            {
-                Rectangle bounds = ItemBounds(i);
-                if (bounds.Bottom < 0 || bounds.Top > Height)
-                    continue;
-
-                DrawItem(g, theme, _items[i], bounds, i == _selectedIndex, i == _hoverIndex);
-            }
-        }
-
-        private void DrawItem(Graphics g, Theme theme, SidebarItem item, Rectangle bounds, bool selected, bool hover)
-        {
-            float radius = LogicalToDeviceUnits(4);
-            if (selected || hover)
-            {
-                Color fill = FluentStyle.Blend(theme.BackgroundColor, theme.ForegroundColor, selected ? (theme.IsDark ? 0.10 : 0.07) : (theme.IsDark ? 0.05 : 0.035));
-                FluentStyle.FillRounded(g, fill, bounds, radius);
-            }
-
-            if (selected)
-            {
-                int pillHeight = LogicalToDeviceUnits(16);
-                RectangleF pill = new(bounds.Left, bounds.Top + ((bounds.Height - pillHeight) / 2f), LogicalToDeviceUnits(3), pillHeight);
-                FluentStyle.FillRounded(g, theme.AccentColor, pill, pill.Width / 2f);
-            }
-
-            int iconSize = LogicalToDeviceUnits(16);
-            int iconLeft = _compact ? bounds.Left + ((bounds.Width - iconSize) / 2) : bounds.Left + LogicalToDeviceUnits(12);
-            if (item.Image != null)
-                g.DrawImage(item.Image, new Rectangle(iconLeft, bounds.Top + ((bounds.Height - iconSize) / 2), iconSize, iconSize));
-
-            if (_compact)
-                return;
-
-            int textLeft = iconLeft + iconSize + LogicalToDeviceUnits(12);
-            Rectangle text = new(textLeft, bounds.Top, bounds.Right - textLeft - LogicalToDeviceUnits(6), bounds.Height);
-            TextRenderer.DrawText(g, item.Text, selected ? FluentStyle.UiFontSemibold : FluentStyle.UiFont, text, theme.ForegroundColor,
-                                  TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        }
+        // ---- Input ----
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            int index = HitTest(e.Location);
-            if (index == _hoverIndex)
+            int row = HitTest(e.Location);
+            if (row == _hoverRow)
                 return;
 
-            _hoverIndex = index;
-            Cursor = index >= 0 ? Cursors.Hand : Cursors.Default;
-            UpdateToolTip(index);
+            _hoverRow = row;
+            Cursor = row != -1 ? Cursors.Hand : Cursors.Default;
+            UpdateToolTip(row);
             Invalidate();
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
-            _hoverIndex = -1;
+            _hoverRow = -1;
             Invalidate();
         }
 
-        protected override void OnMouseClick(MouseEventArgs e)
+        protected override void OnMouseDown(MouseEventArgs e)
         {
-            base.OnMouseClick(e);
+            base.OnMouseDown(e);
+            Focus();
             if (e.Button != MouseButtons.Left)
                 return;
 
             int index = HitTest(e.Location);
-            if (index < 0 || index == _selectedIndex)
-                return;
+            if (index == -2)
+            {
+                CompactToggleRequested?.Invoke(this, EventArgs.Empty);
+            }
+            else if (index >= 0 && _rows[index].Item != null)
+            {
+                Select(_rows[index].Item);
+            }
+            else if (index >= 0 && !_compact)
+            {
+                string section = _rows[index].Section;
+                if (!_collapsed.Remove(section))
+                    _collapsed.Add(section);
 
-            _selectedIndex = index;
-            Invalidate();
-            SelectionChanged?.Invoke(this, EventArgs.Empty);
+                BuildRows();
+                CollapsedSectionsChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             base.OnMouseWheel(e);
-            _scrollOffset -= e.Delta / 120 * ItemHeight;
+            _scrollOffset -= e.Delta / 120 * LogicalToDeviceUnits(ItemLogicalHeight);
             ClampScroll();
+            Invalidate();
+        }
+
+        protected override bool IsInputKey(Keys keyData) => keyData is Keys.Up or Keys.Down or Keys.Home or Keys.End || base.IsInputKey(keyData);
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            // Moves through the entries currently listed (collapsed sections are skipped).
+            List<SidebarItem> visible = new();
+            foreach (Row row in _rows)
+            {
+                if (row.Item != null)
+                    visible.Add(row.Item);
+            }
+
+            if (visible.Count == 0)
+                return;
+
+            int index = visible.IndexOf(_selected);
+            int target = e.KeyCode switch
+            {
+                Keys.Up => Math.Max(0, index - 1),
+                Keys.Down => Math.Min(visible.Count - 1, index + 1),
+                Keys.Home => 0,
+                Keys.End => visible.Count - 1,
+                _ => -1
+            };
+
+            if (target < 0)
+                return;
+
+            Select(visible[target]);
+            e.Handled = true;
+        }
+
+        protected override void OnGotFocus(EventArgs e)
+        {
+            base.OnGotFocus(e);
+            Invalidate();
+        }
+
+        protected override void OnLostFocus(EventArgs e)
+        {
+            base.OnLostFocus(e);
             Invalidate();
         }
 
@@ -227,12 +325,24 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             ClampScroll();
         }
 
-        private ToolTip _toolTip;
-
-        private void UpdateToolTip(int index)
+        // A tooltip only where the text is not fully readable: icon-only mode, truncated names and the toggle.
+        private void UpdateToolTip(int row)
         {
+            string text = null;
+            if (row == -2)
+            {
+                text = _compact ? "Expandir navegação" : "Compactar navegação";
+            }
+            else if (row >= 0 && _rows[row].Item is { } item)
+            {
+                bool truncated = TextRenderer.MeasureText(item.Text, FluentStyle.UiFontSemibold).Width > TextBounds(RowBounds(_rows[row])).Width;
+                if (_compact || truncated)
+                    text = item.Text;
+            }
+
             _toolTip ??= new ToolTip { ShowAlways = true };
-            _toolTip.SetToolTip(this, index >= 0 ? _items[index].Text : null);
+            if (_toolTip.GetToolTip(this) != (text ?? string.Empty))
+                _toolTip.SetToolTip(this, text);
         }
 
         protected override void Dispose(bool disposing)
