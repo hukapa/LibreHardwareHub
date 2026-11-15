@@ -6,8 +6,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Linq;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Icons;
@@ -15,14 +13,12 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
-/// <summary>
-/// Specialized Bento card for Processors (CPU) displaying vital KPIs,
-/// a compact Core Matrix, and an expandable drawer of detailed core and plane sensors.
-/// </summary>
+/// <summary>Processor card: package KPIs and a compact per-thread load matrix.</summary>
 public sealed class CpuBentoCard : BentoCardBase
 {
-    private readonly List<(string Name, float Load, float? Clock)> _cores = new();
-    private readonly List<(string Name, string Value)> _detailedSensors = new();
+    private const string CorePrefix = "CPU Core #";
+
+    private readonly List<float> _coreLoads = new();
     private float? _packageTemp;
     private float? _totalLoad;
     private float? _packagePower;
@@ -32,9 +28,18 @@ public sealed class CpuBentoCard : BentoCardBase
     {
         Icon = FluentIcons.ForHardware(HardwareType.Cpu);
         Title = "Processador (CPU)";
-        Subtitle = "Telemetria e Matriz de Núcleos";
-        Height = LogicalToDeviceUnits(280);
+        Subtitle = "Telemetria e matriz de núcleos";
     }
+
+    private int MatrixColumns => _coreLoads.Count > 16 ? 5 : 4;
+
+    private int MatrixRows => Math.Max(1, (_coreLoads.Count + MatrixColumns - 1) / MatrixColumns);
+
+    // Two KPI rows, the matrix caption and the matrix itself.
+    protected override int SummaryHeight => 104 + 14 + 18 + (MatrixRows * 28);
+
+    // The per-thread loads are already plotted by the matrix.
+    protected override bool IncludeDetail(ISensor sensor) => !(sensor.SensorType == SensorType.Load && sensor.Name.StartsWith(CorePrefix));
 
     public void UpdateSensors(IHardware cpu)
     {
@@ -42,183 +47,69 @@ public sealed class CpuBentoCard : BentoCardBase
             return;
 
         Title = cpu.Name;
+        _packageTemp = SensorLookup.FindOrFirst(cpu, SensorType.Temperature, "Package", "Tctl", "Core Max")?.Value;
+        _totalLoad = SensorLookup.Find(cpu, SensorType.Load, "Total")?.Value;
+        _packagePower = SensorLookup.FindOrFirst(cpu, SensorType.Power, "Package")?.Value;
 
-        ISensor temp = cpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature &&
-            (s.Name.Contains("Package") || s.Name.Contains("Tctl") || s.Name.Contains("Core Max")))
-            ?? cpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
-        _packageTemp = temp?.Value;
-
-        ISensor load = cpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Load && s.Name.Contains("Total"));
-        _totalLoad = load?.Value;
-
-        ISensor power = cpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Power && s.Name.Contains("Package"))
-            ?? cpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Power);
-        _packagePower = power?.Value;
-
-        ISensor clock = cpu.Sensors.Where(s => s.SensorType == SensorType.Clock && !s.Name.Contains("Bus"))
-            .OrderByDescending(s => s.Value.GetValueOrDefault())
-            .FirstOrDefault();
-        _peakClock = clock?.Value;
-
-        if (_packageTemp.HasValue)
+        _peakClock = null;
+        _coreLoads.Clear();
+        foreach (ISensor s in cpu.Sensors)
         {
-            if (_packageTemp.Value >= 85f)
-            {
-                BadgeText = "Crítico";
-                BadgeColor = Color.FromArgb(235, 60, 60);
-            }
-            else if (_packageTemp.Value >= 70f)
-            {
-                BadgeText = "Quente";
-                BadgeColor = Color.FromArgb(240, 180, 30);
-            }
-            else
-            {
-                BadgeText = "Normal";
-                BadgeColor = Color.FromArgb(70, 200, 100);
-            }
+            if (s.SensorType == SensorType.Load && s.Name.StartsWith(CorePrefix))
+                _coreLoads.Add(s.Value.GetValueOrDefault());
+            else if (s.SensorType == SensorType.Clock && !s.Name.Contains("Bus") && s.Value > _peakClock.GetValueOrDefault())
+                _peakClock = s.Value;
         }
 
-        // Core Matrix
-        _cores.Clear();
-        var coreLoads = cpu.Sensors.Where(s => s.SensorType == SensorType.Load && s.Name.StartsWith("CPU Core #")).ToList();
-        var coreClocks = cpu.Sensors.Where(s => s.SensorType == SensorType.Clock && s.Name.StartsWith("CPU Core #")).ToList();
+        SetBadge(_packageTemp, 70f, 85f, "Normal", "Quente", "Crítico");
 
-        for (int i = 0; i < coreLoads.Count; i++)
-        {
-            float l = coreLoads[i].Value.GetValueOrDefault();
-            float? c = i < coreClocks.Count ? coreClocks[i].Value : null;
-            _cores.Add(($"C{i}", l, c));
-        }
-
-        // Detailed Sensors for expansion
-        _detailedSensors.Clear();
-        foreach (ISensor s in cpu.Sensors.Where(s => s.Value.HasValue))
-        {
-            if (s.SensorType == SensorType.Temperature && s.Name.StartsWith("CPU Core #"))
-                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} °C"));
-            else if (s.SensorType == SensorType.Voltage)
-                _detailedSensors.Add((s.Name, $"{s.Value.Value:F3} V"));
-            else if (s.SensorType == SensorType.Power && !s.Name.Contains("Package"))
-                _detailedSensors.Add((s.Name, $"{s.Value.Value:F1} W"));
-            else if (s.SensorType == SensorType.Clock && s.Name.StartsWith("CPU Core #"))
-                _detailedSensors.Add((s.Name, $"{s.Value.Value:F0} MHz"));
-        }
-
-        int prevHeight = Height;
-        RecalculateCardHeight();
-        if (Height != prevHeight)
-            Parent?.PerformLayout();
-
-        Invalidate();
+        BeginDetails();
+        AddDetails(cpu);
+        EndUpdate();
     }
 
-    protected override void RecalculateCardHeight()
+    protected override void DrawSummary(Graphics g, Theme theme, Rectangle area)
     {
-        int cols = _cores.Count > 16 ? 5 : 4;
-        int rows = Math.Max(1, (int)Math.Ceiling(_cores.Count / (double)cols));
-        int baseHeight = 48 + 6 + (48 * 2) + 8 + 14 + 16 + (rows * 28) + 28;
+        Color? tempColor = StateColor(theme, _packageTemp, 70f, 85f);
+        DrawKpiBox(g, KpiTile(area, 0), "Temp. Package", _packageTemp?.ToString("F1"), "°C", _packageTemp / 100f, tempColor, theme);
+        DrawKpiBox(g, KpiTile(area, 1), "Carga Total", _totalLoad?.ToString("F1"), "%", _totalLoad / 100f, null, theme);
+        DrawKpiBox(g, KpiTile(area, 2), "Consumo Package", _packagePower?.ToString("F1"), "W", null, null, theme);
+        DrawKpiBox(g, KpiTile(area, 3), "Clock Pico", _peakClock?.ToString("F0"), "MHz", null, null, theme);
 
-        if (IsExpanded && _detailedSensors.Count > 0)
+        int matrixY = area.Y + LogicalToDeviceUnits(104 + 14);
+        DrawSectionTitle(g, _coreLoads.Count > 0 ? $"MATRIZ DE NÚCLEOS ({_coreLoads.Count} THREADS)" : "MATRIZ DE NÚCLEOS", area, matrixY, theme);
+        if (_coreLoads.Count == 0)
+            return;
+
+        int columns = MatrixColumns;
+        int gap = LogicalToDeviceUnits(4);
+        int cellWidth = (area.Width - ((columns - 1) * gap)) / columns;
+        int cellHeight = LogicalToDeviceUnits(24);
+        int gridY = matrixY + LogicalToDeviceUnits(18);
+        if (cellWidth <= 8)
+            return;
+
+        Color cellFill = Color.FromArgb(theme.IsDark ? 20 : 10, theme.ForegroundColor);
+        using SolidBrush track = new(Color.FromArgb(40, theme.MutedForegroundColor));
+        using SolidBrush fill = new(theme.AccentColor);
+
+        for (int i = 0; i < _coreLoads.Count; i++)
         {
-            int availWidth = Width > 0 ? Width - LogicalToDeviceUnits(28) : LogicalToDeviceUnits(380);
-            int detCols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;
-            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / (double)detCols);
-            baseHeight += 32 + (extraRows * 22) + 16;
-        }
+            float load = _coreLoads[i];
+            Rectangle cell = new(area.X + (i % columns * (cellWidth + gap)), gridY + (i / columns * (cellHeight + gap)), cellWidth, cellHeight);
+            FluentStyle.FillRounded(g, cellFill, cell, LogicalToDeviceUnits(4));
 
-        Height = LogicalToDeviceUnits(Math.Max(260, baseHeight));
-    }
+            TextRenderer.DrawText(g, $"C{i}", FluentStyle.UiFontMini, new Rectangle(cell.X + 4, cell.Y + 2, cellWidth / 2, LogicalToDeviceUnits(12)), theme.MutedForegroundColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, $"{load:F0}%", FluentStyle.MonoFontSmall, new Rectangle(cell.X + (cellWidth / 2), cell.Y + 2, (cellWidth / 2) - 4, LogicalToDeviceUnits(12)), theme.ForegroundColor,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
-    protected override void DrawCardContent(Graphics g, Theme theme)
-    {
-        int pad = LogicalToDeviceUnits(14);
-        int topY = LogicalToDeviceUnits(HeaderHeightLogical) + LogicalToDeviceUnits(6);
-        int availWidth = Width - (pad * 2);
-
-        // 1. Top 4 KPI Boxes (2x2) with 1 decimal precision
-        int kpiW = (availWidth - LogicalToDeviceUnits(10)) / 2;
-        int kpiH = LogicalToDeviceUnits(48);
-
-        Color? tempColor = _packageTemp.HasValue
-            ? (_packageTemp.Value >= 85f ? theme.StateHotColor : _packageTemp.Value >= 70f ? theme.StateWarmColor : theme.StateCoolColor)
-            : null;
-
-        Rectangle r1 = new(pad, topY, kpiW, kpiH);
-        Rectangle r2 = new(pad + kpiW + LogicalToDeviceUnits(10), topY, kpiW, kpiH);
-        Rectangle r3 = new(pad, topY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
-        Rectangle r4 = new(pad + kpiW + LogicalToDeviceUnits(10), topY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
-
-        DrawKpiBox(g, r1, "Temp. Package", _packageTemp.HasValue ? $"{_packageTemp.Value:F1}" : "--", "°C", _packageTemp / 100f, tempColor, theme);
-        DrawKpiBox(g, r2, "Carga Total", _totalLoad.HasValue ? $"{_totalLoad.Value:F1}" : "--", "%", _totalLoad / 100f, null, theme);
-        DrawKpiBox(g, r3, "Consumo Package", _packagePower.HasValue ? $"{_packagePower.Value:F1}" : "--", "W", null, null, theme);
-        DrawKpiBox(g, r4, "Clock Pico", _peakClock.HasValue ? $"{_peakClock.Value:F0}" : "--", "MHz", null, null, theme);
-
-        // 2. Core Matrix (Mini-Grelha de Núcleos)
-        int matrixY = topY + (kpiH * 2) + LogicalToDeviceUnits(14);
-        string matrixTitle = _cores.Count > 0 ? $"MATRIZ DE NÚCLEOS ({_cores.Count} THREADS)" : "MATRIZ DE NÚCLEOS";
-        DrawSectionTitle(g, matrixTitle, pad, matrixY, theme);
-
-        int gridY = matrixY + LogicalToDeviceUnits(16);
-        int endGridY = gridY;
-
-        if (_cores.Count > 0)
-        {
-            int cols = _cores.Count > 16 ? 5 : 4;
-            int rows = Math.Max(1, (int)Math.Ceiling(_cores.Count / (double)cols));
-            int cellW = (availWidth - ((cols - 1) * LogicalToDeviceUnits(4))) / cols;
-            int cellH = LogicalToDeviceUnits(24);
-
-            if (cellW > 8 && cellH > 8)
-            {
-                using SolidBrush barBg = new(Color.FromArgb(40, theme.MutedForegroundColor));
-
-                for (int i = 0; i < _cores.Count; i++)
-                {
-                    int r = i / cols;
-                    int c = i % cols;
-                    int cx = pad + (c * (cellW + LogicalToDeviceUnits(4)));
-                    int cy = gridY + (r * (cellH + LogicalToDeviceUnits(4)));
-
-                    Rectangle cellRect = new(cx, cy, cellW, cellH);
-                    using (GraphicsPath cp = FluentStyle.RoundedRectangle(cellRect, 4f))
-                    {
-                        using SolidBrush cb = new(Color.FromArgb(theme.IsDark ? 20 : 10, theme.ForegroundColor));
-                        g.FillPath(cb, cp);
-                        using Pen cpen = new(Color.FromArgb(theme.IsDark ? 30 : 15, theme.ForegroundColor), 1f);
-                        g.DrawPath(cpen, cp);
-                    }
-
-                    var (name, coreLoad, _) = _cores[i];
-
-                    Rectangle nameRect = new(cx + 4, cy + 2, cellW / 2, LogicalToDeviceUnits(12));
-                    TextRenderer.DrawText(g, name ?? string.Empty, FluentStyle.UiFontMini, nameRect, theme.MutedForegroundColor,
-                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-
-                    string pctText = (coreLoad < 10f && coreLoad > 0.1f) ? $"{coreLoad:F1}%" : $"{coreLoad:F0}%";
-                    Rectangle pctRect = new(cx + (cellW / 2), cy + 2, (cellW / 2) - 4, LogicalToDeviceUnits(12));
-                    TextRenderer.DrawText(g, pctText, FluentStyle.MonoFontSmall, pctRect, theme.ForegroundColor,
-                        TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-
-                    int barY = cy + cellH - LogicalToDeviceUnits(4);
-                    int barW = Math.Max(2, cellW - 6);
-                    g.FillRectangle(barBg, cx + 3, barY, barW, 2);
-
-                    float ratio = Math.Max(0f, Math.Min(1f, coreLoad / 100f));
-                    Color coreColor = ratio > 0.85f ? theme.StateHotColor : ratio > 0.6f ? theme.StateWarmColor : theme.AccentColor;
-                    using SolidBrush coreBarFill = new(coreColor);
-                    int fillW = Math.Max(0, Math.Min(barW, (int)(barW * ratio)));
-                    g.FillRectangle(coreBarFill, cx + 3, barY, fillW, 2);
-                }
-
-                endGridY = gridY + (rows * (cellH + LogicalToDeviceUnits(4))) + LogicalToDeviceUnits(12);
-            }
-        }
-
-        // 3. Expandable detailed sensor list
-        if (IsExpanded && _detailedSensors.Count > 0)
-        {
-            DrawExpandedSensorList(g, endGridY, _detailedSensors, theme);
+            float ratio = Math.Clamp(load / 100f, 0f, 1f);
+            int barY = cell.Bottom - LogicalToDeviceUnits(4);
+            int barWidth = cellWidth - 6;
+            g.FillRectangle(track, cell.X + 3, barY, barWidth, 2);
+            fill.Color = ratio > 0.85f ? theme.StateHotColor : ratio > 0.6f ? theme.StateWarmColor : theme.AccentColor;
+            g.FillRectangle(fill, cell.X + 3, barY, (int)(barWidth * ratio), 2);
         }
     }
 }

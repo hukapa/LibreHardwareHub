@@ -8,33 +8,50 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using LibreHardwareMonitor.Hardware;
+using LibreHardwareMonitor.Windows.Forms.UI.Controls;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
 /// <summary>
-/// Base class for Bento hardware cards providing unified Fluent geometry,
-/// header rendering, cached brushes, interactive click-to-expand capabilities,
-/// and zero-flicker double-buffered painting.
+/// Base of the Bento hardware cards. A card has a header and a fixed-height summary (drawn by the subclass).
+/// Clicking it expands it: the card takes a full row of the grid and shows every sensor, grouped by type,
+/// next to the summary (or below it when the window is narrow). The grid asks the card for its height
+/// (<see cref="IWrapGridItem" />), so cards of one row always end up with the same height.
 /// </summary>
-public abstract class BentoCardBase : Control, IThemedControl
+public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGridItem
 {
-    protected const int HeaderHeightLogical = 48;
-    protected const int CornerRadiusLogical = 10;
+    private const int HeaderLogical = 54;
+    private const int PadLogical = 14;
+    private const int MinSummaryLogical = 176;
+    private const int SummaryPaneLogical = 372;
+    private const int SideBySideMinLogical = 760;
+    private const int DetailColumnLogical = 236;
+    private const int DetailRowLogical = 22;
+    private const int DetailCaptionLogical = 24;
+    private const int DetailGroupGapLogical = 10;
+    private const int DetailColumnGapLogical = 12;
+    private const int SmallGroupRows = 6;
 
+    private sealed class DetailGroup
+    {
+        public string Title;
+        public readonly List<(string Name, string Value)> Rows = new();
+    }
+
+    private readonly List<DetailGroup> _details = new();
+    private int _detailGroups;
+    private int _layoutHeight;
     private bool _isHovered;
     private bool _isExpanded;
-
-    public event EventHandler ExpansionChanged;
 
     protected BentoCardBase()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
 
-        Height = LogicalToDeviceUnits(260);
-        Width = LogicalToDeviceUnits(400);
-        Margin = new Padding(LogicalToDeviceUnits(6));
+        Size = new Size(LogicalToDeviceUnits(400), LogicalToDeviceUnits(HeaderLogical + MinSummaryLogical + PadLogical));
         Cursor = Cursors.Hand;
     }
 
@@ -49,38 +66,170 @@ public abstract class BentoCardBase : Control, IThemedControl
         get => _isExpanded;
         set
         {
-            if (_isExpanded != value)
-            {
-                _isExpanded = value;
-                RecalculateCardHeight();
-                ExpansionChanged?.Invoke(this, EventArgs.Empty);
-                Parent?.PerformLayout();
-                Invalidate();
-            }
+            if (_isExpanded == value)
+                return;
+
+            _isExpanded = value;
+            if (!value)
+                _detailGroups = 0;
+
+            ExpansionChanged?.Invoke(this, EventArgs.Empty);
+            Parent?.PerformLayout();
+            Invalidate();
         }
     }
 
-    protected bool IsHovered => _isHovered;
+    /// <summary>Raised when the card was expanded or collapsed; the owner refreshes its sensors and the grid.</summary>
+    public event EventHandler ExpansionChanged;
 
-    public static float? ToGigabytes(float? val)
+    /// <summary>Height of the summary area in logical units (without header and paddings).</summary>
+    protected abstract int SummaryHeight { get; }
+
+    /// <summary>Draws the always-visible part of the card inside <paramref name="area" />.</summary>
+    protected abstract void DrawSummary(Graphics g, Theme theme, Rectangle area);
+
+    /// <summary>Lets a card leave sensors out of the detailed list (for example the ones its summary already plots).</summary>
+    protected virtual bool IncludeDetail(ISensor sensor) => true;
+
+    // ---- Detailed sensors (only collected while the card is expanded) ----
+
+    protected void BeginDetails() => _detailGroups = 0;
+
+    /// <summary>
+    /// Adds every sensor of <paramref name="hardware" /> (and sub-hardware) to the detailed list: grouped by sensor
+    /// type, or all under <paramref name="groupTitle" /> when one is given.
+    /// </summary>
+    protected void AddDetails(IHardware hardware, string groupTitle = null)
     {
-        if (!val.HasValue)
-            return null;
+        if (!_isExpanded || hardware == null)
+            return;
 
-        float v = val.Value;
-        if (v > 100_000_000f) // Raw Bytes (e.g. 16,840,245,248)
-            return v / (1024f * 1024f * 1024f);
-        if (v > 50_000f) // Kilobytes
-            return v / (1024f * 1024f);
-        if (v > 100f) // Megabytes (e.g. 16,384 or 6,144)
-            return v / 1024f;
-
-        return v; // Already Gigabytes
+        int first = _detailGroups;
+        AddDetailSensors(hardware, groupTitle, first);
     }
 
-    protected virtual void RecalculateCardHeight()
+    private void AddDetailSensors(IHardware hardware, string groupTitle, int first)
     {
+        foreach (ISensor sensor in hardware.Sensors)
+        {
+            if (!sensor.Value.HasValue || !IncludeDetail(sensor))
+                continue;
+
+            // One group per sensor type, or one per device when several devices share the card.
+            string title = groupTitle ?? SensorLookup.GroupName(sensor.SensorType);
+
+            DetailGroup group = null;
+            for (int i = first; i < _detailGroups; i++)
+            {
+                if (_details[i].Title == title)
+                {
+                    group = _details[i];
+                    break;
+                }
+            }
+
+            if (group == null)
+            {
+                // Group objects (and their row lists) are reused between updates.
+                if (_detailGroups == _details.Count)
+                    _details.Add(new DetailGroup());
+
+                group = _details[_detailGroups++];
+                group.Title = title;
+                group.Rows.Clear();
+            }
+
+            group.Rows.Add((sensor.Name, SensorLookup.Format(sensor)));
+        }
+
+        foreach (IHardware sub in hardware.SubHardware)
+            AddDetailSensors(sub, groupTitle, first);
     }
+
+    /// <summary>Call at the end of a sensor update: re-runs the grid layout if the card needs another height.</summary>
+    protected void EndUpdate()
+    {
+        if (Parent != null && Measure(Width) != _layoutHeight)
+            Parent.PerformLayout();
+
+        Invalidate();
+    }
+
+    // ---- Geometry ----
+
+    public bool FullRow => _isExpanded;
+
+    private bool SideBySide(int width) => width >= LogicalToDeviceUnits(SideBySideMinLogical);
+
+    private int SummaryPixels => LogicalToDeviceUnits(Math.Max(MinSummaryLogical, SummaryHeight));
+
+    private int DetailsWidth(int width)
+    {
+        int pad = LogicalToDeviceUnits(PadLogical);
+        return SideBySide(width) ? width - LogicalToDeviceUnits(SummaryPaneLogical) - (pad * 3) : width - (pad * 2);
+    }
+
+    private int DetailsHeight(int detailsWidth) => LayoutDetails(detailsWidth, null);
+
+    /// <summary>
+    /// Arranges the detail groups inside a strip <paramref name="width" /> pixels wide and returns its height.
+    /// Small groups sit side by side, one column each; a large group takes the full width and spreads its rows
+    /// over all the columns. Measuring and painting both go through here, so they can never disagree.
+    /// </summary>
+    private int LayoutDetails(int width, Action<DetailGroup, Rectangle, int> visit)
+    {
+        int columns = Math.Max(1, width / LogicalToDeviceUnits(DetailColumnLogical));
+        int gap = LogicalToDeviceUnits(DetailColumnGapLogical);
+        int columnWidth = (width - (gap * (columns - 1))) / columns;
+        int rowHeight = LogicalToDeviceUnits(DetailRowLogical);
+        int chrome = LogicalToDeviceUnits(DetailCaptionLogical) + LogicalToDeviceUnits(DetailGroupGapLogical);
+
+        int y = 0;
+        int shelfColumn = 0;
+        int shelfHeight = 0;
+        for (int i = 0; i < _detailGroups; i++)
+        {
+            DetailGroup group = _details[i];
+            bool small = columns > 1 && group.Rows.Count <= SmallGroupRows;
+            if (!small || shelfColumn == columns)
+            {
+                y += shelfHeight;
+                shelfColumn = shelfHeight = 0;
+            }
+
+            if (small)
+            {
+                int height = chrome + (group.Rows.Count * rowHeight);
+                visit?.Invoke(group, new Rectangle(shelfColumn * (columnWidth + gap), y, columnWidth, height), 1);
+                shelfColumn++;
+                shelfHeight = Math.Max(shelfHeight, height);
+            }
+            else
+            {
+                int height = chrome + ((group.Rows.Count + columns - 1) / columns * rowHeight);
+                visit?.Invoke(group, new Rectangle(0, y, width, height), columns);
+                y += height;
+            }
+        }
+
+        return y + shelfHeight;
+    }
+
+    public int HeightForWidth(int width) => _layoutHeight = Measure(width);
+
+    private int Measure(int width)
+    {
+        int chrome = LogicalToDeviceUnits(HeaderLogical) + LogicalToDeviceUnits(PadLogical);
+        if (!_isExpanded || _detailGroups == 0)
+            return chrome + SummaryPixels;
+
+        int details = DetailsHeight(DetailsWidth(width));
+        return SideBySide(width)
+            ? chrome + Math.Max(SummaryPixels, details)
+            : chrome + SummaryPixels + LogicalToDeviceUnits(PadLogical) + details;
+    }
+
+    // ---- Input ----
 
     protected override void OnMouseEnter(EventArgs e)
     {
@@ -100,10 +249,10 @@ public abstract class BentoCardBase : Control, IThemedControl
     {
         base.OnMouseClick(e);
         if (e.Button == MouseButtons.Left)
-        {
             IsExpanded = !IsExpanded;
-        }
     }
+
+    // ---- Painting ----
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -111,255 +260,121 @@ public abstract class BentoCardBase : Control, IThemedControl
             return;
 
         Graphics g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
         Theme theme = Theme.Current;
-        RectangleF bounds = new(0, 0, Width - 1, Height - 1);
-        float radius = LogicalToDeviceUnits(CornerRadiusLogical);
+        g.Clear(Parent?.BackColor ?? theme.BackgroundColor);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
 
-        using (GraphicsPath path = FluentStyle.RoundedRectangle(bounds, radius))
-        {
-            using SolidBrush bgBrush = new(theme.SurfaceColor);
-            g.FillPath(bgBrush, path);
+        RectangleF bounds = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+        float radius = LogicalToDeviceUnits(10);
+        Color stroke = _isHovered || _isExpanded ? FluentStyle.Blend(theme.SurfaceStrokeColor, theme.AccentColor, _isHovered ? 0.65 : 0.35) : theme.SurfaceStrokeColor;
+        FluentStyle.FillRounded(g, theme.SurfaceColor, bounds, radius);
+        FluentStyle.DrawRounded(g, stroke, bounds, radius, _isHovered ? 1.5f : 1f);
 
-            Color strokeColor = _isHovered
-                ? FluentStyle.Blend(theme.SurfaceStrokeColor, theme.AccentColor, 0.65)
-                : theme.SurfaceStrokeColor;
-            float strokeWidth = _isHovered ? 1.5f : 1f;
+        int pad = LogicalToDeviceUnits(PadLogical);
+        int top = LogicalToDeviceUnits(HeaderLogical);
+        DrawHeader(g, theme, pad);
 
-            using Pen strokePen = new(strokeColor, strokeWidth);
-            g.DrawPath(strokePen, path);
-        }
+        bool sideBySide = _isExpanded && _detailGroups > 0 && SideBySide(Width);
+        int summaryWidth = sideBySide ? LogicalToDeviceUnits(SummaryPaneLogical) : Width - (pad * 2);
+        DrawSummary(g, theme, new Rectangle(pad, top, summaryWidth, SummaryPixels));
 
-        DrawHeader(g, theme);
-        DrawCardContent(g, theme);
-    }
-
-    protected virtual void DrawHeader(Graphics g, Theme theme)
-    {
-        int pad = LogicalToDeviceUnits(14);
-        int iconBox = LogicalToDeviceUnits(28);
-        int x = pad;
-
-        if (Icon != null && Icon.Width > 0 && Icon.Height > 0)
-        {
-            Rectangle iconRect = new(x, pad, iconBox, iconBox);
-            using (GraphicsPath ip = FluentStyle.RoundedRectangle(iconRect, 6f))
-            {
-                using SolidBrush ib = new(Color.FromArgb(theme.IsDark ? 28 : 14, theme.ForegroundColor));
-                g.FillPath(ib, ip);
-            }
-
-            int iconPad = LogicalToDeviceUnits(4);
-            g.DrawImage(Icon, x + iconPad, pad + iconPad, iconBox - iconPad * 2, iconBox - iconPad * 2);
-            x += iconBox + LogicalToDeviceUnits(10);
-        }
-
-        int availWidth = Width - x - pad;
-        if (!string.IsNullOrEmpty(BadgeText))
-        {
-            int badgeW = LogicalToDeviceUnits(74);
-            int badgeH = LogicalToDeviceUnits(22);
-            Rectangle badgeRect = new(Width - pad - badgeW, pad + 3, badgeW, badgeH);
-            Color badgeBg = BadgeColor.IsEmpty ? theme.AccentColor : BadgeColor;
-
-            using (GraphicsPath bPath = FluentStyle.RoundedRectangle(badgeRect, badgeH / 2f))
-            {
-                using SolidBrush bb = new(Color.FromArgb(35, badgeBg));
-                g.FillPath(bb, bPath);
-                using Pen bp = new(badgeBg, 1f);
-                g.DrawPath(bp, bPath);
-            }
-
-            TextRenderer.DrawText(g, BadgeText, FluentStyle.UiFontSmallBold, badgeRect, badgeBg,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-
-            availWidth -= (badgeW + LogicalToDeviceUnits(10));
-        }
-
-        string titleText = string.IsNullOrEmpty(Title) ? " " : Title;
-        Rectangle titleRect = new(x, pad, Math.Max(10, availWidth), LogicalToDeviceUnits(16));
-        TextRenderer.DrawText(g, titleText, FluentStyle.UiFontSemibold, titleRect, theme.ForegroundColor,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-
-        if (!string.IsNullOrEmpty(Subtitle))
-        {
-            Rectangle subRect = new(x, pad + LogicalToDeviceUnits(16), Math.Max(10, availWidth), LogicalToDeviceUnits(14));
-            TextRenderer.DrawText(g, Subtitle, FluentStyle.UiFontSmall, subRect, theme.MutedForegroundColor,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-        }
-
-        // Hairline subtle divider below header
-        int divY = LogicalToDeviceUnits(HeaderHeightLogical) - LogicalToDeviceUnits(2);
-        using Pen divPen = new(theme.LineColor, 1f);
-        g.DrawLine(divPen, pad, divY, Width - pad, divY);
-
-        // Subtle interactive hint at bottom right
-        string hint = _isExpanded ? "Clique para recolher [^]" : "Clique para mais detalhes [v]";
-        int hintW = LogicalToDeviceUnits(140);
-        int hintH = LogicalToDeviceUnits(14);
-        Rectangle hintRect = new(Width - pad - hintW, Height - pad / 2 - hintH, hintW, hintH);
-        Color hintColor = _isHovered ? theme.AccentColor : theme.MutedForegroundColor;
-        TextRenderer.DrawText(g, hint, FluentStyle.UiFontMini, hintRect, hintColor,
-            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-    }
-
-    protected abstract void DrawCardContent(Graphics g, Theme theme);
-
-    protected void DrawSectionTitle(Graphics g, string title, int x, int y, Theme theme)
-    {
-        Rectangle titleRect = new(x, y, Math.Max(10, Width - x - LogicalToDeviceUnits(14)), LogicalToDeviceUnits(14));
-        TextRenderer.DrawText(g, title, FluentStyle.UiFontSmallBold, titleRect, theme.MutedForegroundColor,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-    }
-
-    protected void DrawProgressBar(Graphics g, Rectangle bounds, float ratio, Color fill, Color bg)
-    {
-        if (bounds.Width <= 0 || bounds.Height <= 0)
+        if (!_isExpanded || _detailGroups == 0)
             return;
 
-        using (GraphicsPath path = FluentStyle.RoundedRectangle(bounds, bounds.Height / 2f))
+        using Pen divider = new(theme.LineColor);
+        if (sideBySide)
         {
-            using SolidBrush bb = new(bg);
-            g.FillPath(bb, path);
-        }
-
-        float clamped = Math.Max(0f, Math.Min(1f, ratio));
-        if (clamped > 0.01f)
-        {
-            int fillW = Math.Max(bounds.Height, (int)(bounds.Width * clamped));
-            Rectangle fillRect = new(bounds.X, bounds.Y, Math.Min(bounds.Width, fillW), bounds.Height);
-            using GraphicsPath fPath = FluentStyle.RoundedRectangle(fillRect, bounds.Height / 2f);
-            using SolidBrush fb = new(fill);
-            g.FillPath(fb, fPath);
-        }
-    }
-
-    protected void DrawKpiBox(Graphics g, Rectangle bounds, string label, string value, string unit, float? ratio, Color? valColor, Theme theme)
-    {
-        if (bounds.Width <= 10 || bounds.Height <= 10)
-            return;
-
-        int pad = LogicalToDeviceUnits(8);
-
-        // 1. Sleek mini-card tile container
-        using (GraphicsPath kp = FluentStyle.RoundedRectangle(bounds, 6f))
-        {
-            Color tileBg = Color.FromArgb(theme.IsDark ? 22 : 12, theme.ForegroundColor);
-            using SolidBrush kb = new(tileBg);
-            g.FillPath(kb, kp);
-
-            Color tileStroke = Color.FromArgb(theme.IsDark ? 36 : 20, theme.ForegroundColor);
-            using Pen pen = new(tileStroke, 1f);
-            g.DrawPath(pen, kp);
-        }
-
-        // 2. Metric label at top
-        Rectangle lblRect = new(bounds.X + pad, bounds.Y + pad - 2, bounds.Width - (pad * 2), LogicalToDeviceUnits(12));
-        TextRenderer.DrawText(g, label?.ToUpperInvariant() ?? string.Empty, FluentStyle.UiFontMini, lblRect, theme.MutedForegroundColor,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-
-        // 3. Metric value and unit
-        Color textValColor = valColor ?? theme.ForegroundColor;
-        string displayVal = value ?? "--";
-
-        Rectangle valRect = new(bounds.X + pad, bounds.Y + LogicalToDeviceUnits(16), bounds.Width - (pad * 2), LogicalToDeviceUnits(18));
-        if (string.IsNullOrEmpty(unit))
-        {
-            TextRenderer.DrawText(g, displayVal, FluentStyle.MonoFontKpi, valRect, textValColor,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            int x = pad + summaryWidth + pad;
+            g.DrawLine(divider, x - (pad / 2), top, x - (pad / 2), Height - pad);
+            DrawDetails(g, theme, new Rectangle(x, top, Width - x - pad, Height - top - pad));
         }
         else
         {
-            Size valSize = TextRenderer.MeasureText(displayVal, FluentStyle.MonoFontKpi, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
-            Rectangle actualValRect = new(bounds.X + pad, bounds.Y + LogicalToDeviceUnits(16), valSize.Width, LogicalToDeviceUnits(18));
-            TextRenderer.DrawText(g, displayVal, FluentStyle.MonoFontKpi, actualValRect, textValColor,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-
-            int unitX = bounds.X + pad + valSize.Width + LogicalToDeviceUnits(3);
-            int unitWidth = Math.Max(0, bounds.Right - pad - unitX);
-            if (unitWidth > 4)
-            {
-                Rectangle unitRect = new(unitX, bounds.Y + LogicalToDeviceUnits(18), unitWidth, LogicalToDeviceUnits(14));
-                TextRenderer.DrawText(g, unit, FluentStyle.UiFontSmall, unitRect, theme.MutedForegroundColor,
-                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-            }
-        }
-
-        // 4. Mini progress indicator
-        if (ratio.HasValue)
-        {
-            int barH = LogicalToDeviceUnits(3);
-            int barY = bounds.Bottom - pad - barH + 2;
-            int barW = bounds.Width - pad * 2;
-            if (barW > 4 && barH > 0)
-            {
-                Rectangle barRect = new(bounds.X + pad, barY, barW, barH);
-                Color barFill = valColor ?? theme.AccentColor;
-                Color barBg = Color.FromArgb(40, theme.MutedForegroundColor);
-                DrawProgressBar(g, barRect, ratio.Value, barFill, barBg);
-            }
+            int y = top + SummaryPixels + pad;
+            g.DrawLine(divider, pad, y - (pad / 2), Width - pad, y - (pad / 2));
+            DrawDetails(g, theme, new Rectangle(pad, y, Width - (pad * 2), Height - y - pad));
         }
     }
 
-    protected int DrawExpandedSensorList(Graphics g, int startY, IReadOnlyList<(string Name, string Value)> items, Theme theme)
+    private void DrawHeader(Graphics g, Theme theme, int pad)
     {
-        if (!_isExpanded || items == null || items.Count == 0)
-            return startY;
+        int iconBox = LogicalToDeviceUnits(28);
+        int x = pad;
 
-        int pad = LogicalToDeviceUnits(14);
-        int availWidth = Width - (pad * 2);
-
-        // Subtle divider
-        using (Pen divPen = new(theme.LineColor, 1f))
-            g.DrawLine(divPen, pad, startY, Width - pad, startY);
-
-        int titleY = startY + LogicalToDeviceUnits(8);
-        DrawSectionTitle(g, "SENSORES DETALHADOS", pad, titleY, theme);
-
-        int listY = titleY + LogicalToDeviceUnits(18);
-        int rowH = LogicalToDeviceUnits(22);
-        int cols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;
-        int colW = cols == 2 ? (availWidth - LogicalToDeviceUnits(12)) / 2 : availWidth;
-
-        int rowCount = (int)Math.Ceiling(items.Count / (double)cols);
-
-        for (int i = 0; i < items.Count; i++)
+        if (Icon != null)
         {
-            int c = i % cols;
-            int r = i / cols;
-            int rx = pad + (c * (colW + LogicalToDeviceUnits(12)));
-            int ry = listY + (r * rowH);
+            Rectangle iconRect = new(x, pad, iconBox, iconBox);
+            FluentStyle.FillRounded(g, Color.FromArgb(theme.IsDark ? 28 : 14, theme.ForegroundColor), iconRect, LogicalToDeviceUnits(6));
+            int inset = LogicalToDeviceUnits(6);
+            g.DrawImage(Icon, x + inset, pad + inset, iconBox - (inset * 2), iconBox - (inset * 2));
+            x += iconBox + LogicalToDeviceUnits(10);
+        }
 
-            if (ry + rowH > Height - LogicalToDeviceUnits(20))
-                break;
+        // Chevron on the far right: down when collapsed, up when expanded.
+        float size = LogicalToDeviceUnits(4);
+        float cx = Width - pad - LogicalToDeviceUnits(8);
+        float cy = pad + (iconBox / 2f);
+        float tip = _isExpanded ? -size / 2 : size / 2;
+        using (Pen chevron = new(_isHovered ? theme.AccentColor : theme.MutedForegroundColor, LogicalToDeviceUnits(1) * 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+            g.DrawLines(chevron, new[] { new PointF(cx - size, cy - tip), new PointF(cx, cy + tip), new PointF(cx + size, cy - tip) });
 
-            Rectangle rowRect = new(rx, ry, colW, rowH);
-            if (r % 2 == 1)
-            {
-                using SolidBrush zb = new(Color.FromArgb(theme.IsDark ? 16 : 8, theme.ForegroundColor));
-                g.FillRectangle(zb, rowRect);
-            }
+        int right = (int)cx - LogicalToDeviceUnits(16);
+        if (!string.IsNullOrEmpty(BadgeText))
+        {
+            int badgeHeight = LogicalToDeviceUnits(22);
+            int badgeWidth = TextRenderer.MeasureText(BadgeText, FluentStyle.UiFontSmallBold).Width + LogicalToDeviceUnits(16);
+            Rectangle badge = new(right - badgeWidth, pad + ((iconBox - badgeHeight) / 2), badgeWidth, badgeHeight);
+            Color color = BadgeColor.IsEmpty ? theme.AccentColor : BadgeColor;
+            FluentStyle.FillRounded(g, Color.FromArgb(35, color), badge, badgeHeight / 2f);
+            FluentStyle.DrawRounded(g, color, badge, badgeHeight / 2f);
+            TextRenderer.DrawText(g, BadgeText, FluentStyle.UiFontSmallBold, badge, color,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            right = badge.Left - LogicalToDeviceUnits(10);
+        }
 
-            var (name, val) = items[i];
+        TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+        int textWidth = Math.Max(10, right - x);
+        TextRenderer.DrawText(g, Title, FluentStyle.UiFontSemibold, new Rectangle(x, pad - LogicalToDeviceUnits(1), textWidth, LogicalToDeviceUnits(16)), theme.ForegroundColor, flags);
+        TextRenderer.DrawText(g, Subtitle, FluentStyle.UiFontSmall, new Rectangle(x, pad + LogicalToDeviceUnits(15), textWidth, LogicalToDeviceUnits(14)), theme.MutedForegroundColor, flags);
+    }
 
-            int split = (colW * 55) / 100;
-            Rectangle nameRect = new(rx + 4, ry, split - 6, rowH);
-            Rectangle valRect = new(rx + split, ry, colW - split - 4, rowH);
+    private void DrawDetails(Graphics g, Theme theme, Rectangle area)
+    {
+        using SolidBrush stripe = new(Color.FromArgb(theme.IsDark ? 14 : 8, theme.ForegroundColor));
+        LayoutDetails(area.Width, (group, bounds, columns) =>
+        {
+            bounds.Offset(area.Location);
+            DrawDetailGroup(g, theme, stripe, group, bounds, columns);
+        });
+    }
 
-            TextRenderer.DrawText(g, name, FluentStyle.UiFontSmall, nameRect, theme.MutedForegroundColor,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+    private void DrawDetailGroup(Graphics g, Theme theme, Brush stripe, DetailGroup group, Rectangle bounds, int columns)
+    {
+        int gap = LogicalToDeviceUnits(DetailColumnGapLogical);
+        int columnWidth = (bounds.Width - (gap * (columns - 1))) / columns;
+        int rowHeight = LogicalToDeviceUnits(DetailRowLogical);
+        int captionHeight = LogicalToDeviceUnits(DetailCaptionLogical);
 
-            TextRenderer.DrawText(g, val, FluentStyle.MonoFontSmall, valRect, theme.ForegroundColor,
+        TextRenderer.DrawText(g, group.Title.ToUpperInvariant(), FluentStyle.UiFontSmallBold, new Rectangle(bounds.X, bounds.Y, bounds.Width, captionHeight),
+            theme.MutedForegroundColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+
+        // Column-major: reading down a column keeps related sensors (Core #1, #2, ...) together.
+        int rows = (group.Rows.Count + columns - 1) / columns;
+        for (int r = 0; r < group.Rows.Count; r++)
+        {
+            int row = r % rows;
+            Rectangle cell = new(bounds.X + (r / rows * (columnWidth + gap)), bounds.Y + captionHeight + (row * rowHeight), columnWidth, rowHeight);
+            if (row % 2 == 0)
+                g.FillRectangle(stripe, cell);
+
+            (string name, string value) = group.Rows[r];
+            int valueWidth = TextRenderer.MeasureText(value, FluentStyle.MonoFontSmall).Width;
+            TextRenderer.DrawText(g, value, FluentStyle.MonoFontSmall, new Rectangle(cell.Right - valueWidth - 4, cell.Y, valueWidth, rowHeight), theme.ForegroundColor,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, name, FluentStyle.UiFontSmall, new Rectangle(cell.X + 4, cell.Y, Math.Max(10, cell.Width - valueWidth - 14), rowHeight), theme.MutedForegroundColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         }
-
-        return listY + (rowCount * rowH) + LogicalToDeviceUnits(24);
     }
 
-    public virtual void ApplyTheme(Theme theme)
-    {
-        Invalidate();
-    }
+    public virtual void ApplyTheme(Theme theme) => Invalidate();
 }

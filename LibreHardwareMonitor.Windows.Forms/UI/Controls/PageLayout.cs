@@ -357,57 +357,101 @@ public sealed class ScrollHost : Control, IThemedControl, IMessageFilter
 }
 
 /// <summary>
+/// Optional contract for <see cref="WrapGrid" /> children that know their height for a given width.
+/// Such items are stretched to the height of their row and may ask for a row of their own.
+/// </summary>
+public interface IWrapGridItem
+{
+    /// <summary>True when the item wants the full width of the grid (a row for itself).</summary>
+    bool FullRow { get; }
+
+    /// <summary>Natural height of the item when it is <paramref name="width" /> pixels wide.</summary>
+    int HeightForWidth(int width);
+}
+
+/// <summary>
 /// Responsive grid: as many equal-width columns as fit <see cref="MinColumnWidth" />; each row is as tall
 /// as its tallest child. Sizes itself to its content.
 /// </summary>
 public sealed class WrapGrid : StackPanel
 {
+    private readonly List<Control> _row = new();
+    private readonly List<Control> _single = new();
+
     /// <summary>Minimum column width in logical units.</summary>
     public int MinColumnWidth { get; set; } = 320;
 
+    /// <summary>Width of one column for the current grid width.</summary>
+    public int ColumnWidth { get; private set; }
+
     protected override void OnLayout(LayoutEventArgs e)
     {
-        List<Control> items = new();
-        foreach (Control c in Controls)
-        {
-            if (c.Visible || !Visible)
-                items.Add(c);
-        }
-
         int gap = LogicalToDeviceUnits(Gap);
-        int width = ClientSize.Width - Padding.Horizontal;
+        int width = Math.Max(0, ClientSize.Width - Padding.Horizontal);
         int minWidth = LogicalToDeviceUnits(MinColumnWidth);
         // Column count depends on the width only, so every group on a page shares the same card width
         // and a lone card does not stretch across the page.
         int columns = Math.Max(1, (width + gap) / (minWidth + gap));
-        int columnWidth = Math.Max(0, (width - (gap * (columns - 1))) / columns);
-
-        // Pass 1: set the column width so each card recomputes its own height before the rows are measured.
-        foreach (Control item in items)
-        {
-            if (item.Width != columnWidth)
-                item.Width = columnWidth;
-        }
+        ColumnWidth = Math.Max(0, (width - (gap * (columns - 1))) / columns);
 
         int y = Padding.Top;
-        for (int i = 0; i < items.Count; i += columns)
+        bool any = false;
+        _row.Clear();
+        foreach (Control c in Controls)
         {
-            int rowHeight = 0;
-            for (int j = i; j < Math.Min(items.Count, i + columns); j++)
-                rowHeight = Math.Max(rowHeight, items[j].Height);
+            if (!c.Visible && Visible)
+                continue;
 
-            for (int j = i; j < Math.Min(items.Count, i + columns); j++)
+            if (c is IWrapGridItem { FullRow: true })
             {
-                int column = j - i;
-                items[j].SetBounds(Padding.Left + (column * (columnWidth + gap)), y, columnWidth, items[j].Height);
+                // Placed above the row being filled: an expanded card keeps the vertical position it was
+                // clicked at, and the cards that shared its row close ranks below it instead of leaving a hole.
+                _single.Add(c);
+                y = PlaceRow(_single, y, gap, ref any, width);
+                continue;
             }
 
-            y += rowHeight + gap;
+            if (_row.Count == columns)
+                y = PlaceRow(_row, y, gap, ref any, ColumnWidth);
+
+            _row.Add(c);
         }
 
-        int height = (items.Count > 0 ? y - gap : y) + Padding.Bottom;
+        y = PlaceRow(_row, y, gap, ref any, ColumnWidth);
+
+        int height = y + Padding.Bottom;
         if (Height != height)
             Height = height;
+    }
+
+    // Positions the pending row at y, clears it and returns the y after it.
+    private int PlaceRow(List<Control> row, int y, int gap, ref bool any, int itemWidth)
+    {
+        if (row.Count == 0)
+            return y;
+
+        if (any)
+            y += gap;
+
+        // Width first: children that size themselves from their width recompute their height before it is read.
+        int rowHeight = 0;
+        foreach (Control c in row)
+        {
+            if (c.Width != itemWidth)
+                c.Width = itemWidth;
+
+            rowHeight = Math.Max(rowHeight, c is IWrapGridItem item ? item.HeightForWidth(itemWidth) : c.Height);
+        }
+
+        for (int i = 0; i < row.Count; i++)
+        {
+            Control c = row[i];
+            c.SetBounds(Padding.Left + (i * (itemWidth + gap)), y, itemWidth, c is IWrapGridItem ? rowHeight : c.Height);
+        }
+
+        row.Clear();
+        any = true;
+        return y + rowHeight;
     }
 }
 

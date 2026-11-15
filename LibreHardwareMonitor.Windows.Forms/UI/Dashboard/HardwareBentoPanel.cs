@@ -6,7 +6,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Controls;
@@ -30,6 +29,8 @@ public sealed class HardwareBentoPanel : Panel, IThemedControl
     private readonly ScrollHost _host;
 
     private HardwareNode _currentScope;
+    private Computer _computer;
+    private bool _scoping;
     private string _filterQuery = string.Empty;
 
     public HardwareBentoPanel()
@@ -45,82 +46,73 @@ public sealed class HardwareBentoPanel : Panel, IThemedControl
             Padding = new Padding(0, 0, 0, 16)
         };
 
-        _cpuCard = new CpuBentoCard();
-        _cpuCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
-
-        _gpuCard = new GpuBentoCard();
-        _gpuCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
-
-        _memoryCard = new MemoryBentoCard();
-        _memoryCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
-
-        _systemCard = new SystemBentoCard();
-        _systemCard.ExpansionChanged += delegate { _grid.PerformLayout(); };
-
-        _grid.Controls.Add(_cpuCard);
-        _grid.Controls.Add(_gpuCard);
-        _grid.Controls.Add(_memoryCard);
-        _grid.Controls.Add(_systemCard);
+        _cpuCard = AddCard(new CpuBentoCard());
+        _gpuCard = AddCard(new GpuBentoCard());
+        _memoryCard = AddCard(new MemoryBentoCard());
+        _systemCard = AddCard(new SystemBentoCard());
 
         _host = new ScrollHost(_grid) { Dock = DockStyle.Fill };
         Controls.Add(_host);
     }
 
+    // A card that was just expanded collects its detailed sensors right away instead of waiting for the next tick.
+    private T AddCard<T>(T card) where T : BentoCardBase
+    {
+        card.ExpansionChanged += delegate
+        {
+            if (card.IsExpanded && !_scoping)
+                UpdateTelemetry(_computer);
+        };
+        _grid.Controls.Add(card);
+        return card;
+    }
+
+    /// <summary>
+    /// Shows every card collapsed ("All devices") or only the card of one device, expanded with all its sensors.
+    /// </summary>
     public void SetScope(HardwareNode scope)
     {
         _currentScope = scope;
-        ApplyFiltering();
+        ApplyFiltering(true);
     }
 
     public void ApplyFilter(string query)
     {
         _filterQuery = query ?? string.Empty;
-        ApplyFiltering();
+        ApplyFiltering(false);
     }
 
-    private void ApplyFiltering()
+    private void ApplyFiltering(bool scopeChanged)
     {
+        IHardware target = _currentScope?.Hardware;
+        HardwareType? type = target?.HardwareType;
+        bool all = target == null;
+
+        _scoping = true;
         _grid.SuspendLayout();
 
-        IHardware targetHw = _currentScope?.Hardware;
-        HardwareType? targetType = targetHw?.HardwareType;
+        Show(_cpuCard, all || type == HardwareType.Cpu, "cpu processador intel amd ryzen core");
+        Show(_gpuCard, all || (type.HasValue && SensorLookup.IsGpu(type.Value)), "gpu placa grafica nvidia geforce rtx gtx radeon video vram");
+        Show(_memoryCard, all || type == HardwareType.Memory, "ram memoria memory dimm ddr4 ddr5 swap");
+        Show(_systemCard, all || type is HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.Network, "motherboard placa mae fan ventilacao superio rede network ethernet wifi vcore");
+        foreach (StorageBentoCard card in _storageCards)
+            Show(card, all || (type == HardwareType.Storage && (card.Hardware == target || card.Title == target.Name)), "disco storage ssd nvme hdd smart");
 
-        bool showAll = targetHw == null;
-
-        _cpuCard.Visible = (showAll || targetType == HardwareType.Cpu) && MatchesCard(_cpuCard, "cpu processador intel amd ryzen core");
-        _gpuCard.Visible = (showAll || targetType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel) && MatchesCard(_gpuCard, "gpu placa grafica nvidia geforce rtx gtx radeon video vram");
-        _memoryCard.Visible = (showAll || targetType == HardwareType.Memory) && MatchesCard(_memoryCard, "ram memoria memory dimm ddr4 ddr5 swap");
-        _systemCard.Visible = (showAll || targetType is HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.Network) && MatchesCard(_systemCard, "motherboard placa mae fan ventilacao superio rede network ethernet wifi vcore");
-
-        foreach (StorageBentoCard storageCard in _storageCards)
-        {
-            bool matchHardware = showAll || (targetType == HardwareType.Storage && (storageCard.Hardware == targetHw || (targetHw != null && storageCard.Title == targetHw.Name)));
-            storageCard.Visible = matchHardware && MatchesCard(storageCard, "disco storage ssd nvme hdd smart");
-        }
-
-        // Auto-expand card when a single component is filtered from sidebar
-        if (!showAll)
-        {
-            if (targetType == HardwareType.Cpu)
-                _cpuCard.IsExpanded = true;
-            else if (targetType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
-                _gpuCard.IsExpanded = true;
-            else if (targetType == HardwareType.Memory)
-                _memoryCard.IsExpanded = true;
-            else if (targetType is HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.Network)
-                _systemCard.IsExpanded = true;
-            else if (targetType == HardwareType.Storage)
-            {
-                foreach (StorageBentoCard sc in _storageCards)
-                {
-                    if (sc.Visible)
-                        sc.IsExpanded = true;
-                }
-            }
-        }
-
-        _grid.ResumeLayout(true);
+        _scoping = false;
+        _grid.ResumeLayout(false);
+        UpdateTelemetry(_computer);
         _grid.PerformLayout();
+
+        void Show(BentoCardBase card, bool inScope, string keywords)
+        {
+            bool visible = inScope && MatchesCard(card, keywords);
+            card.Visible = visible;
+            // A single device is always shown with its details; going back to the overview collapses everything.
+            if (!all)
+                card.IsExpanded = visible;
+            else if (scopeChanged)
+                card.IsExpanded = false;
+        }
     }
 
     private bool MatchesCard(BentoCardBase card, string extraKeywords)
@@ -143,47 +135,41 @@ public sealed class HardwareBentoPanel : Panel, IThemedControl
 
     public void UpdateTelemetry(Computer computer)
     {
-        if (!Visible || computer == null)
+        _computer = computer ?? _computer;
+        if (!Visible || _computer == null)
             return;
 
-        IHardware cpu = computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
-        if (cpu != null && _cpuCard.Visible)
-            _cpuCard.UpdateSensors(cpu);
-
-        IHardware gpu = computer.Hardware.FirstOrDefault(h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd)
-                        ?? computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.GpuIntel);
-        if (gpu != null && _gpuCard.Visible)
-            _gpuCard.UpdateSensors(gpu);
-
+        IList<IHardware> hardware = _computer.Hardware;
+        if (_cpuCard.Visible)
+            _cpuCard.UpdateSensors(SensorLookup.First(hardware, HardwareType.Cpu));
+        if (_gpuCard.Visible)
+            _gpuCard.UpdateSensors(SensorLookup.PrimaryGpu(hardware));
         if (_memoryCard.Visible)
-            _memoryCard.UpdateSensors(computer.Hardware);
-
+            _memoryCard.UpdateSensors(hardware);
         if (_systemCard.Visible)
-            _systemCard.UpdateSensors(computer.Hardware);
+            _systemCard.UpdateSensors(hardware);
 
-        // Synchronize storage cards
-        var storages = computer.Hardware.Where(h => h.HardwareType == HardwareType.Storage).ToList();
-        bool newStorageAdded = false;
-
-        while (_storageCards.Count < storages.Count)
+        // One card per drive, created the first time the drive shows up.
+        int drives = 0;
+        bool added = false;
+        foreach (IHardware hw in hardware)
         {
-            StorageBentoCard sc = new();
-            sc.ApplyTheme(Theme.Current);
-            sc.ExpansionChanged += delegate { _grid.PerformLayout(); };
-            _storageCards.Add(sc);
-            _grid.Controls.Add(sc);
-            newStorageAdded = true;
+            if (hw.HardwareType != HardwareType.Storage)
+                continue;
+
+            if (drives == _storageCards.Count)
+            {
+                StorageBentoCard card = AddCard(new StorageBentoCard());
+                card.ApplyTheme(Theme.Current);
+                _storageCards.Add(card);
+                added = true;
+            }
+
+            _storageCards[drives++].UpdateSensors(hw);
         }
 
-        for (int i = 0; i < storages.Count; i++)
-        {
-            _storageCards[i].UpdateSensors(storages[i]);
-        }
-
-        if (newStorageAdded)
-        {
-            ApplyFiltering();
-        }
+        if (added)
+            ApplyFiltering(false);
     }
 
     public void ApplyTheme(Theme theme)

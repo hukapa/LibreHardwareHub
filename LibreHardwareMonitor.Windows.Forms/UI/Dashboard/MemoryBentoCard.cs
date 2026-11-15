@@ -6,194 +6,78 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
-using System.Windows.Forms;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Icons;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 
-/// <summary>
-/// Specialized Bento card for System Memory (RAM) showing usage bars,
-/// free memory, swap/pagefile allocation, and expandable details for physical and virtual memory.
-/// </summary>
+/// <summary>Memory card: physical usage bar, used/free, page file and module temperature.</summary>
 public sealed class MemoryBentoCard : BentoCardBase
 {
-    private readonly List<(string Name, string Value)> _detailedSensors = new();
     private float? _usedGb;
     private float? _availableGb;
     private float? _loadPercent;
     private float? _virtualUsedGb;
-    private float? _virtualTotalGb;
     private float? _dimmTemp;
 
     public MemoryBentoCard()
     {
         Icon = FluentIcons.ForHardware(HardwareType.Memory);
         Title = "Memória do Sistema (RAM)";
-        Subtitle = "Alocação Física e Paginação";
-        Height = LogicalToDeviceUnits(260);
+        Subtitle = "Alocação física e paginação";
     }
 
-    public void UpdateSensors(IEnumerable<IHardware> hardwareList)
+    // The usage caption and bar, then two KPI rows.
+    protected override int SummaryHeight => 26 + 14 + 104;
+
+    public void UpdateSensors(IList<IHardware> hardware)
     {
-        if (hardwareList == null)
+        if (hardware == null)
             return;
 
-        var memoryHws = hardwareList.Where(h => h.HardwareType == HardwareType.Memory).ToList();
-        IHardware physMem = memoryHws.FirstOrDefault(h => !h.Name.Contains("Virtual")) ?? memoryHws.FirstOrDefault();
-        IHardware virtMem = memoryHws.FirstOrDefault(h => h.Name.Contains("Virtual"));
+        IHardware physical = SensorLookup.PhysicalMemory(hardware);
+        _usedGb = SensorLookup.ToGigabytes(SensorLookup.Find(physical, SensorType.Data, "Memory Used")?.Value);
+        _availableGb = SensorLookup.ToGigabytes(SensorLookup.Find(physical, SensorType.Data, "Memory Available")?.Value);
+        _loadPercent = SensorLookup.Find(physical, SensorType.Load, "Memory")?.Value;
 
-        if (physMem != null)
+        _virtualUsedGb = null;
+        _dimmTemp = null;
+        BeginDetails();
+        foreach (IHardware hw in hardware)
         {
-            ISensor used = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Memory Used"));
-            _usedGb = ToGigabytes(used?.Value);
+            if (hw.HardwareType != HardwareType.Memory)
+                continue;
 
-            ISensor avail = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Memory Available"));
-            _availableGb = ToGigabytes(avail?.Value);
+            if (hw != physical && hw.Name.Contains("Virtual"))
+                _virtualUsedGb = SensorLookup.ToGigabytes(SensorLookup.Find(hw, SensorType.Data, "Memory Used")?.Value);
 
-            ISensor load = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Load && s.Name.Contains("Memory"));
-            _loadPercent = load?.Value;
+            // Hottest module.
+            if (SensorLookup.FindOrFirst(hw, SensorType.Temperature)?.Value is float temp && temp > _dimmTemp.GetValueOrDefault())
+                _dimmTemp = temp;
 
-            ISensor temp = physMem.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
-            _dimmTemp = temp?.Value;
+            AddDetails(hw, hw.Name);
         }
 
-        // Virtual Memory (Swap/Pagefile)
-        ISensor virtUsed = virtMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Used"))
-            ?? physMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Virtual Memory Used"));
-        _virtualUsedGb = ToGigabytes(virtUsed?.Value);
-
-        ISensor virtAvail = virtMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Available"))
-            ?? physMem?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Virtual Memory Available"));
-        float? virtAvailGb = ToGigabytes(virtAvail?.Value);
-
-        if (_virtualUsedGb.HasValue && virtAvailGb.HasValue)
-            _virtualTotalGb = _virtualUsedGb.Value + virtAvailGb.Value;
-
-        if (_loadPercent.HasValue)
-        {
-            if (_loadPercent.Value >= 90f)
-            {
-                BadgeText = "Saturada";
-                BadgeColor = Color.FromArgb(235, 60, 60);
-            }
-            else if (_loadPercent.Value >= 75f)
-            {
-                BadgeText = "Alta";
-                BadgeColor = Color.FromArgb(240, 180, 30);
-            }
-            else
-            {
-                BadgeText = "Disponível";
-                BadgeColor = Color.FromArgb(70, 200, 100);
-            }
-        }
-
-        // Detailed Sensors for expansion
-        _detailedSensors.Clear();
-        foreach (IHardware mHw in memoryHws)
-        {
-            foreach (ISensor s in mHw.Sensors.Where(s => s.Value.HasValue))
-            {
-                string label = $"{mHw.Name}: {s.Name}";
-                if (s.SensorType == SensorType.Data)
-                {
-                    float? gb = ToGigabytes(s.Value);
-                    _detailedSensors.Add((label, $"{gb.GetValueOrDefault():F2} GB"));
-                }
-                else if (s.SensorType == SensorType.Load)
-                {
-                    _detailedSensors.Add((label, $"{s.Value.Value:F1} %"));
-                }
-                else if (s.SensorType == SensorType.Temperature)
-                {
-                    _detailedSensors.Add((label, $"{s.Value.Value:F1} °C"));
-                }
-                else
-                {
-                    _detailedSensors.Add((label, $"{s.Value.Value:F0}"));
-                }
-            }
-        }
-
-        int prevHeight = Height;
-        RecalculateCardHeight();
-        if (Height != prevHeight)
-            Parent?.PerformLayout();
-
-        Invalidate();
+        SetBadge(_loadPercent, 75f, 90f, "Disponível", "Alta", "Saturada");
+        EndUpdate();
     }
 
-    protected override void RecalculateCardHeight()
+    protected override void DrawSummary(Graphics g, Theme theme, Rectangle area)
     {
-        int baseHeight = 260;
-        if (IsExpanded && _detailedSensors.Count > 0)
-        {
-            int availWidth = Width > 0 ? Width - LogicalToDeviceUnits(28) : LogicalToDeviceUnits(380);
-            int detCols = availWidth > LogicalToDeviceUnits(300) ? 2 : 1;
-            int extraRows = (int)Math.Ceiling(_detailedSensors.Count / (double)detCols);
-            baseHeight += 32 + (extraRows * 22) + 16;
-        }
+        float used = _usedGb.GetValueOrDefault();
+        float total = used + _availableGb.GetValueOrDefault();
+        float ratio = Math.Clamp(_loadPercent.HasValue ? _loadPercent.Value / 100f : total > 0.1f ? used / total : 0f, 0f, 1f);
+        string usage = total > 0.1f ? $"{used:F1} / {total:F1} GB ({ratio * 100f:F0}%)" : $"{used:F1} GB";
 
-        Height = LogicalToDeviceUnits(baseHeight);
-    }
+        DrawSectionTitle(g, "MEMÓRIA FÍSICA", area, area.Y, theme, usage);
+        DrawUsageBar(g, theme, area, area.Y + LogicalToDeviceUnits(18), ratio, 0.70f, 0.88f);
 
-    protected override void DrawCardContent(Graphics g, Theme theme)
-    {
-        int pad = LogicalToDeviceUnits(14);
-        int topY = LogicalToDeviceUnits(HeaderHeightLogical) + LogicalToDeviceUnits(6);
-        int availWidth = Width - (pad * 2);
-
-        float totalGb = _usedGb.GetValueOrDefault() + _availableGb.GetValueOrDefault();
-        float ratio = _loadPercent.HasValue ? Math.Max(0f, Math.Min(1f, _loadPercent.Value / 100f))
-            : (totalGb > 0.1f ? Math.Max(0f, Math.Min(1f, _usedGb.GetValueOrDefault() / totalGb)) : 0f);
-
-        // RAM Usage Bar Section (Clean title "MEMÓRIA FÍSICA")
-        DrawSectionTitle(g, "MEMÓRIA FÍSICA", pad, topY, theme);
-
-        string barText = totalGb > 0.1f
-            ? $"{_usedGb.GetValueOrDefault():F1} / {totalGb:F1} GB ({ratio * 100f:F1}%)"
-            : $"{_usedGb.GetValueOrDefault():F1} GB";
-
-        Rectangle barTextRect = new(pad, topY, availWidth, LogicalToDeviceUnits(14));
-        TextRenderer.DrawText(g, barText, FluentStyle.MonoFont, barTextRect, theme.ForegroundColor,
-            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
-
-        int barY = topY + LogicalToDeviceUnits(18);
-        int barH = LogicalToDeviceUnits(8);
-        if (availWidth > 0 && barH > 0)
-        {
-            Rectangle ramBarBounds = new(pad, barY, availWidth, barH);
-            Color ramFill = ratio > 0.88f ? theme.StateHotColor : ratio > 0.70f ? theme.StateWarmColor : theme.AccentColor;
-            Color ramBg = Color.FromArgb(40, theme.MutedForegroundColor);
-            DrawProgressBar(g, ramBarBounds, ratio, ramFill, ramBg);
-        }
-
-        // 4 KPI Boxes (2x2) with 1 decimal precision
-        int kpiY = barY + barH + LogicalToDeviceUnits(14);
-        int kpiW = (availWidth - LogicalToDeviceUnits(10)) / 2;
-        int kpiH = LogicalToDeviceUnits(48);
-
-        Rectangle r1 = new(pad, kpiY, kpiW, kpiH);
-        Rectangle r2 = new(pad + kpiW + LogicalToDeviceUnits(10), kpiY, kpiW, kpiH);
-        Rectangle r3 = new(pad, kpiY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
-        Rectangle r4 = new(pad + kpiW + LogicalToDeviceUnits(10), kpiY + kpiH + LogicalToDeviceUnits(8), kpiW, kpiH);
-
-        DrawKpiBox(g, r1, "Memória Usada", _usedGb.HasValue ? $"{_usedGb.Value:F1}" : "--", "GB", ratio, null, theme);
-        DrawKpiBox(g, r2, "Memória Livre", _availableGb.HasValue ? $"{_availableGb.Value:F1}" : "--", "GB", 1f - ratio, null, theme);
-
-        string virtVal = _virtualUsedGb.HasValue ? $"{_virtualUsedGb.Value:F1}" : "--";
-        string dimmVal = _dimmTemp.HasValue ? $"{_dimmTemp.Value:F1} °C" : "Normal";
-
-        DrawKpiBox(g, r3, "Memória Virtual (Swap)", virtVal, "GB", null, null, theme);
-        DrawKpiBox(g, r4, "Temperatura Módulos", dimmVal, string.Empty, _dimmTemp / 100f, null, theme);
-
-        // Expandable detailed sensor list
-        if (IsExpanded && _detailedSensors.Count > 0)
-        {
-            DrawExpandedSensorList(g, kpiY + (kpiH * 2) + LogicalToDeviceUnits(18), _detailedSensors, theme);
-        }
+        Rectangle tiles = new(area.X, area.Y + LogicalToDeviceUnits(26 + 14), area.Width, area.Height);
+        DrawKpiBox(g, KpiTile(tiles, 0), "Memória Usada", _usedGb?.ToString("F1"), "GB", ratio, null, theme);
+        DrawKpiBox(g, KpiTile(tiles, 1), "Memória Livre", _availableGb?.ToString("F1"), "GB", 1f - ratio, null, theme);
+        DrawKpiBox(g, KpiTile(tiles, 2), "Memória Virtual (Swap)", _virtualUsedGb?.ToString("F1"), "GB", null, null, theme);
+        DrawKpiBox(g, KpiTile(tiles, 3), "Temp. Módulos", _dimmTemp?.ToString("F1"), _dimmTemp.HasValue ? "°C" : string.Empty,
+            _dimmTemp / 100f, StateColor(theme, _dimmTemp, 50f, 70f), theme);
     }
 }

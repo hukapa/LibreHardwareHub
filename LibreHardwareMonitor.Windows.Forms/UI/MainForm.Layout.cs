@@ -148,6 +148,7 @@ public sealed partial class MainForm
                 if (_summary != null)
                 {
                     _summary.Visible = isAllDevices && _summary.HasMetrics;
+                _hardwareBentoPanel.SetScope(_sidebar?.SelectedItem?.Tag as HardwareNode);
                     if (_summary.Visible)
                         _summary.Invalidate();
                 }
