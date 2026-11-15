@@ -66,7 +66,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 [Run]
 Filename: "{app}\PawnIO_setup.exe"; Parameters: "-install -silent"; StatusMsg: "{cm:StatusDriver}"; Tasks: driver; Flags: waituntilterminated skipifdoesntexist
 Filename: "{app}\{#AppExe}"; Parameters: "--register-startup"; Tasks: startup; Flags: waituntilterminated runhidden
-Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [UninstallRun]
 ; Close the running copy cleanly (fans go back to the BIOS) and remove the logon task before deleting files.
