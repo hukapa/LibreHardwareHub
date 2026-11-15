@@ -41,63 +41,61 @@ public static class SummaryMetrics
         List<IHardware> all = hardware.ToList();
         List<SummaryMetric> metrics = new();
 
-        IHardware cpu = all.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
-        IHardware gpu = all.FirstOrDefault(h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd)
-                        ?? all.FirstOrDefault(h => h.HardwareType == HardwareType.GpuIntel);
-        IHardware memory = all.FirstOrDefault(h => h.HardwareType == HardwareType.Memory && h.Name.IndexOf("Virtual", StringComparison.OrdinalIgnoreCase) < 0)
-                           ?? all.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
-        IHardware motherboard = all.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
+        IHardware cpu = SensorLookup.First(all, HardwareType.Cpu);
+        IHardware gpu = SensorLookup.PrimaryGpu(all);
+        IHardware memory = SensorLookup.PhysicalMemory(all);
+        IHardware motherboard = SensorLookup.First(all, HardwareType.Motherboard);
 
         // 1. CPU Load
         if (cpu != null)
         {
-            ISensor cpuLoad = FindSensor(cpu, SensorType.Load, "Total", "CPU Total", "CPU");
+            ISensor cpuLoad = SensorLookup.FindOrFirst(cpu, SensorType.Load, "Total", "CPU Total", "CPU");
             Add(metrics, "Carga CPU", cpu, cpuLoad);
         }
 
         // 2. CPU Temperature
         if (cpu != null)
         {
-            ISensor cpuTemp = FindSensor(cpu, SensorType.Temperature, "Package", "Core (Tctl/Tdie)", "Core Max", "Core Average", "Tdie", "Tctl", "CPU");
+            ISensor cpuTemp = SensorLookup.FindOrFirst(cpu, SensorType.Temperature, "Package", "Core (Tctl/Tdie)", "Core Max", "Core Average", "Tdie", "Tctl", "CPU");
             Add(metrics, "Temp. CPU", cpu, cpuTemp);
         }
 
         // 3. GPU Load
         if (gpu != null)
         {
-            ISensor gpuLoad = FindSensor(gpu, SensorType.Load, "Core", "D3D 3D", "GPU Core", "GPU");
+            ISensor gpuLoad = SensorLookup.FindOrFirst(gpu, SensorType.Load, "Core", "D3D 3D", "GPU Core", "GPU");
             Add(metrics, "Carga GPU", gpu, gpuLoad);
         }
 
         // 4. GPU Temperature
         if (gpu != null)
         {
-            ISensor gpuTemp = FindSensor(gpu, SensorType.Temperature, "Core", "GPU Core", "Hot Spot", "GPU");
+            ISensor gpuTemp = SensorLookup.FindOrFirst(gpu, SensorType.Temperature, "Core", "GPU Core", "Hot Spot", "GPU");
             Add(metrics, "Temp. GPU", gpu, gpuTemp);
         }
 
         // 5. Memory (RAM)
         if (memory != null)
         {
-            ISensor memLoad = FindSensor(memory, SensorType.Load, "Memory");
-            ISensor used = FindExactSensor(memory, SensorType.Data, "Memory Used");
-            ISensor available = FindExactSensor(memory, SensorType.Data, "Memory Available");
+            ISensor memLoad = SensorLookup.FindOrFirst(memory, SensorType.Load, "Memory");
+            ISensor used = SensorLookup.Find(memory, SensorType.Data, "Memory Used");
+            ISensor available = SensorLookup.Find(memory, SensorType.Data, "Memory Available");
             Add(metrics, "Memória RAM", memory, memLoad, () => FormatMemoryDetail(memory, used, available));
         }
 
         // 6. CPU Power
         if (cpu != null)
         {
-            ISensor cpuPower = FindSensor(cpu, SensorType.Power, "Package", "CPU Package", "Power");
+            ISensor cpuPower = SensorLookup.FindOrFirst(cpu, SensorType.Power, "Package", "CPU Package", "Power");
             Add(metrics, "Consumo CPU", cpu, cpuPower);
         }
 
         // 7. CPU Voltage (Check CPU first, fallback to Motherboard SuperIO)
         if (cpu != null)
         {
-            ISensor cpuVolt = FindSensor(cpu, SensorType.Voltage, "CPU Core", "VCore", "Core");
+            ISensor cpuVolt = SensorLookup.FindOrFirst(cpu, SensorType.Voltage, "CPU Core", "VCore", "Core");
             if (cpuVolt == null && motherboard != null)
-                cpuVolt = FindSensor(motherboard, SensorType.Voltage, "VCore", "CPU VCore", "CPU Core", "Core");
+                cpuVolt = SensorLookup.FindOrFirst(motherboard, SensorType.Voltage, "VCore", "CPU VCore", "CPU Core", "Core");
 
             if (cpuVolt != null)
                 Add(metrics, "Voltagem CPU", cpu, cpuVolt);
@@ -110,45 +108,6 @@ public static class SummaryMetrics
     {
         if (sensor != null && hardware != null)
             metrics.Add(new SummaryMetric(title, hardware, sensor, detail));
-    }
-
-    private static IEnumerable<ISensor> EnumerateSensors(IHardware hardware)
-    {
-        if (hardware == null)
-            yield break;
-
-        foreach (ISensor s in hardware.Sensors)
-            yield return s;
-
-        if (hardware.SubHardware != null)
-        {
-            foreach (IHardware sub in hardware.SubHardware)
-            {
-                foreach (ISensor s in EnumerateSensors(sub))
-                    yield return s;
-            }
-        }
-    }
-
-    private static ISensor FindExactSensor(IHardware hardware, SensorType type, string name)
-    {
-        return EnumerateSensors(hardware).FirstOrDefault(s => s.SensorType == type && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static ISensor FindSensor(IHardware hardware, SensorType type, params string[] preferredKeywords)
-    {
-        List<ISensor> ofType = EnumerateSensors(hardware).Where(s => s.SensorType == type).ToList();
-        if (ofType.Count == 0)
-            return null;
-
-        foreach (string keyword in preferredKeywords)
-        {
-            ISensor match = ofType.FirstOrDefault(s => s.Name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0);
-            if (match != null)
-                return match;
-        }
-
-        return ofType.FirstOrDefault();
     }
 
     private static string FormatMemoryDetail(IHardware memory, ISensor used, ISensor available)

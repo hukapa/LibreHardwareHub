@@ -67,26 +67,26 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
         /// <summary>The user's Windows accent color, read once from the DWM registry key.</summary>
         public static Color SystemAccentColor => _systemAccent ??= ReadSystemAccent();
 
-        public static Font CreateUiFont(FontStyle style, float size = 9f)
+        public static Font CreateUiFont(FontStyle style, float size = 9f, GraphicsUnit unit = GraphicsUnit.Point)
         {
             string family = style == FontStyle.Bold ? "Segoe UI Variable Text Semibold" : "Segoe UI Variable Text";
             if (HasFamily(family))
-                return new Font(family, size, FontStyle.Regular, GraphicsUnit.Point);
+                return new Font(family, size, FontStyle.Regular, unit);
 
             if (style == FontStyle.Bold && HasFamily("Segoe UI Semibold"))
-                return new Font("Segoe UI Semibold", size, FontStyle.Regular, GraphicsUnit.Point);
+                return new Font("Segoe UI Semibold", size, FontStyle.Regular, unit);
 
             Font system = SystemFonts.MessageBoxFont;
-            return new Font(system.FontFamily, size, style, GraphicsUnit.Point);
+            return new Font(system.FontFamily, size, style, unit);
         }
 
-        public static Font CreateMonoFont(float size, FontStyle style = FontStyle.Bold)
+        public static Font CreateMonoFont(float size, FontStyle style = FontStyle.Bold, GraphicsUnit unit = GraphicsUnit.Point)
         {
             if (HasFamily("Cascadia Mono"))
-                return new Font("Cascadia Mono", size, style, GraphicsUnit.Point);
+                return new Font("Cascadia Mono", size, style, unit);
             if (HasFamily("Consolas"))
-                return new Font("Consolas", size, style, GraphicsUnit.Point);
-            return new Font(FontFamily.GenericMonospace, size, style, GraphicsUnit.Point);
+                return new Font("Consolas", size, style, unit);
+            return new Font(FontFamily.GenericMonospace, size, style, unit);
         }
 
         /// <summary>Large display font for headline numbers (KPI values), semibold where available.</summary>
@@ -250,9 +250,13 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
             return !Software.OperatingSystem.IsUnix && Environment.OSVersion.Version.Major >= 10 && Environment.OSVersion.Version.Build >= 22000;
         }
 
+        // Installed font names, read once: FontFamily.Families builds a new array of every installed family on each call.
+        private static System.Collections.Generic.HashSet<string> _families;
+
         private static bool HasFamily(string name)
         {
-            return FontFamily.Families.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+            _families ??= new System.Collections.Generic.HashSet<string>(FontFamily.Families.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+            return _families.Contains(name);
         }
 
         private static Color ReadSystemAccent()
