@@ -517,3 +517,21 @@ Barra lateral por seccoes recolhiveis, modo compacto manual, teclado e atalhos `
 ### 16.6 Limitacoes Conhecidas
 * Tipos de hardware sem cartao dedicado (bateria, PSU, controladores) continuam sem vista em cartoes; use a "Tabela Completa".
 * A verificacao visual foi feita sem privilegios de administrador; as leituras dependentes de driver devem ser confirmadas numa execucao normal.
+
+---
+
+## 17. Empacotamento como Aplicacao Instalavel
+
+| Aspeto | Antes | Depois |
+|---|---|---|
+| Executavel | `LibreHardwareMonitor.Windows.Forms.exe` numa pasta de build | `LibreHardware.exe`, produto "Libre Hardware" |
+| Requisitos no PC de destino | .NET 8 instalado | Nenhum (executavel autonomo) |
+| Instalacao | Copia manual e `.bat` | Instalador com atalhos e desinstalador, ou ZIP portatil |
+| Definicoes | Ao lado do executavel | `%AppData%\Libre Hardware\` (ou pasta propria em modo portatil) |
+| `--exit` | Terminacao forcada do processo | Pedido de fecho limpo, com terminacao apenas como ultimo recurso |
+
+### 17.1 Pontos em Aberto
+* O instalador e o executavel autonomo ainda nao foram executados de ponta a ponta; ver a lista de verificacao na Fase 24 do historico.
+* Icone com tamanho maximo de 48x48: recomenda-se uma versao com 256x256.
+* Sem assinatura digital: aviso do SmartScreen na instalacao.
+* Licenca de redistribuicao do `PawnIO_setup.exe` por confirmar antes de publicar os pacotes fora de uso pessoal.

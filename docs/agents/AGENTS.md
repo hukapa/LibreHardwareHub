@@ -14,6 +14,7 @@
   - Para escolher hardware ou sensores (CPU, GPU principal, memoria fisica) e formatar valores use sempre `UI/SensorLookup.cs`; nao repita pesquisas LINQ por nome de sensor nos paineis.
   - O HUD so e desenhado por `OverlayRenderer`; a janela real e a pre-visualizacao nunca devem ter codigo de layout proprio.
   - Codigo executado a cada ciclo de sensores nao deve alocar listas nem usar LINQ: resolva os sensores uma vez e leia apenas valores.
+  - Nunca escreva ficheiros ao lado do executavel nem repita o nome da aplicacao em strings: use `Utilities/AppInfo.cs` (`AppInfo.Name`, `AppInfo.ConfigFile`, `AppInfo.DataDirectory`). A aplicacao instalada vive em Program Files, que e so de leitura.
 * **Resiliencia Operacional:** A aplicacao pode correr em ambientes com restricoes de seguranca (ex: Windows 11 Smart App Control ativo, utilizadores nao administradores, maquinas virtuais). Nunca assuma que um driver de kernel ou DLL externa de terceiro vai carregar com sucesso.
 
 ---

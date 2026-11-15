@@ -199,6 +199,9 @@ LibreHardwareMonitor/
 | `UI/Tuning/GenericGpuTuningDevice.cs` | Implementacao base segura com deteccao passiva de GPUs integradas e telemetria pura sem escritas arriscadas. | <= 150 lin | `IGpuTuningDevice`, `IHardware` |
 | `Utilities/HttpServer.cs` | Servidor HTTP multithreaded que escuta requisicoes REST (`/data.json`) e serve o dashboard web embutido. | <= 450 lin | `HttpListener`, `IElement`, `Node` |
 | `Utilities/PersistentSettings.cs` | Mecanismo de persistencia de configuracoes em XML com fallback automatico para ficheiro `.backup`. | <= 250 lin | `System.Xml`, `ISettings` |
+| `Utilities/AppInfo.cs` | Nome e identificador da aplicacao, pasta de dados (AppData ou portatil), caminhos de configuracao e crash log, migracao do `.config` antigo e nome do evento de saida. | <= 150 lin | `System.IO` |
+| `installer/LibreHardware.iss` | Instalador Inno Setup: ficheiros, atalhos, tarefas opcionais (arranque, PawnIO) e fecho limpo da instancia em execucao antes de atualizar. | <= 150 lin | Inno Setup 6 |
+| `scripts/Publicar-Release.ps1` | Publica o executavel autonomo e gera instalador e ZIP portatil em `dist/`. | <= 120 lin | `dotnet publish`, `ISCC.exe` |
 
 ---
 

@@ -1,4 +1,4 @@
-# LibreHardwareMonitor — Guia Master do Projeto e Navegacao de Documentacao
+# Libre Hardware — Guia Master do Projeto e Navegacao de Documentacao
 
 > **Versao:** 0.9.6.0 (Fork hukapa)  
 > **Arquitetura:** .NET 8.0 LTS Exclusivo (`net8.0` / `net8.0-windows`) + WinForms + Web Server HTTP Embutido  
@@ -84,26 +84,48 @@ LibreHardwareMonitor/
 │   │   ├── SensorLookup.cs                  # Escolha de hardware/sensores e formatacao de valores (partilhado)
 │   ├── Utilities/                           # HttpServer embutido, configuracoes persistentes e logger
 │   └── Resources/                           # Recursos graficos, manifest e dashboard Web
-└── Iniciar-LibreHardwareMonitor.bat         # Script de arranque com elevacao administrativa e WorkingDirectory
+├── installer/LibreHardware.iss               # Script Inno Setup do instalador
+├── scripts/Publicar-Release.ps1             # Gera instalador e copia portatil em dist/
+└── Iniciar.bat                              # Compila e arranca a aplicacao durante o desenvolvimento
 ```
 
 ---
 
-## 5. Como Compilar e Executar
+## 5. Como Compilar, Executar e Distribuir
 
-### Pre-requisitos
+### Pre-requisitos de desenvolvimento
 * Windows 10/11 x64
 * .NET 8.0 SDK (versao 8.0.400 ou superior)
+* Inno Setup 6 (apenas para gerar o instalador): `winget install JRSoftware.InnoSetup`
 
-### Compilacao da Versao Release (.NET 8.0)
+### Ciclo de desenvolvimento
+`Iniciar.bat` compila e arranca a aplicacao a partir de `bin\Publish-SingleFile\LibreHardware.exe` (build rapida, dependente do .NET instalado).
+
 ```powershell
 dotnet build LibreHardwareMonitor.sln -c Release /p:Platform=x64
 ```
 
-### Publicacao Standalone em Ficheiro Unico (Single-File)
+### Pacotes de distribuicao
 ```powershell
-dotnet publish LibreHardwareMonitor.Windows.Forms\LibreHardwareMonitor.Windows.Forms.csproj -c Release -f net8.0-windows -r win-x64 --self-contained false -p:PublishSingleFile=true -p:Platform=x64 -o "bin\Publish-SingleFile"
+scripts\Publicar-Release.bat
 ```
+Gera em `dist\` (pasta ignorada pelo Git):
+* `LibreHardware-<versao>-Setup.exe`: instalador (Program Files, atalho no Menu Iniciar, desinstalador, opcoes de atalho no ambiente de trabalho, arranque com o Windows e driver PawnIO).
+* `LibreHardware-<versao>-portable.zip`: copia portatil; o ficheiro `portable.txt` faz com que as definicoes fiquem na propria pasta.
 
-### Execucao
-Execute o ficheiro `Iniciar-LibreHardwareMonitor.bat` para iniciar a aplicacao com privilegios de administrador necessarios a leitura de todos os sensores de motherboard e processador.
+O executavel distribuido e autonomo (inclui o .NET) e nao requer nada instalado no PC de destino. A versao vem de `Directory.Build.props`.
+
+### Onde ficam os dados
+| Modo | Definicoes, registos CSV e `crash.log` |
+|---|---|
+| Instalado ou desenvolvimento | `%AppData%\Libre Hardware\` |
+| Portatil (`portable.txt` ao lado do executavel) | Pasta do executavel |
+
+Na primeira execucao, um `.config` antigo existente ao lado do executavel e copiado para a nova localizacao.
+
+### Linha de comandos
+| Argumento | Efeito |
+|---|---|
+| `--exit` | Pede a instancia em execucao que feche de forma limpa (ventoinhas devolvidas a BIOS); so termina a forca se nao responder em 10 s |
+| `--register-startup` / `--unregister-startup` | Cria ou remove a tarefa agendada de arranque com o Windows (usado pelo instalador) |
+| `--elevate` | Reinicia com privilegios de administrador |

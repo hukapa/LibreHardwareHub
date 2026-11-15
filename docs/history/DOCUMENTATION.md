@@ -463,3 +463,19 @@
 * **Navegacao (`UI/Controls/SidebarPanel*.cs`, `MainForm.Layout.cs`):** seccoes recolhiveis com estado persistido (Rede recolhida por omissao), botao de modo compacto (`navigation.sidebar`), setas/Home/End, `Ctrl+1` a `Ctrl+5`, indicador de scroll e tooltips apenas quando o texto nao cabe.
 * **DRY:** `UI/SensorLookup.cs` substitui a logica duplicada de escolha de sensores e de formatacao em `SummaryMetrics`, nos cinco cartoes e no overlay. `FluentStyle` guarda em cache a lista de fontes instaladas.
 * **Validacao:** `dotnet build -c Release -p:Platform=x64` com 0 avisos e 0 erros; paginas renderizadas para imagem e HUD real capturado do ecra num harness externo ao repositorio, sem privilegios de administrador (sensores de motherboard e temperaturas de CPU nao disponiveis nesse modo, pelo que nao foram verificados visualmente).
+
+---
+
+## 24. Fase 24: Aplicacao Instalavel "Libre Hardware" (Executavel Proprio, Dados em AppData e Instalador)
+
+* **Objetivo:** Deixar de depender de um `.bat` e de uma pasta de build: a aplicacao passa a ter nome e executavel proprios, instalador, atalhos e desinstalador.
+* **Identidade:**
+  - Executavel `LibreHardware.exe` (antes `LibreHardwareMonitor.Windows.Forms.exe`), com produto, descricao e versao nas propriedades do ficheiro. Nome visivel "Libre Hardware" no titulo, bandeja e "Sobre".
+  - Mantido o icone existente (`Resources\icon.ico`). Nota: o maior tamanho do ficheiro e 48x48, pelo que aparece pouco nitido em vistas de icones grandes.
+  - Namespaces, nome do projeto e nome do mutex de instancia unica nao foram alterados (uma build antiga e uma nova nunca correm em simultaneo).
+* **Dados do utilizador (`Utilities/AppInfo.cs`):** definicoes, registos CSV e `crash.log` passam para `%AppData%\Libre Hardware\`; modo portatil com `portable.txt`; migracao automatica do `.config` antigo na primeira execucao.
+* **Fecho limpo por linha de comandos:** `--exit` terminava o processo a forca, deixando as ventoinhas na ultima velocidade. Agora sinaliza um evento nomeado; a instancia em execucao fecha pelo caminho normal (ventoinhas devolvidas a BIOS, definicoes gravadas). So ha terminacao forcada apos 10 s sem resposta.
+* **PawnIO:** a extracao do instalador do driver truncava para 0 bytes o `PawnIO_setup.exe` existente na pasta quando o recurso embutido nao existia. Passa a usar a copia ao lado do executavel (ou o recurso), sempre a partir da pasta temporaria.
+* **Distribuicao:** `scripts\Publicar-Release.ps1` publica o executavel autonomo (com o .NET incluido, comprimido) e gera `dist\LibreHardware-<versao>-Setup.exe` e `dist\LibreHardware-<versao>-portable.zip`. `installer\LibreHardware.iss` instala em Program Files, cria atalhos, oferece arranque com o Windows (tarefa agendada criada pela propria aplicacao com `--register-startup`) e instalacao do PawnIO, e fecha a instancia em execucao antes de atualizar.
+* **Validacao:** build Release com 0 avisos; os dois pacotes foram gerados (cerca de 62 MB cada) e as propriedades e o icone do executavel confirmados. O instalador, a desinstalacao, a migracao de definicoes e o arranque do executavel autonomo nao foram executados nesta sessao (requerem elevacao UAC); a opcao silenciosa do PawnIO (`-install -silent`) tambem nao foi exercitada.
+* **Sem assinatura digital:** o Windows SmartScreen mostra um aviso ao executar o instalador.
