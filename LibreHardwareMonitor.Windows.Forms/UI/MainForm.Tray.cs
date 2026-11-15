@@ -62,15 +62,30 @@ public sealed partial class MainForm
     }
 
 
+    private bool _startupComplete;
+
+    // Started elevated from a non-elevated shell, Windows tends to open the window behind the others.
+    private void BringToForeground()
+    {
+        Activate();
+        TopMost = true;
+        TopMost = false;
+    }
+
     private void SysTrayHideShow()
     {
+        // The tray icon exists while the constructor is still detecting hardware; showing the half-built
+        // window at that point crashed on options that were not created yet.
+        if (!_startupComplete)
+            return;
+
         Visible = !Visible;
         if (Visible)
         {
             if (WindowState == FormWindowState.Minimized)
                 WindowState = FormWindowState.Normal;
             ResetWorkingSetTrimmed();
-            Activate();
+            BringToForeground();
             ApplyAdaptivePolling();
             treeView.Invalidate();
         }

@@ -541,6 +541,9 @@ public sealed partial class MainForm : Form
 
         startupMenuItem.Visible = _startupManager.IsAvailable;
 
+        // From here on every option exists: the tray icon (created early) may now show or hide the window.
+        _startupComplete = true;
+
         if (startMinMenuItem.Checked)
         {
             if (!minTrayMenuItem.Checked)
@@ -552,6 +555,7 @@ public sealed partial class MainForm : Form
         else
         {
             Show();
+            BringToForeground();
         }
 
         // Create a handle, otherwise calling Close() does not fire FormClosed
