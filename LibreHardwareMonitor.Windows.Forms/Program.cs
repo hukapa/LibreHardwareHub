@@ -13,6 +13,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Windows.Forms.UI;
+using LibreHardwareMonitor.Windows.Forms.Utilities;
 
 namespace LibreHardwareMonitor.Windows.Forms;
 
@@ -25,15 +26,7 @@ public static class Program
         string logText = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {category}: {ex}\n";
         try
         {
-            File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), logText);
-        }
-        catch { }
-
-        try
-        {
-            string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LibreHardwareHub");
-            Directory.CreateDirectory(appData);
-            File.AppendAllText(Path.Combine(appData, "crash.log"), logText);
+            File.AppendAllText(AppInfo.CrashLogFile, logText);
         }
         catch { }
     }
@@ -49,7 +42,7 @@ public static class Program
                 LogCrash("Unhandled Exception", ex);
                 try
                 {
-                    MessageBox.Show($"Ocorreu um erro ao iniciar o LibreHardwareMonitor:\n\n{ex.Message}\n\nConsulte crash.log para mais detalhes.", "Erro LibreHardwareMonitor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"Ocorreu um erro ao iniciar o {AppInfo.Name}:\n\n{ex.Message}\n\nDetalhes em {AppInfo.CrashLogFile}", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 catch { }
             }
@@ -62,7 +55,7 @@ public static class Program
             LogCrash("Thread Exception", e.Exception);
             try
             {
-                MessageBox.Show($"Ocorreu um erro no LibreHardwareMonitor:\n\n{e.Exception.Message}\n\nConsulte crash.log para mais detalhes.", "Erro LibreHardwareMonitor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ocorreu um erro no {AppInfo.Name}:\n\n{e.Exception.Message}\n\nDetalhes em {AppInfo.CrashLogFile}", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             catch { }
         };
@@ -77,6 +70,13 @@ public static class Program
                     string.Equals(arg, "-exit", StringComparison.OrdinalIgnoreCase))
                 {
                     CloseRunningInstances();
+                    return;
+                }
+
+                if (string.Equals(arg, "--register-startup", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "--unregister-startup", StringComparison.OrdinalIgnoreCase))
+                {
+                    StartupManager.Register(arg.StartsWith("--register", StringComparison.OrdinalIgnoreCase));
                     return;
                 }
 
@@ -111,10 +111,25 @@ public static class Program
         if (!AllRequiredFilesAvailable())
             Environment.Exit(0);
 
+        AppInfo.MigrateLegacyConfig();
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        // Lets "--exit" (installer, uninstaller, update scripts) close this instance cleanly.
+        using EventWaitHandle exitEvent = new(false, EventResetMode.AutoReset, AppInfo.ExitEventName);
         using (MainForm form = new MainForm())
         {
+            ThreadPool.RegisterWaitForSingleObject(exitEvent, delegate
+            {
+                try
+                {
+                    form.BeginInvoke(new Action(form.RequestExit));
+                }
+                catch (InvalidOperationException)
+                {
+                    // The window is already gone: the application is closing anyway.
+                }
+            }, null, Timeout.Infinite, true);
             form.FormClosed += delegate
             {
                 Application.Exit();
@@ -134,13 +149,16 @@ public static class Program
         try
         {
             int currentPid = Process.GetCurrentProcess().Id;
-            foreach (Process proc in Process.GetProcessesByName("LibreHardwareMonitor.Windows.Forms"))
+            foreach (string name in AppInfo.ProcessNames)
             {
-                if (proc.Id != currentPid && proc.MainWindowHandle != IntPtr.Zero)
+                foreach (Process proc in Process.GetProcessesByName(name))
                 {
-                    ShowWindow(proc.MainWindowHandle, 9); // SW_RESTORE
-                    SetForegroundWindow(proc.MainWindowHandle);
-                    return;
+                    if (proc.Id != currentPid && proc.MainWindowHandle != IntPtr.Zero)
+                    {
+                        ShowWindow(proc.MainWindowHandle, 9); // SW_RESTORE
+                        SetForegroundWindow(proc.MainWindowHandle);
+                        return;
+                    }
                 }
             }
         }
@@ -149,21 +167,28 @@ public static class Program
         }
     }
 
+    // "--exit": asks the running instance to close by itself, so it restores the fans and saves its settings;
+    // only an instance that does not answer (or an older build without the exit event) is terminated.
     private static void CloseRunningInstances()
     {
         try
         {
-            int currentPid = Process.GetCurrentProcess().Id;
-            string[] processNames = ["LibreHardwareMonitor.Windows.Forms", "LibreHardwareMonitor"];
-            foreach (string name in processNames)
+            if (EventWaitHandle.TryOpenExisting(AppInfo.ExitEventName, out EventWaitHandle exitEvent))
+            {
+                using (exitEvent)
+                    exitEvent.Set();
+            }
+
+            int currentPid = Environment.ProcessId;
+            foreach (string name in AppInfo.ProcessNames)
             {
                 foreach (Process proc in Process.GetProcessesByName(name))
                 {
-                    if (proc.Id != currentPid)
-                    {
-                        proc.Kill();
-                        proc.WaitForExit(3000);
-                    }
+                    if (proc.Id == currentPid || proc.WaitForExit(10000))
+                        continue;
+
+                    proc.Kill();
+                    proc.WaitForExit(3000);
                 }
             }
         }

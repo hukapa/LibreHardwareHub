@@ -28,6 +28,9 @@ public sealed partial class MainForm
         CloseApplication();
     }
 
+    /// <summary>Full shutdown requested from outside the window (the "--exit" command line of another process).</summary>
+    public void RequestExit() => CloseApplication();
+
 
     private void CloseApplication()
     {

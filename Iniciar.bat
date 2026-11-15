@@ -1,10 +1,10 @@
 @echo off
 setlocal EnableDelayedExpansion
-title LibreHardwareMonitor, LHM
+title Libre Hardware
 cd /d "%~dp0"
 
 set "TARGET_DIR=%~dp0bin\Publish-SingleFile"
-set "TARGET_EXE=%TARGET_DIR%\LibreHardwareMonitor.Windows.Forms.exe"
+set "TARGET_EXE=%TARGET_DIR%\LibreHardware.exe"
 
 if exist "%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe" (
     set "DOTNET_ROOT=%LOCALAPPDATA%\Microsoft\dotnet"
@@ -12,7 +12,7 @@ if exist "%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe" (
 )
 
 echo ==========================================================
-echo                LibreHardwareMonitor, LHM
+echo                      Libre Hardware
 echo ==========================================================
 echo  [1] Compilar e Iniciar (Garante todas as alteracoes)
 echo  [2] Iniciar Rapido (Sem compilar)
@@ -39,7 +39,7 @@ call :CLOSE_APP
 if exist "%TARGET_EXE%" (
     del /f /q "%TARGET_EXE%" >nul 2>&1
     if exist "%TARGET_EXE%" (
-        powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardwareMonitor.Windows.Forms.exe' -Verb RunAs -Wait" >nul 2>&1
+        powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardware.exe' -Verb RunAs -Wait" >nul 2>&1
         timeout /t 1 /nobreak >nul 2>&1
         del /f /q "%TARGET_EXE%" >nul 2>&1
     )
@@ -86,7 +86,7 @@ goto END
 
 :LAUNCH_APP
 if exist "%TARGET_EXE%" (
-    echo [INFO] A iniciar LibreHardwareMonitor com permissoes de Administrador...
+    echo [INFO] A iniciar Libre Hardware com permissoes de Administrador...
     start "" /D "%TARGET_DIR%" "%TARGET_EXE%"
     exit /b 0
 ) else (
@@ -105,21 +105,21 @@ exit /b 0
 :: ==========================================================
 :CLOSE_APP
 call :IS_RUNNING || goto :eof
-taskkill /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
+taskkill /im LibreHardware.exe >nul 2>&1
 call :WAIT_EXIT 5
 call :IS_RUNNING || goto :eof
 :: A app corre como Administrador: pedir o fecho normal com elevacao
-powershell -Command "Start-Process taskkill -ArgumentList '/im LibreHardwareMonitor.Windows.Forms.exe' -Verb RunAs -Wait" >nul 2>&1
+powershell -Command "Start-Process taskkill -ArgumentList '/im LibreHardware.exe' -Verb RunAs -Wait" >nul 2>&1
 call :WAIT_EXIT 8
 call :IS_RUNNING || goto :eof
 echo [AVISO] A app nao fechou normalmente. A terminar a forca...
-taskkill /f /im LibreHardwareMonitor.Windows.Forms.exe >nul 2>&1
+taskkill /f /im LibreHardware.exe >nul 2>&1
 call :IS_RUNNING || goto :eof
-powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardwareMonitor.Windows.Forms.exe' -Verb RunAs -Wait" >nul 2>&1
+powershell -Command "Start-Process taskkill -ArgumentList '/f /im LibreHardware.exe' -Verb RunAs -Wait" >nul 2>&1
 goto :eof
 
 :IS_RUNNING
-tasklist /fi "imagename eq LibreHardwareMonitor.Windows.Forms.exe" 2>nul | find /i "LibreHardwareMonitor.Windows.Forms.exe" >nul
+tasklist /fi "imagename eq LibreHardware.exe" 2>nul | find /i "LibreHardware.exe" >nul
 exit /b %errorlevel%
 
 :WAIT_EXIT

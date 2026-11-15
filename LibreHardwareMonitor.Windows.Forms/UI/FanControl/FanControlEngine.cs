@@ -185,7 +185,7 @@ public sealed class FanControlEngine
     {
         try
         {
-            _settings.Save(Path.ChangeExtension(Application.ExecutablePath, ".config"));
+            _settings.Save(AppInfo.ConfigFile);
         }
         catch
         {

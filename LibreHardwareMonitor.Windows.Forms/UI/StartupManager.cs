@@ -69,6 +69,32 @@ public class StartupManager
 
     public bool IsAvailable { get; }
 
+    /// <summary>
+    /// Used by the installer ("--register-startup" / "--unregister-startup"): creates the logon task for this
+    /// executable, or removes every startup entry whatever executable it points to.
+    /// </summary>
+    public static void Register(bool enable)
+    {
+        try
+        {
+            if (enable)
+            {
+                StartupManager manager = new();
+                if (manager.IsAvailable)
+                    manager.Startup = true;
+            }
+            else
+            {
+                DeleteTask();
+                Registry.CurrentUser.OpenSubKey(RegistryPath, true)?.DeleteValue(nameof(LibreHardwareMonitor), false);
+            }
+        }
+        catch (Exception)
+        {
+            // Startup registration is a convenience: never fail an install or uninstall because of it.
+        }
+    }
+
     public bool Startup
     {
         get { return _startup; }
@@ -142,7 +168,7 @@ public class StartupManager
     private void CreateTask()
     {
         TaskDefinition taskDefinition = TaskService.Instance.NewTask();
-        taskDefinition.RegistrationInfo.Description = "Starts LibreHardwareMonitor on Windows startup.";
+        taskDefinition.RegistrationInfo.Description = "Starts Libre Hardware on Windows startup.";
 
         taskDefinition.Triggers.Add(new LogonTrigger());
 

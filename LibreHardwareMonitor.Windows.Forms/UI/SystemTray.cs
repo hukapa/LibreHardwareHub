@@ -70,7 +70,7 @@ public class SystemTray : IDisposable
             SendHideShowCommand();
         };
         _mainIcon.Icon = EmbeddedResources.GetIcon("smallicon.ico");
-        _mainIcon.Text = "Libre Hardware Monitor";
+        _mainIcon.Text = AppInfo.Name;
     }
 
     public void SetFanControlEngine(FanControlEngine engine)

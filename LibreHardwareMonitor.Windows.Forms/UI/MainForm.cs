@@ -79,7 +79,7 @@ public sealed partial class MainForm : Form
         InitializeComponent();
 
         _settings = new PersistentSettings();
-        _settings.Load(Path.ChangeExtension(Application.ExecutablePath, ".config"));
+        _settings.Load(AppInfo.ConfigFile);
 
         _overlayConfig = new OverlayConfig();
         _overlayConfig.Load(_settings);
@@ -95,9 +95,7 @@ public sealed partial class MainForm : Form
         splitContainer.Dock = DockStyle.Fill;
         InitializeShell();
 
-        string exePath = Application.ExecutablePath;
-        DateTime buildTime = File.Exists(exePath) ? File.GetLastWriteTime(exePath) : DateTime.Now;
-        Text = $"LibreHardwareMonitor, LHM v0.9.6 [Build: {buildTime:yyyy-MM-dd HH:mm}]";
+        Text = $"{AppInfo.Name} {AppInfo.Version}";
 
         Font = FluentStyle.UiFont;
         treeView.Font = FluentStyle.UiFont;
@@ -202,14 +200,14 @@ public sealed partial class MainForm : Form
         {
             if (PawnIo.PawnIo.Version < new Version(2, 0, 0, 0))
             {
-                DialogResult result = MessageBox.Show("PawnIO is outdated, do you want to update it?", nameof(LibreHardwareMonitor), MessageBoxButtons.OKCancel);
+                DialogResult result = MessageBox.Show("PawnIO is outdated, do you want to update it?", AppInfo.Name, MessageBoxButtons.OKCancel);
                 if (result == DialogResult.OK)
                     InstallPawnIO();
             }
         }
         else
         {
-            DialogResult result = MessageBox.Show("PawnIO is not installed, do you want to install it?", nameof(LibreHardwareMonitor), MessageBoxButtons.OKCancel);
+            DialogResult result = MessageBox.Show("PawnIO is not installed, do you want to install it?", AppInfo.Name, MessageBoxButtons.OKCancel);
             if (result == DialogResult.OK)
                 InstallPawnIO();
         }
@@ -244,7 +242,7 @@ public sealed partial class MainForm : Form
             }
             catch (Win32Exception ex)
             {
-                MessageBox.Show("PawnIO installation failed: " + ex.Message, nameof(LibreHardwareMonitor), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("PawnIO installation failed: " + ex.Message, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally
             {
@@ -259,17 +257,27 @@ public sealed partial class MainForm : Form
             }
         }
 
+        // The setup shipped next to the executable, or the embedded copy, placed in the temp folder to run from there.
         static string ExtractPawnIO()
         {
-            string destination = Path.Combine(Directory.GetCurrentDirectory(), "PawnIO_setup.exe");
+            const string fileName = "PawnIO_setup.exe";
+            string destination = Path.Combine(Path.GetTempPath(), fileName);
 
             try
             {
+                string shipped = Path.Combine(AppInfo.ExeDirectory, fileName);
+                if (File.Exists(shipped))
+                {
+                    File.Copy(shipped, destination, true);
+                    return destination;
+                }
 
-                using Stream resourceStream = typeof(MainForm).Assembly.GetManifestResourceStream("LibreHardwareMonitor.Windows.Forms.Resources.PawnIO_setup.exe");
+                using Stream resourceStream = typeof(MainForm).Assembly.GetManifestResourceStream("LibreHardwareMonitor.Windows.Forms.Resources." + fileName);
+                if (resourceStream == null)
+                    return null;
+
                 using FileStream fileStream = new(destination, FileMode.Create, FileAccess.Write);
                 resourceStream.CopyTo(fileStream);
-
                 return destination;
             }
             catch
@@ -843,7 +851,7 @@ public sealed partial class MainForm : Form
         _settings.SetValue("authenticationUserName", Server.UserName);
         _settings.SetValue("authenticationPassword", Server.PasswordSHA256);
 
-        string fileName = Path.ChangeExtension(Application.ExecutablePath, ".config");
+        string fileName = AppInfo.ConfigFile;
 
         try
         {
