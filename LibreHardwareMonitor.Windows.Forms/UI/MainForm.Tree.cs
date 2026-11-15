@@ -145,13 +145,7 @@ public sealed partial class MainForm
                 {
                     string sensorId = node.Sensor.Identifier.ToString();
                     ToolStripMenuItem overlayItem = new("Mostrar no Overlay") { Checked = _overlayConfig.HasCustomSensor(sensorId) };
-                    overlayItem.Click += delegate
-                    {
-                        _overlayConfig.ToggleCustomSensor(sensorId, node.Sensor.Name);
-                        _overlayConfig.Save(_settings);
-                        _overlayForm?.RecalculateBounds();
-                        _overlayForm?.UpdateTelemetry(_computer);
-                    };
+                    overlayItem.Click += delegate { ToggleOverlaySensor(node.Sensor); };
                     treeContextMenu.Items.Add(overlayItem);
                 }
 

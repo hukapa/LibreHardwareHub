@@ -28,6 +28,8 @@ public sealed class GlobalHotkeyManager : IDisposable
     private readonly IntPtr _windowHandle;
     private bool _overlayRegistered;
     private bool _clickThroughRegistered;
+    private Keys _overlayKeys;
+    private Keys _clickThroughKeys;
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -47,6 +49,10 @@ public sealed class GlobalHotkeyManager : IDisposable
         if (_windowHandle == IntPtr.Zero || keyCombo == Keys.None)
             return false;
 
+        // Already registered with this combination: nothing to do (the editor reports every change, not only hotkey ones).
+        if (id == HotkeyOverlayToggle ? _overlayRegistered && _overlayKeys == keyCombo : _clickThroughRegistered && _clickThroughKeys == keyCombo)
+            return true;
+
         UnregisterHotkey(id);
 
         uint modifiers = ModNoRepeat;
@@ -65,9 +71,15 @@ public sealed class GlobalHotkeyManager : IDisposable
         if (success)
         {
             if (id == HotkeyOverlayToggle)
+            {
                 _overlayRegistered = true;
+                _overlayKeys = keyCombo;
+            }
             else if (id == HotkeyClickThroughToggle)
+            {
                 _clickThroughRegistered = true;
+                _clickThroughKeys = keyCombo;
+            }
         }
 
         return success;

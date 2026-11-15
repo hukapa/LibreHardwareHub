@@ -307,7 +307,7 @@ public class FluentComboBox : ComboBox, IThemedControl
     }
 
     /// <summary>Paints nothing around the hosted list (no ToolStrip border or margins).</summary>
-    private sealed class PopupRenderer : ToolStripRenderer
+    internal sealed class PopupRenderer : ToolStripRenderer
     {
         protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
         {

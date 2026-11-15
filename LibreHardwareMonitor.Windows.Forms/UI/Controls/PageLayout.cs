@@ -348,7 +348,7 @@ public sealed class ScrollHost : Control, IThemedControl, IMessageFilter
     {
         foreach (Control child in control.Controls)
         {
-            if (child is FluentComboBox { IsPopupOpen: true } || child is ComboBox { DroppedDown: true } || HasOpenDropDown(child))
+            if (child is FluentComboBox { IsPopupOpen: true } or FluentColorButton { IsPopupOpen: true } || child is ComboBox { DroppedDown: true } || HasOpenDropDown(child))
                 return true;
         }
 

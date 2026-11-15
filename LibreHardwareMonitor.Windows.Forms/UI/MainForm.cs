@@ -62,9 +62,6 @@ public sealed partial class MainForm : Form
     private readonly FanControlEngine _fanControlEngine;
     private readonly GpuTuningEngine _gpuTuningEngine;
     private readonly CpuTuningEngine _cpuTuningEngine;
-    private readonly OverlayConfig _overlayConfig;
-    private OverlayForm _overlayForm;
-    private GlobalHotkeyManager _hotkeyManager;
     private bool _isWorkingSetTrimmed;
 
     private int _delayCount;
@@ -86,6 +83,7 @@ public sealed partial class MainForm : Form
 
         _overlayConfig = new OverlayConfig();
         _overlayConfig.Load(_settings);
+        _overlayTelemetry = new OverlayTelemetry(_overlayConfig);
 
         _unitManager = new UnitManager(_settings);
 
@@ -605,8 +603,7 @@ public sealed partial class MainForm : Form
                 _plotPanel?.InvalidatePlot();
         }
 
-        if (_overlayForm != null && _overlayForm.Visible && _computer != null)
-            _overlayForm.UpdateTelemetry(_computer);
+        UpdateOverlay(isFormVisible);
 
         _systemTray?.Redraw();
     }
@@ -727,86 +724,6 @@ public sealed partial class MainForm : Form
 
         PlotSelectionChanged(this, null);
         RefreshShell();
-    }
-
-
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        InitializeOverlayAndHotkeys();
-    }
-
-    private void InitializeOverlayAndHotkeys()
-    {
-        if (_hotkeyManager != null)
-            return;
-
-        _hotkeyManager = new GlobalHotkeyManager(Handle);
-        _hotkeyManager.HotkeyTriggered += OnGlobalHotkeyTriggered;
-        _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyOverlayToggle, _overlayConfig.Hotkey);
-        _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyClickThroughToggle, _overlayConfig.LockHotkey);
-
-        _overlayForm = new OverlayForm(_overlayConfig);
-        _overlayEditorPanel?.SetOverlayForm(_overlayForm);
-        if (_overlayConfig.Enabled)
-        {
-            _overlayForm.Show();
-            _overlayForm.RecalculateBounds();
-            _overlayForm.UpdateTelemetry(_computer);
-        }
-    }
-
-    private void OnGlobalHotkeyTriggered(int id)
-    {
-        if (id == GlobalHotkeyManager.HotkeyOverlayToggle)
-        {
-            _overlayConfig.Enabled = !_overlayConfig.Enabled;
-            if (_overlayForm != null)
-            {
-                if (_overlayConfig.Enabled)
-                {
-                    _overlayForm.Show();
-                    _overlayForm.RecalculateBounds();
-                    _overlayForm.UpdateTelemetry(_computer);
-                }
-                else
-                {
-                    _overlayForm.Hide();
-                }
-            }
-            ApplyAdaptivePolling();
-            _overlayEditorPanel?.Invalidate();
-        }
-        else if (id == GlobalHotkeyManager.HotkeyClickThroughToggle)
-        {
-            _overlayConfig.ClickThrough = !_overlayConfig.ClickThrough;
-            _overlayForm?.ApplyClickThrough();
-            _overlayEditorPanel?.Invalidate();
-        }
-    }
-
-    private void OnOverlayConfigChanged()
-    {
-        _overlayConfig.Save(_settings);
-        if (_hotkeyManager != null)
-        {
-            _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyOverlayToggle, _overlayConfig.Hotkey);
-            _hotkeyManager.RegisterHotkey(GlobalHotkeyManager.HotkeyClickThroughToggle, _overlayConfig.LockHotkey);
-        }
-        if (_overlayForm != null)
-        {
-            if (_overlayConfig.Enabled && !_overlayForm.Visible)
-            {
-                _overlayForm.Show();
-                _overlayForm.RecalculateBounds();
-                _overlayForm.UpdateTelemetry(_computer);
-            }
-            else if (!_overlayConfig.Enabled && _overlayForm.Visible)
-            {
-                _overlayForm.Hide();
-            }
-        }
-        ApplyAdaptivePolling();
     }
 
     private void Timer_Tick(object sender, EventArgs e)

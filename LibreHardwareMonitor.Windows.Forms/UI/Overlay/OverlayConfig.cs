@@ -6,242 +6,193 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Windows.Forms.Utilities;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Overlay;
 
-public enum OverlayAnchor
-{
-    TopLeft,
-    TopCenter,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-    Custom
-}
-
-public enum OverlayLayout
-{
-    VerticalList,
-    HorizontalBar,
-    CompactGrid,
-    FreeCanvas
-}
-
-public enum OverlayThemePreset
-{
-    FluentDark,
-    MinimalistPure,
-    CyberMatrix,
-    ClassicRtss,
-    Custom
-}
-
-public sealed class OverlayMetricItem
-{
-    public OverlayMetricItem(string id, string defaultTitle, bool enabled = true, int order = 0, bool isCustom = false)
-    {
-        Id = id;
-        DefaultTitle = defaultTitle;
-        CustomTitle = defaultTitle;
-        Enabled = enabled;
-        Order = order;
-        IsCustom = isCustom;
-    }
-
-    public string Id { get; }
-    public string DefaultTitle { get; }
-    public string CustomTitle { get; set; }
-    public bool Enabled { get; set; }
-    public int Order { get; set; }
-    public bool IsCustom { get; }
-
-    public Color? CustomLabelColor { get; set; }
-    public Color? CustomValueColor { get; set; }
-    public bool UseDynamicColor { get; set; } = true;
-    public bool ShowBar { get; set; } = true;
-    public int GridX { get; set; } = 12;
-    public int GridY { get; set; } = 10;
-    public int DisplayFormat { get; set; } = 0; // 0: "9,4 GB (60%)", 1: "9,4 GB", 2: "9,4 / 15,7 GB"
-
-    public string DisplayName => string.IsNullOrWhiteSpace(CustomTitle) ? DefaultTitle : CustomTitle;
-}
-
+/// <summary>Everything the user can customize on the HUD, plus its persistence.</summary>
 public sealed class OverlayConfig
 {
     private const string Prefix = "overlay.";
+
+    public const int LoadWarnPercent = 70;
+    public const int LoadCritPercent = 90;
+
+    public OverlayConfig()
+    {
+        ResetMetrics();
+        ResetAppearance();
+    }
 
     public bool Enabled { get; set; }
     public Keys Hotkey { get; set; } = Keys.Alt | Keys.R;
     public Keys LockHotkey { get; set; } = Keys.Alt | Keys.L;
     public bool ClickThrough { get; set; } = true;
-    public OverlayAnchor Anchor { get; set; } = OverlayAnchor.TopLeft;
-    public Point CustomPosition { get; set; } = new Point(20, 20);
-    public OverlayLayout Layout { get; set; } = OverlayLayout.VerticalList;
-    public OverlayThemePreset ThemePreset { get; set; } = OverlayThemePreset.FluentDark;
 
-    public int BackgroundOpacity { get; set; } = 80;
-    public float FontSize { get; set; } = 10f;
-    public int CornerRadius { get; set; } = 8;
-    public int BorderThickness { get; set; } = 1;
-    public int Compactness { get; set; } = 1;
+    public OverlayAnchor Anchor { get; set; }
+    public Point CustomPosition { get; set; } = new(20, 20);
 
-    public Color BackgroundColor { get; set; } = Color.FromArgb(24, 24, 28);
-    public Color BorderColor { get; set; } = Color.FromArgb(60, 60, 70);
-    public Color LabelColor { get; set; } = Color.FromArgb(175, 180, 195);
-    public Color ValueColor { get; set; } = Color.FromArgb(245, 245, 250);
+    /// <summary>Index into <see cref="Screen.AllScreens" />; -1 is the primary screen.</summary>
+    public int ScreenIndex { get; set; } = -1;
 
-    public int TempWarnC { get; set; } = 70;
-    public int TempCritC { get; set; } = 85;
-    public Color CoolColor { get; set; } = Color.FromArgb(80, 220, 110);
-    public Color WarmColor { get; set; } = Color.FromArgb(255, 190, 40);
-    public Color HotColor { get; set; } = Color.FromArgb(255, 75, 75);
+    /// <summary>Distance to the screen edges for the fixed anchors, in pixels.</summary>
+    public int Margin { get; set; }
 
-    public bool ColorBySeverity { get; set; } = true;
-    public bool ShowProgressBars { get; set; } = true;
-    public bool ShowTextShadow { get; set; } = true;
-    public bool UseMonospaceNumbers { get; set; } = true;
+    public OverlayLayout Layout { get; set; }
+    public int GridColumns { get; set; }
+    public OverlayThemePreset ThemePreset { get; set; }
 
+    public int BackgroundOpacity { get; set; }
+    public float FontSize { get; set; }
+    public int CornerRadius { get; set; }
+    public int BorderThickness { get; set; }
+
+    /// <summary>Inner padding and gap between readings, in pixels.</summary>
+    public int Spacing { get; set; }
+
+    public Color BackgroundColor { get; set; }
+    public Color BorderColor { get; set; }
+    public Color LabelColor { get; set; }
+    public Color ValueColor { get; set; }
+
+    public int TempWarnC { get; set; }
+    public int TempCritC { get; set; }
+    public Color CoolColor { get; set; }
+    public Color WarmColor { get; set; }
+    public Color HotColor { get; set; }
+
+    public bool ColorBySeverity { get; set; }
+    public bool ShowProgressBars { get; set; }
+    public bool ShowTextShadow { get; set; }
+    public bool UseMonospaceNumbers { get; set; }
+    public bool ShowLabels { get; set; }
+
+    /// <summary>The readings in display order.</summary>
     public List<OverlayMetricItem> MetricItems { get; } = new();
 
-    public OverlayConfig()
+    /// <summary>Restores every visual option (not the metric selection, hotkeys or position).</summary>
+    public void ResetAppearance()
     {
-        InitializeDefaultMetrics();
-    }
+        Layout = OverlayLayout.VerticalList;
+        GridColumns = 2;
+        FontSize = 10f;
+        Spacing = 6;
+        Margin = 20;
+        TempWarnC = 70;
+        TempCritC = 85;
+        CoolColor = Color.FromArgb(80, 220, 110);
+        WarmColor = Color.FromArgb(255, 190, 40);
+        HotColor = Color.FromArgb(255, 75, 75);
+        ColorBySeverity = true;
+        ShowProgressBars = true;
+        UseMonospaceNumbers = true;
+        ShowLabels = true;
+        ApplyPreset(OverlayThemePreset.FluentDark);
 
-    public void ApplyAutoLayout(OverlayLayout layout)
-    {
-        Layout = layout;
-        if (layout == OverlayLayout.FreeCanvas)
-            return;
-
-        var active = MetricItems.Where(m => m.Enabled).OrderBy(m => m.Order).ToList();
-        int pad = 12;
-        int rowH = Math.Max(22, (int)(FontSize * 1.8f) + 6);
-        int itemW = (int)(FontSize * 15f);
-
-        switch (layout)
+        foreach (OverlayMetricItem item in MetricItems)
         {
-            case OverlayLayout.VerticalList:
-                for (int i = 0; i < active.Count; i++)
-                {
-                    active[i].GridX = pad;
-                    active[i].GridY = pad + (i * rowH);
-                }
-                break;
-
-            case OverlayLayout.HorizontalBar:
-                for (int i = 0; i < active.Count; i++)
-                {
-                    active[i].GridX = pad + (i * (itemW + pad));
-                    active[i].GridY = pad;
-                }
-                break;
-
-            case OverlayLayout.CompactGrid:
-                int cols = 2;
-                for (int i = 0; i < active.Count; i++)
-                {
-                    int c = i % cols;
-                    int r = i / cols;
-                    active[i].GridX = pad + (c * (itemW + pad));
-                    active[i].GridY = pad + (r * rowH);
-                }
-                break;
+            item.CustomLabelColor = null;
+            item.CustomValueColor = null;
+            item.UseDynamicColor = true;
+            item.ShowBar = true;
         }
     }
 
-    private void InitializeDefaultMetrics()
+    public void ResetMetrics()
     {
         MetricItems.Clear();
-        int order = 0;
-        MetricItems.Add(new OverlayMetricItem("cpu_temp", "CPU Temp", true, order++));
-        MetricItems.Add(new OverlayMetricItem("cpu_load", "CPU Carga", true, order++));
-        MetricItems.Add(new OverlayMetricItem("cpu_power", "CPU Potência", false, order++));
-        MetricItems.Add(new OverlayMetricItem("cpu_clock", "CPU Clock", false, order++));
-        MetricItems.Add(new OverlayMetricItem("gpu_temp", "GPU Temp", true, order++));
-        MetricItems.Add(new OverlayMetricItem("gpu_load", "GPU Carga", true, order++));
-        MetricItems.Add(new OverlayMetricItem("gpu_power", "GPU Potência", false, order++));
-        MetricItems.Add(new OverlayMetricItem("gpu_clock", "GPU Clock", false, order++));
-        MetricItems.Add(new OverlayMetricItem("vram_used", "VRAM Usada", false, order++));
-        MetricItems.Add(new OverlayMetricItem("ram_used", "RAM Usada", true, order++));
-        MetricItems.Add(new OverlayMetricItem("fan_rpm", "Ventoinha", false, order++));
-        MetricItems.Add(new OverlayMetricItem("net_speed", "Rede D/U", false, order++));
-        MetricItems.Add(new OverlayMetricItem("system_time", "Hora", true, order++));
-
-        ApplyAutoLayout(OverlayLayout.VerticalList);
+        MetricItems.Add(new OverlayMetricItem("cpu_temp", "CPU Temp"));
+        MetricItems.Add(new OverlayMetricItem("cpu_load", "CPU Carga"));
+        MetricItems.Add(new OverlayMetricItem("cpu_power", "CPU Potência", false));
+        MetricItems.Add(new OverlayMetricItem("cpu_clock", "CPU Clock", false));
+        MetricItems.Add(new OverlayMetricItem("gpu_temp", "GPU Temp"));
+        MetricItems.Add(new OverlayMetricItem("gpu_load", "GPU Carga"));
+        MetricItems.Add(new OverlayMetricItem("gpu_power", "GPU Potência", false));
+        MetricItems.Add(new OverlayMetricItem("gpu_clock", "GPU Clock", false));
+        MetricItems.Add(new OverlayMetricItem("gpu_fan", "GPU Ventoinha", false));
+        MetricItems.Add(new OverlayMetricItem("vram_used", "VRAM Usada", false));
+        MetricItems.Add(new OverlayMetricItem("ram_used", "RAM Usada"));
+        MetricItems.Add(new OverlayMetricItem("fan_rpm", "Ventoinha", false));
+        MetricItems.Add(new OverlayMetricItem("net_speed", "Rede D/U", false));
+        MetricItems.Add(new OverlayMetricItem("system_time", "Hora"));
     }
 
     public void ApplyPreset(OverlayThemePreset preset)
     {
         ThemePreset = preset;
+        ShowTextShadow = true;
         switch (preset)
         {
             case OverlayThemePreset.FluentDark:
-                BackgroundOpacity = 80;
-                CornerRadius = 8;
-                BorderThickness = 1;
-                BackgroundColor = Color.FromArgb(24, 24, 28);
-                BorderColor = Color.FromArgb(60, 60, 72);
+                SetFrame(80, 8, 1, Color.FromArgb(24, 24, 28), Color.FromArgb(60, 60, 72));
                 LabelColor = Color.FromArgb(175, 180, 195);
                 ValueColor = Color.FromArgb(245, 245, 250);
-                ShowTextShadow = true;
                 break;
 
             case OverlayThemePreset.MinimalistPure:
-                BackgroundOpacity = 0;
-                CornerRadius = 0;
-                BorderThickness = 0;
-                BackgroundColor = Color.Black;
-                BorderColor = Color.Transparent;
+                SetFrame(0, 0, 0, Color.Black, Color.Black);
                 LabelColor = Color.FromArgb(215, 220, 230);
                 ValueColor = Color.White;
-                ShowTextShadow = true;
                 break;
 
             case OverlayThemePreset.CyberMatrix:
-                BackgroundOpacity = 85;
-                CornerRadius = 2;
-                BorderThickness = 1;
-                BackgroundColor = Color.FromArgb(10, 16, 12);
-                BorderColor = Color.FromArgb(0, 200, 120);
+                SetFrame(85, 2, 1, Color.FromArgb(10, 16, 12), Color.FromArgb(0, 200, 120));
                 LabelColor = Color.FromArgb(0, 180, 100);
                 ValueColor = Color.FromArgb(0, 255, 150);
-                ShowTextShadow = true;
                 break;
 
             case OverlayThemePreset.ClassicRtss:
-                BackgroundOpacity = 50;
-                CornerRadius = 0;
-                BorderThickness = 0;
-                BackgroundColor = Color.Black;
-                BorderColor = Color.Transparent;
+                SetFrame(50, 0, 0, Color.Black, Color.Black);
                 LabelColor = Color.FromArgb(255, 165, 0);
                 ValueColor = Color.White;
-                ShowTextShadow = true;
                 break;
         }
     }
 
-    public bool HasCustomSensor(string sensorId)
+    private void SetFrame(int opacity, int radius, int border, Color background, Color borderColor)
     {
-        return MetricItems.Any(m => m.Id == sensorId && m.Enabled);
+        BackgroundOpacity = opacity;
+        CornerRadius = radius;
+        BorderThickness = border;
+        BackgroundColor = background;
+        BorderColor = borderColor;
     }
 
+    public OverlayMetricItem Find(string id)
+    {
+        foreach (OverlayMetricItem item in MetricItems)
+        {
+            if (item.Id == id)
+                return item;
+        }
+
+        return null;
+    }
+
+    public bool HasCustomSensor(string sensorId) => Find(sensorId) is { Enabled: true };
+
+    /// <summary>Shows/hides a sensor on the HUD, adding it as a custom reading the first time.</summary>
     public void ToggleCustomSensor(string sensorId, string sensorName)
     {
-        OverlayMetricItem existing = MetricItems.FirstOrDefault(m => m.Id == sensorId);
+        OverlayMetricItem existing = Find(sensorId);
         if (existing != null)
-        {
             existing.Enabled = !existing.Enabled;
-        }
         else
-        {
-            int order = MetricItems.Count;
-            MetricItems.Add(new OverlayMetricItem(sensorId, sensorName, true, order, true));
-        }
+            MetricItems.Add(new OverlayMetricItem(sensorId, sensorName, true, true));
+    }
+
+    /// <summary>Moves a reading up (-1) or down (+1) in the display order.</summary>
+    public bool Move(OverlayMetricItem item, int delta)
+    {
+        int index = MetricItems.IndexOf(item);
+        int target = index + delta;
+        if (index < 0 || target < 0 || target >= MetricItems.Count)
+            return false;
+
+        (MetricItems[index], MetricItems[target]) = (MetricItems[target], MetricItems[index]);
+        return true;
     }
 
     public void Load(PersistentSettings settings)
@@ -261,23 +212,24 @@ public sealed class OverlayConfig
         if (Enum.TryParse(settings.GetValue(Prefix + "theme", ThemePreset.ToString()), out OverlayThemePreset preset))
             ThemePreset = preset;
 
-        CustomPosition = new Point(
-            settings.GetValue(Prefix + "pos_x", CustomPosition.X),
-            settings.GetValue(Prefix + "pos_y", CustomPosition.Y));
+        CustomPosition = new Point(settings.GetValue(Prefix + "pos_x", CustomPosition.X), settings.GetValue(Prefix + "pos_y", CustomPosition.Y));
+        ScreenIndex = settings.GetValue(Prefix + "screen", ScreenIndex);
+        Margin = Math.Clamp(settings.GetValue(Prefix + "margin", Margin), 0, 200);
+        GridColumns = Math.Clamp(settings.GetValue(Prefix + "grid_columns", GridColumns), 2, 4);
 
         BackgroundOpacity = Math.Clamp(settings.GetValue(Prefix + "opacity", BackgroundOpacity), 0, 100);
-        FontSize = Math.Clamp(settings.GetValue(Prefix + "font_size", FontSize), 8f, 20f);
+        FontSize = Math.Clamp(settings.GetValue(Prefix + "font_size", FontSize), 8f, 28f);
         CornerRadius = Math.Clamp(settings.GetValue(Prefix + "radius", CornerRadius), 0, 16);
-        BorderThickness = Math.Clamp(settings.GetValue(Prefix + "border", BorderThickness), 0, 3);
-        Compactness = Math.Clamp(settings.GetValue(Prefix + "compactness", Compactness), 0, 2);
+        BorderThickness = Math.Clamp(settings.GetValue(Prefix + "border", BorderThickness), 0, 4);
+        Spacing = Math.Clamp(settings.GetValue(Prefix + "spacing", Spacing), 0, 16);
 
         BackgroundColor = Color.FromArgb(settings.GetValue(Prefix + "bg_color", BackgroundColor.ToArgb()));
         BorderColor = Color.FromArgb(settings.GetValue(Prefix + "border_color", BorderColor.ToArgb()));
         LabelColor = Color.FromArgb(settings.GetValue(Prefix + "label_color", LabelColor.ToArgb()));
         ValueColor = Color.FromArgb(settings.GetValue(Prefix + "value_color", ValueColor.ToArgb()));
 
-        TempWarnC = settings.GetValue(Prefix + "temp_warn", TempWarnC);
-        TempCritC = settings.GetValue(Prefix + "temp_crit", TempCritC);
+        TempWarnC = Math.Clamp(settings.GetValue(Prefix + "temp_warn", TempWarnC), 30, 110);
+        TempCritC = Math.Clamp(settings.GetValue(Prefix + "temp_crit", TempCritC), 30, 110);
         CoolColor = Color.FromArgb(settings.GetValue(Prefix + "cool_color", CoolColor.ToArgb()));
         WarmColor = Color.FromArgb(settings.GetValue(Prefix + "warm_color", WarmColor.ToArgb()));
         HotColor = Color.FromArgb(settings.GetValue(Prefix + "hot_color", HotColor.ToArgb()));
@@ -286,57 +238,9 @@ public sealed class OverlayConfig
         ShowProgressBars = settings.GetValue(Prefix + "progress_bars", ShowProgressBars);
         ShowTextShadow = settings.GetValue(Prefix + "text_shadow", ShowTextShadow);
         UseMonospaceNumbers = settings.GetValue(Prefix + "monospace", UseMonospaceNumbers);
+        ShowLabels = settings.GetValue(Prefix + "labels", ShowLabels);
 
-        string savedMetrics = settings.GetValue(Prefix + "metrics", string.Empty);
-        if (!string.IsNullOrEmpty(savedMetrics))
-        {
-            string[] items = savedMetrics.Split(';', StringSplitOptions.RemoveEmptyEntries);
-            foreach (string item in items)
-            {
-                string[] parts = item.Split('|');
-                if (parts.Length >= 3)
-                {
-                    string id = parts[0];
-                    bool en = parts[1] == "1";
-                    string custom = parts[2];
-                    OverlayMetricItem m = MetricItems.FirstOrDefault(x => x.Id == id);
-                    if (m == null && parts.Length >= 4 && parts[3] == "custom")
-                    {
-                        m = new OverlayMetricItem(id, custom, en, MetricItems.Count, true);
-                        MetricItems.Add(m);
-                    }
-
-                    if (m != null)
-                    {
-                        m.Enabled = en;
-                        m.CustomTitle = custom;
-
-                        if (parts.Length >= 6)
-                        {
-                            if (int.TryParse(parts[4], out int gx)) m.GridX = gx;
-                            if (int.TryParse(parts[5], out int gy)) m.GridY = gy;
-                        }
-
-                        if (parts.Length >= 8)
-                        {
-                            if (int.TryParse(parts[6], out int clc)) m.CustomLabelColor = Color.FromArgb(clc);
-                            if (int.TryParse(parts[7], out int cvc)) m.CustomValueColor = Color.FromArgb(cvc);
-                        }
-
-                        if (parts.Length >= 10)
-                        {
-                            m.UseDynamicColor = parts[8] != "0";
-                            m.ShowBar = parts[9] != "0";
-                        }
-
-                        if (parts.Length >= 11 && int.TryParse(parts[10], out int df))
-                        {
-                            m.DisplayFormat = df;
-                        }
-                    }
-                }
-            }
-        }
+        LoadMetrics(settings.GetValue(Prefix + "metrics", string.Empty));
     }
 
     public void Save(PersistentSettings settings)
@@ -354,12 +258,15 @@ public sealed class OverlayConfig
 
         settings.SetValue(Prefix + "pos_x", CustomPosition.X);
         settings.SetValue(Prefix + "pos_y", CustomPosition.Y);
+        settings.SetValue(Prefix + "screen", ScreenIndex);
+        settings.SetValue(Prefix + "margin", Margin);
+        settings.SetValue(Prefix + "grid_columns", GridColumns);
 
         settings.SetValue(Prefix + "opacity", BackgroundOpacity);
         settings.SetValue(Prefix + "font_size", FontSize);
         settings.SetValue(Prefix + "radius", CornerRadius);
         settings.SetValue(Prefix + "border", BorderThickness);
-        settings.SetValue(Prefix + "compactness", Compactness);
+        settings.SetValue(Prefix + "spacing", Spacing);
 
         settings.SetValue(Prefix + "bg_color", BackgroundColor.ToArgb());
         settings.SetValue(Prefix + "border_color", BorderColor.ToArgb());
@@ -376,9 +283,84 @@ public sealed class OverlayConfig
         settings.SetValue(Prefix + "progress_bars", ShowProgressBars);
         settings.SetValue(Prefix + "text_shadow", ShowTextShadow);
         settings.SetValue(Prefix + "monospace", UseMonospaceNumbers);
+        settings.SetValue(Prefix + "labels", ShowLabels);
 
-        string serialized = string.Join(";", MetricItems.Select(m =>
-            $"{m.Id}|{(m.Enabled ? "1" : "0")}|{m.CustomTitle}|{(m.IsCustom ? "custom" : "std")}|{m.GridX}|{m.GridY}|{(m.CustomLabelColor.HasValue ? m.CustomLabelColor.Value.ToArgb().ToString() : "")}|{(m.CustomValueColor.HasValue ? m.CustomValueColor.Value.ToArgb().ToString() : "")}|{(m.UseDynamicColor ? "1" : "0")}|{(m.ShowBar ? "1" : "0")}|{m.DisplayFormat}"));
-        settings.SetValue(Prefix + "metrics", serialized);
+        settings.SetValue(Prefix + "metrics", SaveMetrics());
+    }
+
+    // One reading per ';', fields split by '|':
+    // id | enabled | title | custom/std | x | y | label color | value color | dynamic | bar | format
+    private string SaveMetrics()
+    {
+        StringBuilder sb = new();
+        foreach (OverlayMetricItem m in MetricItems)
+        {
+            if (sb.Length > 0)
+                sb.Append(';');
+
+            string title = (m.CustomTitle ?? string.Empty).Replace('|', '/').Replace(';', ',');
+            sb.Append(m.Id).Append('|').Append(m.Enabled ? '1' : '0').Append('|').Append(title).Append('|')
+              .Append(m.IsCustom ? "custom" : "std").Append('|').Append(m.GridX).Append('|').Append(m.GridY).Append('|')
+              .Append(m.CustomLabelColor?.ToArgb().ToString() ?? string.Empty).Append('|')
+              .Append(m.CustomValueColor?.ToArgb().ToString() ?? string.Empty).Append('|')
+              .Append(m.UseDynamicColor ? '1' : '0').Append('|').Append(m.ShowBar ? '1' : '0').Append('|').Append(m.DisplayFormat);
+        }
+
+        return sb.ToString();
+    }
+
+    private void LoadMetrics(string saved)
+    {
+        if (string.IsNullOrEmpty(saved))
+            return;
+
+        // The saved sequence is the display order; built-in readings added in a newer version go to the end.
+        List<OverlayMetricItem> ordered = new();
+        foreach (string entry in saved.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] p = entry.Split('|');
+            if (p.Length < 3)
+                continue;
+
+            OverlayMetricItem m = Find(p[0]);
+            if (m == null && p.Length >= 4 && p[3] == "custom")
+                m = new OverlayMetricItem(p[0], p[2], true, true);
+            if (m == null || ordered.Contains(m))
+                continue;
+
+            m.Enabled = p[1] == "1";
+            m.CustomTitle = p[2];
+            if (p.Length >= 6 && int.TryParse(p[4], out int x) && int.TryParse(p[5], out int y))
+            {
+                m.GridX = x;
+                m.GridY = y;
+            }
+
+            if (p.Length >= 8)
+            {
+                m.CustomLabelColor = int.TryParse(p[6], out int label) ? Color.FromArgb(label) : null;
+                m.CustomValueColor = int.TryParse(p[7], out int value) ? Color.FromArgb(value) : null;
+            }
+
+            if (p.Length >= 10)
+            {
+                m.UseDynamicColor = p[8] != "0";
+                m.ShowBar = p[9] != "0";
+            }
+
+            if (p.Length >= 11 && int.TryParse(p[10], out int format))
+                m.DisplayFormat = format;
+
+            ordered.Add(m);
+        }
+
+        foreach (OverlayMetricItem m in MetricItems)
+        {
+            if (!ordered.Contains(m))
+                ordered.Add(m);
+        }
+
+        MetricItems.Clear();
+        MetricItems.AddRange(ordered);
     }
 }

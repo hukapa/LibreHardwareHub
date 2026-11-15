@@ -55,7 +55,7 @@ public sealed partial class MainForm
         _treeCard.Controls.Add(splitContainer);
 
         _hardwareBentoPanel = new HardwareBentoPanel { Dock = DockStyle.Fill, Visible = true, Padding = new Padding(0, LogicalToDeviceUnits(8), 0, 0) };
-        _overlayEditorPanel = new OverlayEditorPanel(_overlayConfig, _overlayForm, OnOverlayConfigChanged) { Dock = DockStyle.Fill, Visible = false };
+        _overlayEditorPanel = new OverlayEditorPanel(_overlayConfig, _overlayTelemetry, () => _computer, ApplyOverlayConfig) { Dock = DockStyle.Fill, Visible = false };
         _fanControlPanel = new FanControlPanel { Dock = DockStyle.Fill, Visible = false };
         _gpuTuningPanel = new GpuTuningPanel { Dock = DockStyle.Fill, Visible = false };
         _cpuTuningPanel = new CpuTuningPanel { Dock = DockStyle.Fill, Visible = false };
@@ -273,7 +273,7 @@ public sealed partial class MainForm
                     }
                     break;
                 case "overlay_hud":
-                    _overlayEditorPanel?.BringToFront();
+                    ShowOverlayEditor();
                     break;
             }
             return;
