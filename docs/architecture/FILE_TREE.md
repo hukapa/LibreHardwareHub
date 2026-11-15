@@ -38,6 +38,8 @@ LibreHardwareMonitor/
 |   |   +-- MainForm.WebServer.cs              # Classe parcial: Controlo do servidor web e dialogos de porta/auth
 |   |   +-- MainForm.Plot.cs                   # Classe parcial: Painel de graficos, selecao e sincronizacao
 |   |   +-- MainForm.Tree.cs                   # Classe parcial: Gestao de TreeViewAdv, colunas e contexto
+|   |   +-- MainForm.Overlay.cs                # Classe parcial: configuracao, telemetria, atalhos e refresh do overlay
+|   |   +-- SensorLookup.cs                    # Escolha de hardware/sensores principais e formatacao de valores (sem LINQ)
 |   |   +-- UpdateVisitor.cs                   # Motor de polling adaptativo por tiers (Critico, Normal, Lento)
 |   |   +-- SystemTray.cs                      # Gestor de icones na area de notificacao do Windows e menu de perfis
 |   |   +-- PlotPanel.cs                       # Painel de desenho com biblioteca OxyPlot
@@ -54,7 +56,8 @@ LibreHardwareMonitor/
 |   |   +-- InterfacePortForm.cs               # Dialogo para definicao da porta e IP de escuta HTTP
 |   |   +-- ParameterForm.cs                   # Dialogo para ajuste fino de parametros de calibracao
 |   |   +-- Dashboard/                         # Painel de Cartoes Bento Inteligentes (Substituicao de Tabelas Brutas)
-|   |   |   +-- BentoCardBase.cs               # Classe base para cartoes Bento com renderizacao GDI+ e temas
+|   |   |   +-- BentoCardBase.cs               # Base dos cartoes: cabecalho, expansao em linha inteira e lista de sensores agrupada
+|   |   |   +-- BentoCardBase.Drawing.cs       # Classe parcial: tiles KPI, barras de uso, legendas e badge
 |   |   |   +-- CpuBentoCard.cs                # Cartao de CPU com KPIs de Package e Matriz de Nucleos (Core Matrix)
 |   |   |   +-- GpuBentoCard.cs                # Cartao de GPU com Core/Hotspot, carga, consumo e barra visual de VRAM
 |   |   |   +-- MemoryBentoCard.cs             # Cartao de RAM com barra segmentada Usada/Livre, swap e modulos
@@ -63,17 +66,25 @@ LibreHardwareMonitor/
 |   |   |   \-- HardwareBentoPanel.cs          # Contentor responsivo de cartoes Bento com suporte a filtros e escopos
 |   |   +-- Overlay/                           # In-Game Overlay (HUD) e Keybind Global
 |   |   |   +-- GlobalHotkeyManager.cs         # Gestor nativo de atalhos globais via user32.dll RegisterHotKey (Zero Input Lag)
-|   |   |   +-- OverlayConfig.cs               # Modelo de dados e persistencia completa de personalizacao do Overlay
-|   |   |   +-- OverlayForm.cs                 # Janela HUD fantasma WS_EX_NOACTIVATE e WS_EX_TRANSPARENT com click-through
-|   |   |   \-- OverlayEditorPanel.cs          # Estudio de personalizacao visual do Overlay com Live Preview em tempo real
+|   |   |   +-- OverlayConfig.cs               # Opcoes do HUD e persistencia (a ordem da lista de leituras e a ordem de exibicao)
+|   |   |   +-- OverlayMetricItem.cs           # Enumeracoes do overlay e modelo de uma leitura
+|   |   |   +-- OverlayTelemetry.cs            # Leituras do HUD com sensores em cache; indica se algum texto mudou
+|   |   |   +-- OverlayRenderer.cs             # Medicao, disposicao e pintura do HUD (usado pela janela e pela pre-visualizacao)
+|   |   |   +-- OverlayForm.cs                 # Janela HUD em camadas sobre DIB persistente, click-through e arrasto
+|   |   |   +-- OverlayPreviewCanvas.cs        # Pre-visualizacao ao vivo com arrasto de leituras (disposicao livre)
+|   |   |   +-- OverlayEditorPanel.cs          # Estudio do HUD: toolbar, pre-visualizacao, aspeto, severidade e posicao
+|   |   |   \-- OverlayEditorPanel.Metrics.cs  # Classe parcial: lista de leituras e menu "Adicionar sensor"
 |   |   +-- Controls/                          # Controlos Fluent personalizados
 |   |   |   +-- CardPanel.cs                   # Contentor de superficie arredondada com contorno suave
 |   |   |   +-- FluentBadge.cs                 # Indicador visual moderno em formato pilula (status, seguranca e alertas)
 |   |   |   +-- FluentComboBox.cs              # Caixa de selecao suspensa Fluent com cantos arredondados e chevron nativo
+|   |   |   +-- FluentColorPicker.cs           # Botao de cor com amostra e flyout HSV (quadrado, matiz, paleta, hex)
 |   |   |   +-- FluentMetricCard.cs            # Cartao KPI Fluent de alta performance (rotulo, valor grande, unidade e severidade)
 |   |   |   +-- FluentSectionCard.cs           # Painel de seccao arredondado com cabecalho estilizado e borda suave
 |   |   |   +-- SearchBox.cs                   # Caixa de pesquisa estilizada
-|   |   |   +-- SidebarPanel.cs                # Barra lateral colapsavel de navegacao
+|   |   |   +-- SidebarItem.cs                 # Entrada de navegacao (texto, icone, tag e seccao)
+|   |   |   +-- SidebarPanel.cs                # Navegacao por seccoes recolhiveis, modo compacto, teclado e scroll
+|   |   |   +-- SidebarPanel.Paint.cs          # Classe parcial: pintura da barra lateral
 |   |   |   \-- SummaryPanel.cs                # Barra superior com cartoes de resumo de telemetria
 |   |   +-- FanControl/                        # Subsistema de Controlo Ativo de Ventilacao
 |   |   |   +-- FanControlTypes.cs             # Enumeracoes de modos de canal e perfis globais
@@ -164,6 +175,14 @@ LibreHardwareMonitor/
 | `Program.cs` | Ponto de entrada, verificacao de integridade de ficheiros, CLI (--exit/--elevate), mutex unico e crash handler. | <= 250 lin | `System.Windows.Forms`, `MainForm`, `FanControlEngine` |
 | `UI/MainForm.cs` | Orquestracao principal do formulario, ciclo de vida, construtor, polling adaptativo e despacho de atualizacoes. | <= 800 lin | `Computer`, `PersistentSettings`, `FanControlEngine` |
 | `UI/MainForm.Layout.cs` | Disposicao Fluent do ecra: CardPanel, Toolbar de pesquisa, KPI summary strip e alternancia de paineis. | <= 250 lin | `SidebarPanel`, `SummaryPanel`, `FanControlPanel` |
+| `UI/MainForm.Overlay.cs` | Cria a janela do HUD e os atalhos globais, aplica e persiste a configuracao e atualiza HUD e pre-visualizacao apos cada ciclo de sensores. | <= 150 lin | `OverlayForm`, `OverlayTelemetry`, `GlobalHotkeyManager` |
+| `UI/SensorLookup.cs` | Escolha do hardware principal (GPU dedicada, memoria fisica), pesquisa de sensores por palavras-chave e formatacao por tipo de sensor. | <= 250 lin | `IHardware`, `ISensor` |
+| `UI/Overlay/OverlayTelemetry.cs` | Resolve e guarda em cache os sensores de cada leitura (reavaliados a cada 10 ciclos) e devolve se algum texto mudou. | <= 300 lin | `SensorLookup`, `OverlayConfig` |
+| `UI/Overlay/OverlayRenderer.cs` | Unico codigo de layout e pintura do HUD, com fontes em pixeis (independente do DPI). | <= 350 lin | `OverlayConfig`, `OverlayTelemetry` |
+| `UI/Overlay/OverlayForm.cs` | Janela em camadas: pinta diretamente numa seccao DIB selecionada num DC de memoria e chama `UpdateLayeredWindow`. | <= 350 lin | `OverlayRenderer`, `user32.dll`, `gdi32.dll` |
+| `UI/Overlay/OverlayEditorPanel.cs` | Pagina do estudio; cada controlo e criado por um helper que o liga a um valor da configuracao. | <= 450 lin | `OverlayPreviewCanvas`, `FluentColorButton` |
+| `UI/Dashboard/BentoCardBase.cs` | Geometria dos cartoes (`IWrapGridItem`), recolha de sensores detalhados apenas quando expandido e layout unico para medir e pintar. | <= 400 lin | `WrapGrid`, `SensorLookup` |
+| `UI/Controls/SidebarPanel.cs` | Linhas de navegacao por seccao, estado recolhido persistente, selecao por rato e teclado. | <= 400 lin | `SidebarItem`, `Theme` |
 | `UI/MainForm.Tray.cs` | Controlo da barra de notificacoes (System Tray), intercepcao do comando fechar no botao 'X' e esvaziamento unico de WorkingSet. | <= 150 lin | `SystemTray`, `FormClosingEventArgs`, `psapi.dll` |
 | `UI/MainForm.WebServer.cs` | Ativacao, paragem e configuracao da porta de escuta e credenciais de seguranca do servidor HTTP. | <= 100 lin | `HttpServer`, `InterfacePortForm`, `AuthForm` |
 | `UI/MainForm.Plot.cs` | Sincronizacao do formulario ou painel embutido de graficos, selecao de cores de sensores e rotacao de logs. | <= 300 lin | `PlotPanel`, `OxyPlot`, `Logger` |

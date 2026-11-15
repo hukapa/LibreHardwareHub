@@ -436,3 +436,30 @@
     - Binario Single-File atualizado em `bin\Publish-Release\LibreHardwareMonitor.Windows.Forms.exe`.
     - Todos os ficheiros `.cs` atualizados e executavel sincronizados em `C:\Users\tiago\Desktop\yea\LHH`.
     - Rigorosa observancia da regra de Zero Emojis.
+
+---
+
+## 23. Fase 23: Estudio de Overlay Simplificado, Cartoes Bento em Linha Inteira e Navegacao por Seccoes
+
+* **Objetivo:** Dar mais controlo sobre o HUD com menos passos, corrigir a carga de GPU que nao atualizava no overlay, tornar legiveis os cartoes Bento expandidos, facilitar a navegacao e reduzir o trabalho feito a cada ciclo de sensores.
+* **Correcao da Carga de GPU no Overlay:**
+  - **Causa raiz:** `OverlayForm.UpdateTelemetry` percorria todas as GPUs e escrevia as mesmas chaves (`gpu_load`, `gpu_temp`, ...). Num PC com placa dedicada e grafica integrada, a integrada (parada) era lida por ultimo e substituia os valores da placa em uso.
+  - **Correcao:** `OverlayTelemetry` le apenas a GPU principal, escolhida por `SensorLookup.PrimaryGpu` (NVIDIA/AMD antes de Intel), a mesma regra dos cartoes e do resumo KPI. O mesmo defeito existia na leitura "Rede D/U" (o ultimo adaptador ganhava); passou a somar todos os adaptadores.
+* **Overlay (`UI/Overlay/`):**
+  - `OverlayRenderer` e o unico codigo de layout e pintura; a janela real e a pre-visualizacao usam-no, pelo que a pre-visualizacao e identica ao HUD e mostra leituras reais em vez de valores ficticios.
+  - `OverlayTelemetry` guarda os sensores em cache (reavaliados a cada 10 ciclos ou quando o hardware/lista de leituras muda) e indica se algum texto mudou; sem alteracoes nao ha repintura.
+  - `OverlayForm` pinta numa seccao DIB persistente selecionada num DC de memoria (deixou de copiar o bitmap com `GetHbitmap` em cada frame), volta a afirmar o topmost em cada frame, limita a posicao personalizada ao ecra e grava a posicao ao terminar o arrasto. Medido: cerca de 100 bytes alocados e 1,6 ms por frame.
+  - Novas opcoes: disposicao em grelha com 2 a 4 colunas, ocultar rotulos, espacamento, espessura da borda, margem ao ecra, escolha de ecra, ancora centro inferior, limites de temperatura de aviso/critica, leitura "GPU Ventoinha", botao "Repor aspeto" e atalho configuravel para bloquear/mover.
+  - "Adicionar sensor..." abre um menu Hardware > Tipo > Sensor com qualquer sensor do PC; leituras personalizadas mostram unidade e podem ser removidas.
+  - A ordem das leituras passou a ser a ordem da lista e e persistida (antes perdia-se ao reiniciar).
+  - Arrastar uma leitura na pre-visualizacao passa a disposicao livre a partir das posicoes atuais, sem saltos.
+  - `FluentColorPicker.cs`: botoes de cor com amostra visivel e flyout com quadrado saturacao/brilho, barra de matiz, paleta, campo hexadecimal e aplicacao imediata; as cores por leitura podem ser repostas para seguir a cor geral.
+  - Corrigida a sobreposicao dos botoes de alinhamento sobre o titulo do cartao de pre-visualizacao.
+* **Cartoes Bento (`UI/Dashboard/`):**
+  - Os cartoes de uma linha tem sempre a mesma altura (`IWrapGridItem` em `WrapGrid`).
+  - Um cartao expandido ocupa a largura total, mantem a posicao vertical onde foi clicado e lista todos os sensores agrupados por tipo (ou por dispositivo, em memoria e rede); grupos pequenos ficam lado a lado e grupos grandes distribuem-se por varias colunas.
+  - Chevron no cabecalho em vez do texto "Clique para...". Voltar a "Visao geral" recolhe os cartoes.
+  - Os sensores detalhados so sao recolhidos enquanto o cartao esta expandido; as pesquisas deixaram de usar LINQ.
+* **Navegacao (`UI/Controls/SidebarPanel*.cs`, `MainForm.Layout.cs`):** seccoes recolhiveis com estado persistido (Rede recolhida por omissao), botao de modo compacto (`navigation.sidebar`), setas/Home/End, `Ctrl+1` a `Ctrl+5`, indicador de scroll e tooltips apenas quando o texto nao cabe.
+* **DRY:** `UI/SensorLookup.cs` substitui a logica duplicada de escolha de sensores e de formatacao em `SummaryMetrics`, nos cinco cartoes e no overlay. `FluentStyle` guarda em cache a lista de fontes instaladas.
+* **Validacao:** `dotnet build -c Release -p:Platform=x64` com 0 avisos e 0 erros; paginas renderizadas para imagem e HUD real capturado do ecra num harness externo ao repositorio, sem privilegios de administrador (sensores de motherboard e temperaturas de CPU nao disponiveis nesse modo, pelo que nao foram verificados visualmente).

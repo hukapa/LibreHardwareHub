@@ -489,6 +489,31 @@ Apos o lancamento inicial dos Cartoes Bento e do HUD Overlay, foram identificada
 2. **Re-layout Imediato da WrapGrid:**
    - Nos metodos `UpdateSensors` de todos os cartoes, adicionada a comparacao `if (Height != prevHeight) Parent?.PerformLayout();`, assegurando que a grelha recalcula e reposiciona as linhas e colunas instantaneamente quando o estado de expansao ou a contagem de sensores se altera.
 
+---
 
+## 16. Overlay, Cartoes Bento e Navegacao: Simplificacao e Consumo de Recursos
 
+### 16.1 Carga de GPU Parada no Overlay
+Com duas GPUs (dedicada e integrada), o ciclo de telemetria do overlay escrevia os valores de cada GPU nas mesmas chaves e a ultima (a integrada) prevalecia. A leitura passou a usar apenas a GPU principal (`SensorLookup.PrimaryGpu`). A leitura de rede sofria do mesmo problema entre adaptadores e passou a ser a soma de todos.
 
+### 16.2 Um Renderizador, Uma Fonte de Leituras
+| Antes | Depois |
+|---|---|
+| Layout e pintura duplicados em `OverlayForm` e na pre-visualizacao, com larguras aproximadas e valores ficticios | `OverlayRenderer` unico; a pre-visualizacao mostra o HUD real com leituras reais |
+| Pesquisa LINQ de todos os sensores em cada ciclo | Sensores resolvidos uma vez e guardados em cache (`OverlayTelemetry`) |
+| Repintura e `UpdateLayeredWindow` em todos os ciclos | Apenas quando algum texto muda |
+| `Bitmap.GetHbitmap` (copia completa) por frame | Seccao DIB persistente pintada diretamente |
+| Fontes criadas em cada pintura da pre-visualizacao | Fontes reutilizadas, lista de familias em cache |
+
+### 16.3 Personalizacao
+O estudio ficou organizado pela ordem de decisao do utilizador: pre-visualizacao e disposicao, leituras, aspeto, cores por severidade, posicao. Todos os controlos aplicam a alteracao de imediato. O seletor de cores do sistema foi substituido por um flyout Fluent com amostra visivel em cada botao.
+
+### 16.4 Cartoes Bento
+Cartoes recolhidos com altura uniforme por linha; cartao expandido em linha inteira com sensores agrupados e nomes completos. A recolha de sensores detalhados deixou de correr para cartoes recolhidos.
+
+### 16.5 Navegacao
+Barra lateral por seccoes recolhiveis, modo compacto manual, teclado e atalhos `Ctrl+1` a `Ctrl+5`.
+
+### 16.6 Limitacoes Conhecidas
+* Tipos de hardware sem cartao dedicado (bateria, PSU, controladores) continuam sem vista em cartoes; use a "Tabela Completa".
+* A verificacao visual foi feita sem privilegios de administrador; as leituras dependentes de driver devem ser confirmadas numa execucao normal.

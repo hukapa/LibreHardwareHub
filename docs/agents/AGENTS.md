@@ -11,6 +11,9 @@
 * **Zero Emojis:** Proibida a utilizacao de emojis em qualquer contexto do repositorio (ficheiros markdown, comentarios em codigo C#, mensagens de commit Git, logs ou textos de interface). Toda a comunicacao deve ser tecnica, concisa e formal.
 * **KISS (Keep It Simple, Stupid):** Prefira solucoes diretas e desacopladas. Evite introduzir bibliotecas pesadas de terceiros quando APIs nativas do .NET 8 ou do Windows resolverem o problema com facilidade.
 * **DRY (Don't Repeat Yourself):** Reutilize os modelos de nos (`Node`, `HardwareNode`, `SensorNode`) e mecanismos de persistencia (`PersistentSettings`, `UserOption`).
+  - Para escolher hardware ou sensores (CPU, GPU principal, memoria fisica) e formatar valores use sempre `UI/SensorLookup.cs`; nao repita pesquisas LINQ por nome de sensor nos paineis.
+  - O HUD so e desenhado por `OverlayRenderer`; a janela real e a pre-visualizacao nunca devem ter codigo de layout proprio.
+  - Codigo executado a cada ciclo de sensores nao deve alocar listas nem usar LINQ: resolva os sensores uma vez e leia apenas valores.
 * **Resiliencia Operacional:** A aplicacao pode correr em ambientes com restricoes de seguranca (ex: Windows 11 Smart App Control ativo, utilizadores nao administradores, maquinas virtuais). Nunca assuma que um driver de kernel ou DLL externa de terceiro vai carregar com sucesso.
 
 ---
