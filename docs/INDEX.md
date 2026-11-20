@@ -27,7 +27,7 @@ Este fork mantem o foco na modernizacao do ecossistema para .NET 8.0 LTS, melhor
 10. **Arquitetura Modular em Classes Parciais:** Decomposicao de classes monoliticas (como `MainForm.cs`), respeitando o Principio da Responsabilidade Unica (SRP) e o limite de linhas.
 11. **Navegacao por Seccoes (`SidebarPanel`):** Barra lateral com seccoes recolhiveis (Ferramentas, Hardware, Memoria, Armazenamento, Rede), botao de modo compacto, navegacao por teclado (setas, Home, End) e atalhos `Ctrl+1` a `Ctrl+6` para a visao geral e as cinco ferramentas.
 12. **Resolucao Unica de Sensores (`UI/SensorLookup.cs`):** Um unico ponto escolhe o hardware principal (GPU dedicada antes da integrada, memoria fisica) e formata valores; cartoes, resumo KPI e overlay partilham as mesmas regras.
-13. **Saude dos Discos (`UI/DiskHealth/`):** Pagina de ferramenta so de leitura que interpreta os dados S.M.A.R.T./NVMe ja recolhidos em segundo plano. Um cartao por disco com veredicto (Bom, Atencao, Mau, Desconhecido), vida, tempo ligado, dados escritos, temperatura e os motivos em linguagem simples. Criada apenas no primeiro clique, reavaliada no maximo a cada 5 s enquanto visivel e nunca acorda discos em repouso.
+13. **Saude dos Discos (`UI/DiskHealth/`):** Pagina de ferramenta so de leitura que interpreta os dados S.M.A.R.T./NVMe ja recolhidos em segundo plano. Um cartao por disco com veredicto (Bom, Atencao, Mau, Desconhecido), vida, tempo ligado, dados escritos, temperatura e os motivos em linguagem simples, com tabela S.M.A.R.T. expansivel e copiavel. Criada apenas no primeiro clique, reavaliada no maximo a cada 5 s enquanto visivel e nunca acorda discos em repouso.
 
 ---
 
