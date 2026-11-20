@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using BlackSharp.Core.Converters;
 using DiskInfoToolkit.Devices;
 using DiskInfoToolkit.Smart;
@@ -64,6 +65,11 @@ public sealed class StorageDevice : Hardware, ISmart
     public StorageDeviceDIT Storage => _storage;
 
     public IReadOnlyList<SmartAttribute> Attributes => _attributes;
+
+    /// <summary>
+    /// Bytes written to the disk since Windows started (IOCTL_DISK_PERFORMANCE totals), or 0 before the first update.
+    /// </summary>
+    public long BytesWrittenSinceBoot => Interlocked.Read(ref _lastWriteCount);
 
     /// <summary>
     /// Forces disk to wake up, if disk is asleep.
@@ -425,7 +431,7 @@ public sealed class StorageDevice : Hardware, ISmart
 
         long writeCount = diskPerformance.BytesWritten;
         long writeDiff = writeCount - _lastWriteCount;
-        _lastWriteCount = writeCount;
+        Interlocked.Exchange(ref _lastWriteCount, writeCount);
 
         long currentTime = Stopwatch.GetTimestamp();
         if (_lastTime != 0)
