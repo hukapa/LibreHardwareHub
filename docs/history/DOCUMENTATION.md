@@ -514,3 +514,19 @@
   - Pacote `dist\LibreHardwareHub-v0.9.6-Portable.zip` gerado com sucesso (62.1 MB) e verificado.
   - Sincronizacao integral dos binarios e fontes com a pasta `C:\Users\tiago\Desktop\yea\LHH`.
   - Conformidade estrita com a regra de Zero Emojis.
+
+---
+
+## 26. Fase 26: Pagina "Saude dos Discos" (Avaliador S.M.A.R.T./NVMe e Cartoes por Disco)
+* **Objetivo:** Verificar a vida dos discos de forma minimalista, numa aba propria, sem custo enquanto nao estiver aberta.
+* **Avaliador (`UI/DiskHealth/DiskHealthEvaluator.cs`):** Logica pura sobre o `DiskInfoToolkit.Devices.StorageDevice` ja lido pelo poller. O veredicto do proprio disco (`HealthStatus`, mesmo metodo do CrystalDiskInfo) e a base; as regras so o agravam e explicam o motivo.
+  - ATA: setores realocados (05), pendentes (C5), incorrigiveis (C6, BB), repeticoes de arranque (0A) e qualquer atributo no limite do fabricante (Mau). Erros CRC (C7) aparecem so como informacao, porque normalmente sao o cabo.
+  - NVMe (log SMART 0x02): bits de aviso critico, reserva disponivel no limite e erros de integridade de dados.
+  - Vida <= 10%, temperatura no limite critico, disco sem dados SMART (USB/RAID) e disco em repouso.
+  - HDD identificado pelos atributos 03 (tempo de arranque) e 0A (tentativas de arranque). Como os HDD nao reportam desgaste, mostra "Saude (estimada)" de 0 a 100: penalizacoes com teto por contador (realocados 0,5/setor ate 40, pendentes e incorrigiveis 2/setor ate 40, erros reportados 0,1/erro ate 30, repeticoes de arranque 5 ate 20) e maximo de 50% com algum atributo no limite do fabricante. Erros CRC nao contam (cabo). Estimativa no espirito do Hard Disk Sentinel, nao a mesma formula.
+  - Dados escritos/lidos: valores do toolkit; nos HDD sem esses valores usa os atributos F1/F2 (Total LBAs Written/Read, setores de 512 bytes, 48 bits), mantidos por exemplo pelos Seagate. HDD sem estes contadores mostram "Dados escritos (estimados)" com "~": bytes escritos desde o arranque do Windows (`StorageDevice.BytesWrittenSinceBoot`, IOCTL_DISK_PERFORMANCE) a dividir pelo tempo desde o arranque, a multiplicar pelas horas ligado do disco. So com pelo menos 2 h de Windows ligado; uma nota no cartao explica a conta e avisa que pode variar muito.
+  - Etiquetas distinguem a origem: "Vida (reportada pelo disco)" nos SSD/NVMe e "Saude (estimada)" nos HDD.
+  - Descricao com numero do disco do Windows e letras das unidades com etiqueta (ex.: "Disco 0 · SATA HDD · 1 TB · G: Games"); cartoes ordenados pelo numero do disco.
+  - NVMe: a vida e lida diretamente do "Percentage Used" do log de saude. Nos SSD, uma nota explica o desgaste reportado e estima o tempo de uso restante ao ritmo atual (horas ligado / desgaste).
+* **Pagina (`UI/DiskHealth/DiskHealthPanel.cs`, `DiskHealthCard.cs`):** Resumo numa linha com selo global, um cartao por disco (nome, interface, capacidade, firmware, selo, vida com barra, tempo ligado, dados escritos, temperatura, motivos com ponto colorido) e nota de rodape a explicar que nao ha testes nem escrita.
+* **Integracao (`MainForm.Layout.cs`, `MainForm.cs`):** Entrada "Saude dos discos" em Ferramentas (`disk_health`, `Ctrl+6`). O painel e criado no primeiro clique e reavaliado no maximo a cada 5 s enquanto visivel.
