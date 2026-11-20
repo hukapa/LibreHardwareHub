@@ -25,9 +25,16 @@ public sealed class DiskHealthCard : Control, IThemedControl
     private const int HeaderHeight = 40;
     private const int KpiHeight = 52;
     private const int LineHeight = 22;
+    private const int RowHeight = 20;
+    private const int NoteHeight = 34;
 
     private readonly FluentBadge _badge;
+    private readonly Timer _copiedTimer;
     private DiskHealthReport _report;
+    private bool _smartExpanded;
+    private bool _copied;
+    private Rectangle _toggleBounds;
+    private Rectangle _copyBounds;
     private Font _titleFont;
     private Font _detailFont;
     private Font _valueFont;
@@ -37,6 +44,13 @@ public sealed class DiskHealthCard : Control, IThemedControl
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
         _badge = new FluentBadge { Height = LogicalToDeviceUnits(24) };
         Controls.Add(_badge);
+        _copiedTimer = new Timer { Interval = 2000 };
+        _copiedTimer.Tick += (_, _) =>
+        {
+            _copiedTimer.Stop();
+            _copied = false;
+            Invalidate();
+        };
         Height = LogicalToDeviceUnits(Pad * 2 + HeaderHeight + KpiHeight + LineHeight);
     }
 
@@ -56,13 +70,35 @@ public sealed class DiskHealthCard : Control, IThemedControl
         };
         _badge.SetBadge(text, style);
 
-        int lines = report.Findings.Count + (ShowsAllClear(report) ? 1 : 0);
-        int height = LogicalToDeviceUnits(Pad * 2 + HeaderHeight + KpiHeight + 13 + (lines * LineHeight));
-        if (Height != height)
-            Height = height;
-
+        UpdateHeight();
         PerformLayout();
         Invalidate();
+    }
+
+    private void UpdateHeight()
+    {
+        int lines = _report.Findings.Count + (ShowsAllClear(_report) ? 1 : 0);
+        int logical = Pad * 2 + HeaderHeight + KpiHeight + 13 + (lines * LineHeight);
+        if (_report.Smart != null)
+        {
+            logical += 4 + LineHeight;
+            if (_smartExpanded)
+                logical += 6 + RowHeight + (_report.Smart.Rows.Count * RowHeight) + NoteHeight;
+        }
+
+        int height = LogicalToDeviceUnits(logical);
+        if (Height == height)
+            return;
+
+        Height = height;
+
+        // The page stacks the cards; let it and the scroll host pick up the new height.
+        for (Control c = Parent; c != null; c = c.Parent)
+        {
+            c.PerformLayout();
+            if (c is ScrollHost)
+                break;
+        }
     }
 
     public void ApplyTheme(Theme theme)
@@ -175,6 +211,145 @@ public sealed class DiskHealthCard : Control, IThemedControl
                 new Rectangle(pad + dot + LogicalToDeviceUnits(10), y, inner - dot, lineHeight), text, flags | TextFormatFlags.VerticalCenter);
             y += lineHeight;
         }
+
+        // 4. Raw S.M.A.R.T. values, collapsed by default.
+        _toggleBounds = Rectangle.Empty;
+        _copyBounds = Rectangle.Empty;
+        if (_report.Smart is not DiskSmartTable smart)
+            return;
+
+        y += LogicalToDeviceUnits(4);
+        string toggle = _smartExpanded ? "Ocultar valores SMART  ▴" : $"Ver valores SMART ({smart.Rows.Count})  ▾";
+        Size toggleSize = TextRenderer.MeasureText(g, toggle, FluentStyle.UiFont, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        _toggleBounds = new Rectangle(pad, y, toggleSize.Width, lineHeight);
+        TextRenderer.DrawText(g, toggle, FluentStyle.UiFont, _toggleBounds, theme.AccentColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+
+        if (_smartExpanded)
+        {
+            string copy = _copied ? "Copiado ✓" : "Copiar";
+            Size copySize = TextRenderer.MeasureText(g, copy, FluentStyle.UiFont, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            _copyBounds = new Rectangle(Width - pad - copySize.Width, y, copySize.Width, lineHeight);
+            TextRenderer.DrawText(g, copy, FluentStyle.UiFont, _copyBounds, _copied ? theme.StateCoolColor : theme.AccentColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+
+            y += lineHeight + LogicalToDeviceUnits(6);
+            DrawSmartTable(g, theme, smart, new Rectangle(pad, y, inner, Height - y - pad));
+        }
+    }
+
+    /// <summary>Header row, one row per value (zebra), then the reading note. Key rows are in bold.</summary>
+    private void DrawSmartTable(Graphics g, Theme theme, DiskSmartTable smart, Rectangle area)
+    {
+        int dotColumn = LogicalToDeviceUnits(16);
+        int[] widths = ColumnWidths(smart, area.Width - dotColumn);
+        int row = LogicalToDeviceUnits(RowHeight);
+        int cellPad = LogicalToDeviceUnits(6);
+        int dot = LogicalToDeviceUnits(6);
+        TextFormatFlags baseFlags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine;
+
+        // The name column (ATA: 1, NVMe: 0) is bold on the rows the verdict uses.
+        int nameColumn = smart.Headers.Length == 2 ? 0 : 1;
+        void Cells(string[] cells, int y, Font font, Font keyFont, Color color)
+        {
+            int x = area.X + dotColumn;
+            for (int c = 0; c < cells.Length && c < widths.Length; c++)
+            {
+                TextFormatFlags flags = baseFlags | (smart.Numeric[c] ? TextFormatFlags.Right : TextFormatFlags.Left);
+                TextRenderer.DrawText(g, cells[c], c == nameColumn && keyFont != null ? keyFont : font, new Rectangle(x, y, widths[c] - cellPad, row), color, flags);
+                x += widths[c];
+            }
+        }
+
+        int top = area.Y;
+        Cells(smart.Headers, top, FluentStyle.UiFontSmallBold, null, theme.MutedForegroundColor);
+        top += row;
+        using (Pen divider = new(theme.LineColor))
+            g.DrawLine(divider, area.X, top - 1, area.Right, top - 1);
+
+        using SolidBrush zebra = new(theme.HoverBackgroundColor);
+        for (int i = 0; i < smart.Rows.Count; i++)
+        {
+            DiskSmartRow r = smart.Rows[i];
+            if (i % 2 == 1)
+                g.FillRectangle(zebra, area.X, top, area.Width, row);
+
+            Color dotColor = r.Flag switch
+            {
+                DiskFindingSeverity.Bad => theme.StateHotColor,
+                DiskFindingSeverity.Caution => theme.StateWarmColor,
+                DiskFindingSeverity.Info => theme.MutedForegroundColor,
+                _ => theme.StateCoolColor
+            };
+            DrawDot(g, dotColor, area.X + LogicalToDeviceUnits(3), top, row, dot);
+
+            Cells(r.Cells, top, FluentStyle.UiFontSmall, r.Key ? FluentStyle.UiFontSmallBold : null, theme.ForegroundColor);
+            top += row;
+        }
+
+        if (!string.IsNullOrEmpty(smart.Note))
+        {
+            TextRenderer.DrawText(g, smart.Note + " Em negrito: valores usados no veredicto.", FluentStyle.UiFontSmall,
+                new Rectangle(area.X, top + LogicalToDeviceUnits(4), area.Width, LogicalToDeviceUnits(NoteHeight - 4)), theme.MutedForegroundColor,
+                TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
+        }
+    }
+
+    /// <summary>Fixed widths for the number columns; the name column takes what is left.</summary>
+    private int[] ColumnWidths(DiskSmartTable smart, int available)
+    {
+        int[] logical = smart.Headers.Length == 2
+            ? new[] { 300, 240 }
+            : new[] { 36, -1, 52, 52, 56, 116, 124 };
+
+        int[] widths = new int[logical.Length];
+        int used = 0;
+        for (int i = 0; i < logical.Length; i++)
+        {
+            widths[i] = logical[i] < 0 ? 0 : LogicalToDeviceUnits(logical[i]);
+            used += widths[i];
+        }
+
+        int fill = Array.IndexOf(logical, -1);
+        if (fill >= 0)
+            widths[fill] = Math.Max(LogicalToDeviceUnits(80), available - used);
+
+        return widths;
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        Cursor = _toggleBounds.Contains(e.Location) || _copyBounds.Contains(e.Location) ? Cursors.Hand : Cursors.Default;
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (e.Button != MouseButtons.Left || _report?.Smart == null)
+            return;
+
+        if (_toggleBounds.Contains(e.Location))
+        {
+            _smartExpanded = !_smartExpanded;
+            UpdateHeight();
+            Invalidate();
+        }
+        else if (_copyBounds.Contains(e.Location))
+        {
+            try
+            {
+                Clipboard.SetText(_report.Smart.ToText(_report));
+                _copied = true;
+                _copiedTimer.Stop();
+                _copiedTimer.Start();
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+                // Clipboard held by another application; the user can try again.
+            }
+
+            Invalidate();
+        }
     }
 
     private void DrawKpi(Graphics g, Theme theme, Rectangle area, string caption, string value, float? ratio, Color? barColor, string hint = null)
@@ -217,6 +392,7 @@ public sealed class DiskHealthCard : Control, IThemedControl
             _titleFont?.Dispose();
             _detailFont?.Dispose();
             _valueFont?.Dispose();
+            _copiedTimer.Dispose();
         }
 
         base.Dispose(disposing);

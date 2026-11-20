@@ -53,6 +53,9 @@ public sealed class DiskHealthReport
 
     /// <summary>Windows disk number ("Disco 0"), used for ordering like Disk Management.</summary>
     public uint? DiskNumber { get; init; }
+
+    /// <summary>The raw S.M.A.R.T. values behind the verdict; null when the drive exposes none.</summary>
+    public DiskSmartTable Smart { get; init; }
 }
 
 /// <summary>
@@ -168,7 +171,8 @@ public static class DiskHealthEvaluator
             WritesEstimated = writesEstimated,
             HostReadsBytes = disk.HostReads ?? (isHdd ? LbaCounterBytes(attributes, AtaTotalLbasRead) : null),
             TemperatureC = disk.Temperature is > 0 ? disk.Temperature : null,
-            IsAsleep = asleep
+            IsAsleep = asleep,
+            Smart = (isNvme ? DiskSmartTableBuilder.FromNvme(nvmeLog) : null) ?? DiskSmartTableBuilder.FromAta(attributes, AttributeName)
         };
     }
 
