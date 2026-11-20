@@ -11,6 +11,7 @@ using Aga.Controls.Tree;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Controls;
 using LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
+using LibreHardwareMonitor.Windows.Forms.UI.DiskHealth;
 using LibreHardwareMonitor.Windows.Forms.UI.FanControl;
 using LibreHardwareMonitor.Windows.Forms.UI.Icons;
 using LibreHardwareMonitor.Windows.Forms.UI.Overlay;
@@ -43,6 +44,7 @@ public sealed partial class MainForm
     private CpuTuningPanel _cpuTuningPanel;
     private HardwareBentoPanel _hardwareBentoPanel;
     private OverlayEditorPanel _overlayEditorPanel;
+    private DiskHealthPanel _diskHealthPanel;
     private FluentButton _btnVisualCards;
     private FluentButton _btnRawTable;
     private bool _isVisualMode = true;
@@ -203,7 +205,7 @@ public sealed partial class MainForm
         if (scope != null && !_root.Nodes.Contains(scope))
             scope = null;
 
-        // The first entries keep a fixed position: Ctrl+1..5 jump to them.
+        // The first entries keep a fixed position: Ctrl+1..6 jump to them.
         const string tools = "Ferramentas";
         string savedScope = _settings.GetValue(ScopeSettingKey, string.Empty);
         List<SidebarItem> items = new()
@@ -212,7 +214,8 @@ public sealed partial class MainForm
             new SidebarItem("Ventoinhas", FluentIcons.ForSensorType(SensorType.Fan), "fan_control", tools),
             new SidebarItem("Ajuste de CPU", FluentIcons.ForHardware(HardwareType.Cpu), "cpu_tuning", tools),
             new SidebarItem("Ajuste de GPU", FluentIcons.ForSensorType(SensorType.Clock), "gpu_tuning", tools),
-            new SidebarItem("Overlay HUD", FluentIcons.ForSensorType(SensorType.Level), "overlay_hud", tools)
+            new SidebarItem("Overlay HUD", FluentIcons.ForSensorType(SensorType.Level), "overlay_hud", tools),
+            new SidebarItem("Saúde dos discos", FluentIcons.ForHardware(HardwareType.Storage), "disk_health", tools)
         };
 
         // Devices grouped by kind, so the many memory modules and network adapters do not bury the main components.
@@ -280,6 +283,7 @@ public sealed partial class MainForm
             if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = toolTag == "cpu_tuning";
             if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = toolTag == "gpu_tuning";
             if (_overlayEditorPanel != null) _overlayEditorPanel.Visible = toolTag == "overlay_hud";
+            if (_diskHealthPanel != null) _diskHealthPanel.Visible = toolTag == "disk_health";
 
             switch (toolTag)
             {
@@ -309,6 +313,9 @@ public sealed partial class MainForm
                 case "overlay_hud":
                     ShowOverlayEditor();
                     break;
+                case "disk_health":
+                    ShowDiskHealth();
+                    break;
             }
             return;
         }
@@ -318,6 +325,7 @@ public sealed partial class MainForm
         if (_cpuTuningPanel != null) _cpuTuningPanel.Visible = false;
         if (_gpuTuningPanel != null) _gpuTuningPanel.Visible = false;
         if (_overlayEditorPanel != null) _overlayEditorPanel.Visible = false;
+        if (_diskHealthPanel != null) _diskHealthPanel.Visible = false;
 
         HardwareNode scopeNode = tag as HardwareNode;
 
@@ -413,6 +421,20 @@ public sealed partial class MainForm
         treeView.EndUpdate();
     }
 
+    /// <summary>The disk health page is built on first use: nothing is created or evaluated until it is opened.</summary>
+    private void ShowDiskHealth()
+    {
+        if (_diskHealthPanel == null)
+        {
+            _diskHealthPanel = new DiskHealthPanel(() => _computer?.Hardware) { Dock = DockStyle.Fill };
+            _content.Controls.Add(_diskHealthPanel);
+        }
+
+        _diskHealthPanel.Visible = true;
+        _diskHealthPanel.BringToFront();
+        _diskHealthPanel.UpdateTelemetry(force: true);
+    }
+
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (keyData == (Keys.Control | Keys.F) && _search != null)
@@ -421,9 +443,9 @@ public sealed partial class MainForm
             return true;
         }
 
-        // Ctrl+1..5: overview and the four tool pages.
+        // Ctrl+1..6: overview and the five tool pages.
         int shortcut = (int)(keyData & Keys.KeyCode) - (int)Keys.D1;
-        if ((keyData & Keys.Modifiers) == Keys.Control && shortcut is >= 0 and < 5 && _sidebar != null)
+        if ((keyData & Keys.Modifiers) == Keys.Control && shortcut is >= 0 and < 6 && _sidebar != null)
         {
             _sidebar.SelectIndex(shortcut);
             return true;

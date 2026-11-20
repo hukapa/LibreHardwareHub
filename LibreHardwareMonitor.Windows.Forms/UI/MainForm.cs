@@ -629,6 +629,8 @@ public sealed partial class MainForm : Form
                 _cpuTuningPanel.UpdateTelemetry();
             if (_gpuTuningPanel != null && _gpuTuningPanel.Visible)
                 _gpuTuningPanel.UpdateTelemetry();
+            if (_diskHealthPanel != null && _diskHealthPanel.Visible)
+                _diskHealthPanel.UpdateTelemetry();
 
             if (_showPlot != null && _showPlot.Value)
                 _plotPanel?.InvalidatePlot();
