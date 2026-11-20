@@ -1,6 +1,6 @@
 # LibreHardwareHub — Guia Master do Projeto e Navegacao de Documentacao
 
-> **Versao:** 0.9.6 (Fork hukapa)  
+> **Versao:** 0.10.0 (Fork hukapa)  
 > **Nome Oficial do Produto:** LibreHardwareHub  
 > **Arquitetura:** .NET 8.0 LTS Exclusivo (`net8.0` / `net8.0-windows`) + WinForms + Web Server HTTP Embutido  
 > **Publico:** Desenvolvedores, Engenheiros de Software e Agentes de IA  
