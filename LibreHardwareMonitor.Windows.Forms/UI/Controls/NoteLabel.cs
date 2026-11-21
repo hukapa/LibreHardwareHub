@@ -1,4 +1,4 @@
-// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+﻿// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 // If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // Copyright (C) LibreHardwareMonitor and Contributors.
 // All Rights Reserved.
@@ -8,17 +8,17 @@ using System.Drawing;
 using System.Windows.Forms;
 using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
-namespace LibreHardwareMonitor.Windows.Forms.UI.Overlay;
+namespace LibreHardwareMonitor.Windows.Forms.UI.Controls;
 
 /// <summary>
 /// Quiet, word-wrapped note (muted color) that sizes its own height from the width it is given, so it can
-/// sit in a <see cref="Controls.StackPanel" /> inside a card.
+/// sit in a <see cref="StackPanel" /> inside a card.
 /// </summary>
-public sealed class OverlayGameNote : Control, IThemedControl
+public sealed class NoteLabel : Control, IThemedControl
 {
     private const TextFormatFlags Flags = TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
 
-    public OverlayGameNote(string text)
+    public NoteLabel(string text)
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
         Text = text ?? string.Empty;

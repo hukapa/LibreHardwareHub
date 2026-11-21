@@ -55,6 +55,8 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Icons
 
         public static Image Computer => Get("computer", Slate, FluentIconShapes.Computer);
 
+        public static Image Settings => Get("settings", Slate, FluentIconShapes.Gear);
+
         public static Image ForHardware(HardwareType type)
         {
             return type switch

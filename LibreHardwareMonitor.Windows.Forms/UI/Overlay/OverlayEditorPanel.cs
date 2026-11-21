@@ -1,4 +1,4 @@
-// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+﻿// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 // If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // Copyright (C) LibreHardwareMonitor and Contributors.
 // All Rights Reserved.
@@ -318,7 +318,7 @@ public sealed partial class OverlayEditorPanel : UserControl, IThemedControl
             dragWarning.Visible = !_config.ClickThrough;
         });
 
-        OverlayGameNote note = new("Nota de jogos: para o HUD aparecer sobre jogos como League of Legends, selecione o modo Sem Bordas (Borderless) nas definições de vídeo do jogo. Zero injeção de DLLs (seguro com anti-cheats).");
+        NoteLabel note = new("Nota de jogos: para o HUD aparecer sobre jogos como League of Legends, selecione o modo Sem Bordas (Borderless) nas definições de vídeo do jogo. Zero injeção de DLLs (seguro com anti-cheats).");
 
         return Stack(card,
             new SettingRow("Interação com o rato", "Alterna também com o atalho Bloquear/mover", clickThrough, false) { ShowDivider = false },

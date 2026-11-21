@@ -53,6 +53,7 @@ public sealed partial class MainForm
         _cpuTuningEngine?.Dispose();
         _hotkeyManager?.Dispose();
         _overlayForm?.Dispose();
+        DisposeUpdates();
         timer.Dispose();
         backgroundUpdater.Dispose();
 

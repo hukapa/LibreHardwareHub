@@ -24,6 +24,20 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Icons
             g.DrawLine(pen, 5f, 13.5f, 11f, 13.5f);
         }
 
+        public static void Gear(Graphics g, Pen pen, Brush fill)
+        {
+            g.FillEllipse(fill, 4.5f, 4.5f, 7f, 7f);
+            g.DrawEllipse(pen, 4.5f, 4.5f, 7f, 7f);
+            g.DrawEllipse(pen, 6.75f, 6.75f, 2.5f, 2.5f);
+            for (int i = 0; i < 8; i++)
+            {
+                float angle = i * System.MathF.PI / 4f;
+                float cos = System.MathF.Cos(angle);
+                float sin = System.MathF.Sin(angle);
+                g.DrawLine(pen, 8f + (cos * 5.5f), 8f + (sin * 5.5f), 8f + (cos * 7f), 8f + (sin * 7f));
+            }
+        }
+
         public static void Chip(Graphics g, Pen pen, Brush fill)
         {
             Box(g, pen, fill, new RectangleF(3.5f, 3.5f, 9f, 9f), 1.5f);

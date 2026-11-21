@@ -321,7 +321,7 @@ public sealed partial class MainForm : Form
         UserOption showMax = new("maxMenuItem", true, maxMenuItem, _settings);
         showMax.Changed += delegate { treeView.Columns[3].IsVisible = showMax.Value; };
 
-        _ = new UserOption("startMinMenuItem", false, startMinMenuItem, _settings);
+        _startMinimized = new UserOption("startMinMenuItem", false, startMinMenuItem, _settings);
         _minimizeToTray = new UserOption("minTrayMenuItem", true, minTrayMenuItem, _settings);
         _minimizeToTray.Changed += delegate { _systemTray.IsMainIconEnabled = _minimizeToTray.Value; };
 
@@ -594,6 +594,8 @@ public sealed partial class MainForm : Form
         ApplyAdaptivePolling();
         if (!backgroundUpdater.IsBusy)
             backgroundUpdater.RunWorkerAsync();
+
+        InitializeUpdates();
     }
 
 
