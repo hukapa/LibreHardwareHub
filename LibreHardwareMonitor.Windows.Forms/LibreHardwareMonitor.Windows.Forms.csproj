@@ -86,6 +86,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\**" />
+    <!-- Offline fallback of the patch notes shown on the Definicoes page. -->
+    <EmbeddedResource Include="..\CHANGELOG.md" LogicalName="CHANGELOG.md" />
     <None Include="Resources\app.manifest" />
     <None Include="Resources\icon.ico" />
   </ItemGroup>

@@ -60,6 +60,11 @@ public static class Program
             catch { }
         };
 
+        // "--apply-update PID DESTINO": este processo e o executavel novo, descarregado para %TEMP%. Troca o executavel
+        // antigo (que ja nao pode estar em execucao) e arranca a versao atualizada.
+        if (args != null && UpdateApplier.TryRunApply(args))
+            return;
+
         // Processamento de argumentos de linha de comando
         if (args != null && args.Length > 0)
         {
@@ -112,6 +117,10 @@ public static class Program
             Environment.Exit(0);
 
         AppInfo.MigrateLegacyConfig();
+
+        // Arranque logo apos uma atualizacao: apaga a pasta temporaria da qual o executavel novo correu.
+        if (args != null)
+            UpdateApplier.ScheduleCleanup(UpdateApplier.GetCleanupDirectory(args));
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
