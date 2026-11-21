@@ -11,6 +11,7 @@
 ```text
 LibreHardwareMonitor/
 +-- Iniciar-LibreHardwareMonitor.bat             # Launcher rapido com deteccao e arranque elevado
++-- CHANGELOG.md                                 # Registo de alteracoes; embutido na aplicacao como alternativa offline das notas de versao
 +-- tools/                                      # Ferramentas e instaladores externos desacoplados
 |   \-- PawnIO_setup.exe                        # Instalador de Ring-0 PawnIO (3.22 MB desacoplado)
 +-- docs/                                      # Hub Central de Documentacao
@@ -39,6 +40,7 @@ LibreHardwareMonitor/
 |   |   +-- MainForm.Plot.cs                   # Classe parcial: Painel de graficos, selecao e sincronizacao
 |   |   +-- MainForm.Tree.cs                   # Classe parcial: Gestao de TreeViewAdv, colunas e contexto
 |   |   +-- MainForm.Overlay.cs                # Classe parcial: configuracao, telemetria, atalhos e refresh do overlay
+|   |   +-- MainForm.Updates.cs                # Classe parcial: pagina Definicoes, servico de atualizacoes e verificacao 6 s apos o arranque
 |   |   +-- SensorLookup.cs                    # Escolha de hardware/sensores principais e formatacao de valores (sem LINQ)
 |   |   +-- UpdateVisitor.cs                   # Motor de polling adaptativo por tiers (Critico, Normal, Lento)
 |   |   +-- SystemTray.cs                      # Gestor de icones na area de notificacao do Windows e menu de perfis
@@ -74,6 +76,14 @@ LibreHardwareMonitor/
 |   |   |   +-- OverlayPreviewCanvas.cs        # Pre-visualizacao ao vivo com arrasto de leituras (disposicao livre)
 |   |   |   +-- OverlayEditorPanel.cs          # Estudio do HUD: toolbar, pre-visualizacao, aspeto, severidade e posicao
 |   |   |   \-- OverlayEditorPanel.Metrics.cs  # Classe parcial: lista de leituras e menu "Adicionar sensor"
+|   |   +-- Settings/                          # Pagina Definicoes (Ctrl+7), criada no primeiro clique
+|   |   |   +-- SettingsContext.cs             # Opcoes e acoes do MainForm que a pagina usa (mesmos objetos do menu)
+|   |   |   +-- SettingsPanel.cs               # Sistema e arranque, atualizacoes (interruptores, procurar agora)
+|   |   |   \-- SettingsPanel.Notes.cs         # Classe parcial: notas de versao (GitHub Releases com alternativa embutida)
+|   |   +-- Updates/                           # Atualizador nativo (UI)
+|   |   |   +-- UpdateService.cs               # Verificar, descarregar em segundo plano e perguntar se reinicia
+|   |   |   +-- UpdateDialog.cs                # Dialogo Fluent com notas, progresso e botoes
+|   |   |   \-- ReleaseNotesView.cs            # Notas de versao como texto simples com altura automatica
 |   |   +-- Controls/                          # Controlos Fluent personalizados
 |   |   |   +-- CardPanel.cs                   # Contentor de superficie arredondada com contorno suave
 |   |   |   +-- FluentBadge.cs                 # Indicador visual moderno em formato pilula (status, seguranca e alertas)
@@ -124,6 +134,9 @@ LibreHardwareMonitor/
 |   \-- Utilities/
 |       +-- HttpServer.cs                      # Servidor HTTP embutido que entrega JSON e o dashboard web
 |       +-- PersistentSettings.cs              # Leitura e escrita de definicoes em ficheiro XML/config
+|       +-- AppUpdater.cs                      # GitHub Releases (HttpClient + System.Text.Json), descarga e validacao do pacote
+|       +-- UpdateApplier.cs                   # Troca do executavel: --apply-update e --cleanup-update
+|       +-- ReleaseNotes.cs                    # Markdown para linhas simples e CHANGELOG.md embutido
 |       +-- Logger.cs                          # Registo historico de leituras em ficheiro CSV
 |       +-- StartupManager.cs                  # Configuracao de arranque automatico com o Windows
 |       \-- EmbeddedResources.cs               # Extracao de imagens e recursos binarios embutidos
@@ -181,6 +194,11 @@ LibreHardwareMonitor/
 | `UI/Overlay/OverlayRenderer.cs` | Unico codigo de layout e pintura do HUD, com fontes em pixeis (independente do DPI). | <= 350 lin | `OverlayConfig`, `OverlayTelemetry` |
 | `UI/Overlay/OverlayForm.cs` | Janela em camadas: pinta diretamente numa seccao DIB selecionada num DC de memoria e chama `UpdateLayeredWindow`. | <= 350 lin | `OverlayRenderer`, `user32.dll`, `gdi32.dll` |
 | `UI/Overlay/OverlayEditorPanel.cs` | Pagina do estudio; cada controlo e criado por um helper que o liga a um valor da configuracao. | <= 450 lin | `OverlayPreviewCanvas`, `FluentColorButton` |
+| `UI/MainForm.Updates.cs` | Liga a pagina Definicoes e o servico de atualizacoes ao formulario; verificacao unica 6 s apos o arranque por um temporizador de interface. | <= 150 lin | `SettingsPanel`, `UpdateService` |
+| `UI/Settings/SettingsPanel*.cs` | Pagina Definicoes (Ctrl+7): arranque, bandeja, tema, unidade, atualizacoes e notas de versao; criada no primeiro clique. | <= 300 lin | `SettingsContext`, `UserOption`, `UpdateService` |
+| `UI/Updates/UpdateService.cs` | Estado da verificacao, descarga opcional em segundo plano e dialogo de reinicio; nada corre entre verificacoes. | <= 200 lin | `AppUpdater`, `UpdateApplier`, `UpdateDialog` |
+| `Utilities/AppUpdater.cs` | Consulta as Releases do GitHub (um `HttpClient`, 15 s, `User-Agent`), compara versoes, descarrega e valida o ZIP portatil. | <= 250 lin | `System.Net.Http`, `System.Text.Json` |
+| `Utilities/UpdateApplier.cs` | Troca o executavel com `--apply-update PID DESTINO` e limpa `%TEMP%` com `--cleanup-update`, sem tocar em `portable.txt`, definicoes nem registos. | <= 250 lin | `AppInfo`, `AppUpdater` |
 | `UI/Dashboard/BentoCardBase.cs` | Geometria dos cartoes (`IWrapGridItem`), recolha de sensores detalhados apenas quando expandido e layout unico para medir e pintar. | <= 400 lin | `WrapGrid`, `SensorLookup` |
 | `UI/Controls/SidebarPanel.cs` | Linhas de navegacao por seccao, estado recolhido persistente, selecao por rato e teclado. | <= 400 lin | `SidebarItem`, `Theme` |
 | `UI/MainForm.Tray.cs` | Controlo da barra de notificacoes (System Tray), intercepcao do comando fechar no botao 'X' e esvaziamento unico de WorkingSet. | <= 150 lin | `SystemTray`, `FormClosingEventArgs`, `psapi.dll` |
@@ -202,6 +220,9 @@ LibreHardwareMonitor/
 | `Utilities/AppInfo.cs` | Nome e identificador da aplicacao, pasta de dados (AppData ou portatil), caminhos de configuracao e crash log, migracao do `.config` antigo e nome do evento de saida. | <= 150 lin | `System.IO` |
 | `installer/LibreHardware.iss` | Instalador Inno Setup: ficheiros, atalhos, tarefas opcionais (arranque, PawnIO) e fecho limpo da instancia em execucao antes de atualizar. | <= 150 lin | Inno Setup 6 |
 | `scripts/Publicar-Release.ps1` | Publica o executavel autonomo e gera instalador e ZIP portatil em `dist/`. | <= 120 lin | `dotnet publish`, `ISCC.exe` |
+| `scripts/Lancar-Release.ps1` | Lanca uma versao: valida, exige notas no `CHANGELOG.md`, atualiza `Directory.Build.props`, compila, faz commit, tag anotada e push (`-Simular` so valida). | <= 200 lin | `git`, `dotnet`, `Notas-Versao.ps1` |
+| `scripts/Notas-Versao.ps1` | Funcao `Get-ReleaseNotesSection`: extrai do `CHANGELOG.md` as notas de uma versao (aceita `## vX.Y.Z`, `## [X.Y.Z]` e `## X.Y.Z`). | <= 80 lin | `CHANGELOG.md` |
+| `.github/workflows/release.yml` | Em cada tag `v*`: confere a versao, compila, gera o ZIP portatil e o instalador (se possivel) e publica a Release com `gh release create`. | <= 150 lin | `Publicar-Release.ps1`, `Notas-Versao.ps1`, `gh` |
 
 ---
 

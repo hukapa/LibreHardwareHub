@@ -1,4 +1,4 @@
-﻿# LibreHardwareHub — Guia Master do Projeto e Navegacao de Documentacao
+# LibreHardwareHub — Guia Master do Projeto e Navegacao de Documentacao
 
 > **Versao:** 0.10.1 (Fork hukapa)  
 > **Nome Oficial do Produto:** LibreHardwareHub  
@@ -25,9 +25,10 @@ Este fork mantem o foco na modernizacao do ecossistema para .NET 8.0 LTS, melhor
 8. **Dashboard Web Remoto Moderno:** Interface web zero-dependencies servida diretamente pelo executavel via HTTP (porta 8085 por omissao), com deteccao nativa de Dark/Light mode (`light-dark()`), cards responsivos e pesquisa instantanea em tempo real.
 9. **Resiliencia ao Windows 11 Smart App Control (SAC):** Isolamento de drivers de terceiros nao assinados com carregamento tardio protegido (`NoInlining`), assegurando que a aplicacao inicia mesmo em ambientes com politicas de seguranca empresariais ativas.
 10. **Arquitetura Modular em Classes Parciais:** Decomposicao de classes monoliticas (como `MainForm.cs`), respeitando o Principio da Responsabilidade Unica (SRP) e o limite de linhas.
-11. **Navegacao por Seccoes (`SidebarPanel`):** Barra lateral com seccoes recolhiveis (Ferramentas, Hardware, Memoria, Armazenamento, Rede), botao de modo compacto, navegacao por teclado (setas, Home, End) e atalhos `Ctrl+1` a `Ctrl+6` para a visao geral e as cinco ferramentas.
+11. **Navegacao por Seccoes (`SidebarPanel`):** Barra lateral com seccoes recolhiveis (Ferramentas, Hardware, Memoria, Armazenamento, Rede), botao de modo compacto, navegacao por teclado (setas, Home, End) e atalhos `Ctrl+1` a `Ctrl+7` para a visao geral e as seis ferramentas.
 12. **Resolucao Unica de Sensores (`UI/SensorLookup.cs`):** Um unico ponto escolhe o hardware principal (GPU dedicada antes da integrada, memoria fisica) e formata valores; cartoes, resumo KPI e overlay partilham as mesmas regras.
 13. **Saude dos Discos (`UI/DiskHealth/`):** Pagina de ferramenta so de leitura que interpreta os dados S.M.A.R.T./NVMe ja recolhidos em segundo plano. Um cartao por disco com veredicto (Bom, Atencao, Mau, Desconhecido), vida, tempo ligado, dados escritos, temperatura e os motivos em linguagem simples, com tabela S.M.A.R.T. expansivel e copiavel. Criada apenas no primeiro clique, reavaliada no maximo a cada 5 s enquanto visivel e nunca acorda discos em repouso.
+14. **Definicoes e Atualizacoes (`UI/Settings/`, `UI/Updates/`, `Utilities/AppUpdater.cs`):** Pagina `Ctrl+7` criada no primeiro clique com arranque com o Windows, bandeja, tema, unidade de temperatura, opcoes de atualizacao e notas de versao (GitHub Releases com `CHANGELOG.md` embutido como alternativa offline). O atualizador usa so `HttpClient` e `System.Text.Json`: uma consulta 6 s apos o arranque e nada em segundo plano. A troca do executavel e feita pelo novo executavel (`--apply-update`), que preserva `portable.txt` e as definicoes.
 
 ---
 
@@ -116,6 +117,22 @@ Gera em `dist\` (pasta ignorada pelo Git):
 * `LibreHardwareHub-v<versao>-Portable.zip`: copia portatil 100% autonoma; o ficheiro `portable.txt` faz com que as definicoes fiquem na propria pasta.
 
 O executavel distribuido e autonomo (inclui o runtime do .NET 8 embutido e compactado) e nao requer nada instalado no PC de destino. A versao vem de `Directory.Build.props`.
+
+### Lancar uma nova versao (3 passos)
+Qualquer contribuidor com acesso de escrita ao repositorio lanca uma versao sem compilar nem subir ficheiros a mao:
+
+1. Acrescentar no topo de `CHANGELOG.md` a seccao da versao, com o titulo `## vX.Y.Z - AAAA-MM-DD` e uma linha `- ...` por alteracao. Este texto e o corpo da Release no GitHub e as notas de versao mostradas na aplicacao.
+2. Fazer commit das alteracoes do codigo (ou usar `-IncluirAlteracoes`) e correr:
+
+```powershell
+.\scripts\Lancar-Release.ps1 -Version 0.11.0
+```
+
+3. Esperar cerca de 5 minutos: o workflow `.github/workflows/release.yml` compila, gera o `LibreHardwareHub-v0.11.0-Portable.zip` (e o instalador, se o Inno Setup estiver disponivel) e publica a Release. Quem tem a aplicacao recebe o aviso de atualizacao.
+
+`Lancar-Release.ps1` valida o formato `X.Y.Z`, que o ramo e `main`, que a versao e superior a atual e que a tag ainda nao existe (local e no GitHub), exige as notas no `CHANGELOG.md`, atualiza `Directory.Build.props`, compila e so depois faz o commit `release: vX.Y.Z`, a tag anotada `vX.Y.Z` e o `git push origin main --follow-tags`. Com `-Simular` so valida, sem alterar nada. O workflow recusa tags que nao coincidam com a versao de `Directory.Build.props` e, se a seccao do `CHANGELOG.md` faltar, gera as notas automaticamente. Tags com sufixo (ex.: `v0.11.0-beta`) sao publicadas como pre-lancamento, que o atualizador ignora.
+
+A Release tem de ter o ficheiro `*-Portable.zip`: e esse que o atualizador da aplicacao descarrega.
 
 ### Onde ficam os dados
 | Modo | Definicoes, registos CSV e `crash.log` |
