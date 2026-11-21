@@ -1,0 +1,120 @@
+name: release
+
+# Publica uma Release do LibreHardwareHub sempre que se faz push de uma tag "v*" (ex.: v0.11.0).
+# A tag tem de coincidir com <Version> em Directory.Build.props. O ZIP portatil (e o instalador, se o
+# Inno Setup estiver disponivel) e anexado a Release; o auto-atualizador da aplicacao procura o "*-Portable.zip".
+# As notas da Release saem da seccao dessa versao no CHANGELOG.md.
+# Uso normal: .\scripts\Lancar-Release.ps1 -Version 0.11.0
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versao a publicar (X.Y.Z); tem de coincidir com Directory.Build.props'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # 5.2.0
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Determinar a versao
+        id: version
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $tag = if ($env:EVENT_NAME -eq 'workflow_dispatch') { "v$($env:INPUT_VERSION)" } else { $env:REF_NAME }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            throw "Tag invalida '$tag': esperado vX.Y.Z (opcionalmente com sufixo, ex.: v0.11.0-beta)."
+          }
+
+          $version = $tag.Substring(1)
+          [xml]$props = Get-Content Directory.Build.props
+          $propsVersion = "$($props.Project.PropertyGroup.Version)".Trim()
+          if ($propsVersion -ne $version) {
+            throw "A tag $tag nao coincide com <Version>$propsVersion</Version> em Directory.Build.props. Use scripts/Lancar-Release.ps1."
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-').ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+      - name: Compilar (verificacao)
+        run: dotnet build LibreHardwareMonitor.sln -c Release -p:Platform=x64
+
+      - name: Garantir o Inno Setup (opcional)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($iscc) {
+            Write-Host "Inno Setup ja disponivel: $iscc"
+          } else {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Gerar os pacotes (ZIP portatil e, se possivel, instalador)
+        run: powershell -ExecutionPolicy Bypass -File scripts\Publicar-Release.ps1
+
+      - name: Notas da versao
+        id: notes
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          . "$PWD\scripts\Notas-Versao.ps1"
+          $notes = Get-ReleaseNotesSection -Version $env:VERSION -Path CHANGELOG.md
+          if ($notes) {
+            Set-Content -Path dist\release-notes.md -Value $notes -Encoding utf8
+            "found=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Warning "O CHANGELOG.md nao tem notas para a versao $($env:VERSION): serao geradas automaticamente."
+            "found=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Publicar a Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          NOTES_FOUND: ${{ steps.notes.outputs.found }}
+          TARGET: ${{ github.sha }}
+        run: |
+          $assets = @(Get-ChildItem dist -File | Where-Object { $_.Name -like "LibreHardwareHub-v$($env:VERSION)-*" -and $_.Extension -in '.zip', '.exe' } | ForEach-Object { $_.FullName })
+          if (-not ($assets | Where-Object { $_ -like '*-Portable.zip' })) {
+            throw "O pacote portatil LibreHardwareHub-v$($env:VERSION)-Portable.zip nao foi gerado."
+          }
+
+          $notesArgs = if ($env:NOTES_FOUND -eq 'true') { @('--notes-file', 'dist\release-notes.md') } else { @('--generate-notes') }
+          $flags = if ($env:PRERELEASE -eq 'true') { @('--prerelease') } else { @() }
+
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            # Reexecucao: a Release ja existe, atualiza os ficheiros e as notas.
+            gh release upload $env:TAG @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Falha ao anexar os ficheiros a Release existente.' }
+            if ($env:NOTES_FOUND -eq 'true') {
+              gh release edit $env:TAG --notes-file dist\release-notes.md
+              if ($LASTEXITCODE -ne 0) { throw 'Falha ao atualizar as notas da Release existente.' }
+            }
+          } else {
+            gh release create $env:TAG @assets --title "LibreHardwareHub v$($env:VERSION)" --target $env:TARGET @notesArgs @flags
+            if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar a Release.' }
+          }
