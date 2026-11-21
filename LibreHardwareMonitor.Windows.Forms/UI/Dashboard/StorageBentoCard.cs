@@ -79,12 +79,13 @@ public sealed class StorageBentoCard : BentoCardBase
 
         if (_health != null)
         {
+            Theme theme = Theme.Current;
             (BadgeText, BadgeColor) = _health.Level switch
             {
-                DiskHealthLevel.Good => ("Bom", Color.FromArgb(70, 200, 100)),
-                DiskHealthLevel.Caution => ("Atenção", Color.FromArgb(240, 180, 30)),
-                DiskHealthLevel.Bad => ("Mau", Color.FromArgb(235, 60, 60)),
-                _ => ("Sem dados SMART", Color.FromArgb(140, 140, 140))
+                DiskHealthLevel.Good => ("Bom", theme.StateCoolColor),
+                DiskHealthLevel.Caution => ("Atenção", theme.StateWarmColor),
+                DiskHealthLevel.Bad => ("Mau", theme.StateHotColor),
+                _ => ("Sem dados SMART", theme.MutedForegroundColor)
             };
         }
         else

@@ -36,6 +36,9 @@ public sealed partial class MainForm
     {
         FormClosed -= MainForm_FormClosed;
 
+        // Static system event: detach so a resume after shutdown never resets the closed computer.
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= PowerModeChanged;
+
         Visible = false;
         _systemTray.IsMainIconEnabled = false;
         timer.Enabled = false;

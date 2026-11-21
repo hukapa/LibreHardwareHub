@@ -309,11 +309,24 @@ public sealed partial class OverlayEditorPanel : UserControl, IThemedControl
         };
         _sync.Add(() => screen.SelectedIndex = Math.Clamp(_config.ScreenIndex + 1, 0, screen.Items.Count - 1));
 
+        // Drag mode is the exception: while the HUD is unlocked a quiet warning reminds the player to lock it.
+        ToolbarRow dragWarning = Row();
+        dragWarning.Controls.Add(new FluentBadge { Height = LogicalToDeviceUnits(24) });
+        _sync.Add(() =>
+        {
+            ((FluentBadge)dragWarning.Controls[0]).SetBadge("Modo Arrasto Ativo - Bloqueie antes de jogar", BadgeStyle.Warning);
+            dragWarning.Visible = !_config.ClickThrough;
+        });
+
+        OverlayGameNote note = new("Nota de jogos: para o HUD aparecer sobre jogos como League of Legends, selecione o modo Sem Bordas (Borderless) nas definições de vídeo do jogo. Zero injeção de DLLs (seguro com anti-cheats).");
+
         return Stack(card,
             new SettingRow("Interação com o rato", "Alterna também com o atalho Bloquear/mover", clickThrough, false) { ShowDivider = false },
+            dragWarning,
             new SettingRow("Âncora", "Canto do ecrã onde o HUD fica preso", anchor, false),
             new SettingRow("Ecrã", "Monitor usado pelas âncoras fixas", screen, false),
-            Slider("Margem ao ecrã", "Distância às margens nas âncoras fixas", 0, 200, "px", () => _config.Margin, v => _config.Margin = v));
+            Slider("Margem ao ecrã", "Distância às margens nas âncoras fixas", 0, 200, "px", () => _config.Margin, v => _config.Margin = v),
+            note);
     }
 
     private ToolbarRow Row() => new() { OnSurface = true, Height = LogicalToDeviceUnits(32) };

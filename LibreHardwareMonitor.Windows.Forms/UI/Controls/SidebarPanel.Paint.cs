@@ -13,7 +13,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
         {
             Theme theme = Theme.Current;
             Graphics g = e.Graphics;
-            g.Clear(theme.BackgroundColor);
+            g.Clear(theme.SidebarColor);
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             g.SetClip(new Rectangle(0, TopHeight, Width, Height - TopHeight));
@@ -47,7 +47,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
         {
             Rectangle bounds = ToggleBounds;
             if (_hoverRow == -2)
-                FluentStyle.FillRounded(g, FluentStyle.Blend(theme.BackgroundColor, theme.ForegroundColor, theme.IsDark ? 0.07 : 0.05), bounds, LogicalToDeviceUnits(4));
+                FluentStyle.FillRounded(g, FluentStyle.Blend(theme.SidebarColor, theme.ForegroundColor, theme.IsDark ? 0.07 : 0.05), bounds, LogicalToDeviceUnits(4));
 
             // Three lines: the conventional "navigation" glyph.
             using Pen pen = new(theme.ForegroundColor, LogicalToDeviceUnits(1) * 1.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
@@ -87,20 +87,23 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
 
         private void DrawItem(Graphics g, Theme theme, SidebarItem item, Rectangle bounds, bool selected, bool hover)
         {
-            float radius = LogicalToDeviceUnits(4);
+            float radius = LogicalToDeviceUnits(6);
             if (selected || hover)
             {
-                Color fill = FluentStyle.Blend(theme.BackgroundColor, theme.ForegroundColor, selected ? (theme.IsDark ? 0.10 : 0.07) : (theme.IsDark ? 0.05 : 0.035));
+                // Active entry: accent at 12% over the pane; hover is a faint neutral wash.
+                Color fill = selected
+                    ? FluentStyle.Blend(theme.SidebarColor, theme.AccentColor, 0.12)
+                    : FluentStyle.Blend(theme.SidebarColor, theme.ForegroundColor, theme.IsDark ? 0.05 : 0.035);
                 FluentStyle.FillRounded(g, fill, bounds, radius);
             }
 
             if (selected)
             {
                 int pillHeight = LogicalToDeviceUnits(16);
-                RectangleF pill = new(bounds.Left, bounds.Top + ((bounds.Height - pillHeight) / 2f), LogicalToDeviceUnits(3), pillHeight);
+                RectangleF pill = new(bounds.Left + LogicalToDeviceUnits(1), bounds.Top + ((bounds.Height - pillHeight) / 2f), LogicalToDeviceUnits(3), pillHeight);
                 FluentStyle.FillRounded(g, theme.AccentColor, pill, pill.Width / 2f);
                 if (Focused)
-                    FluentStyle.DrawRounded(g, FluentStyle.Blend(theme.BackgroundColor, theme.ForegroundColor, 0.35), bounds, radius);
+                    FluentStyle.DrawRounded(g, FluentStyle.Blend(theme.SidebarColor, theme.ForegroundColor, 0.35), bounds, radius);
             }
 
             int iconSize = LogicalToDeviceUnits(16);

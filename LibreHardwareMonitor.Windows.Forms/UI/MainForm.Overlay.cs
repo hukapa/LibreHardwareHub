@@ -75,7 +75,8 @@ public sealed partial class MainForm
             // Resolve the sensors and take a first reading so the HUD never appears empty.
             _overlayTelemetry.Invalidate();
             _overlayTelemetry.Update(_computer);
-            _overlayForm.Show();
+            // Never Show()/Show(this)/BringToFront(): the HUD must not take the keyboard focus from the game.
+            _overlayForm.ShowNoActivate();
         }
 
         ApplyAdaptivePolling();

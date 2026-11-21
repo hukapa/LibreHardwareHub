@@ -22,8 +22,9 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 /// </summary>
 public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGridItem
 {
-    private const int HeaderLogical = 54;
-    private const int PadLogical = 14;
+    private const int HeaderLogical = 58;
+    private const int PadLogical = 18;
+    private const int FooterLogical = 22;
     private const int MinSummaryLogical = 176;
     private const int SummaryPaneLogical = 372;
     private const int SideBySideMinLogical = 760;
@@ -51,7 +52,7 @@ public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGrid
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
 
-        Size = new Size(LogicalToDeviceUnits(400), LogicalToDeviceUnits(HeaderLogical + MinSummaryLogical + PadLogical));
+        Size = new Size(LogicalToDeviceUnits(400), LogicalToDeviceUnits(HeaderLogical + MinSummaryLogical + PadLogical + FooterLogical));
         Cursor = Cursors.Hand;
     }
 
@@ -219,7 +220,7 @@ public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGrid
 
     private int Measure(int width)
     {
-        int chrome = LogicalToDeviceUnits(HeaderLogical) + LogicalToDeviceUnits(PadLogical);
+        int chrome = LogicalToDeviceUnits(HeaderLogical) + LogicalToDeviceUnits(PadLogical) + LogicalToDeviceUnits(FooterLogical);
         if (!_isExpanded || _detailGroups == 0)
             return chrome + SummaryPixels;
 
@@ -271,8 +272,10 @@ public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGrid
         FluentStyle.DrawRounded(g, stroke, bounds, radius, _isHovered ? 1.5f : 1f);
 
         int pad = LogicalToDeviceUnits(PadLogical);
+        int footer = LogicalToDeviceUnits(FooterLogical);
         int top = LogicalToDeviceUnits(HeaderLogical);
         DrawHeader(g, theme, pad);
+        DrawFooter(g, theme, pad, footer);
 
         bool sideBySide = _isExpanded && _detailGroups > 0 && SideBySide(Width);
         int summaryWidth = sideBySide ? LogicalToDeviceUnits(SummaryPaneLogical) : Width - (pad * 2);
@@ -282,18 +285,41 @@ public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGrid
             return;
 
         using Pen divider = new(theme.LineColor);
+        int bottom = Height - pad - footer;
         if (sideBySide)
         {
             int x = pad + summaryWidth + pad;
-            g.DrawLine(divider, x - (pad / 2), top, x - (pad / 2), Height - pad);
-            DrawDetails(g, theme, new Rectangle(x, top, Width - x - pad, Height - top - pad));
+            g.DrawLine(divider, x - (pad / 2), top, x - (pad / 2), bottom);
+            DrawDetails(g, theme, new Rectangle(x, top, Width - x - pad, Math.Max(0, bottom - top)));
         }
         else
         {
             int y = top + SummaryPixels + pad;
             g.DrawLine(divider, pad, y - (pad / 2), Width - pad, y - (pad / 2));
-            DrawDetails(g, theme, new Rectangle(pad, y, Width - (pad * 2), Height - y - pad));
+            DrawDetails(g, theme, new Rectangle(pad, y, Width - (pad * 2), Math.Max(0, bottom - y)));
         }
+    }
+
+    /// <summary>Minimal footer cue: "Detalhes" / "Recolher" with a vector arrow, accent only while the card is hovered.</summary>
+    private void DrawFooter(Graphics g, Theme theme, int pad, int footer)
+    {
+        Color color = _isHovered ? theme.AccentColor : theme.MutedForegroundColor;
+        string text = _isExpanded ? "Recolher" : "Detalhes";
+        int textWidth = TextRenderer.MeasureText(text, FluentStyle.UiFontSmall, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
+        int arrow = LogicalToDeviceUnits(14);
+        Rectangle bounds = new(Width - pad - textWidth - arrow, Height - pad - footer + LogicalToDeviceUnits(6), textWidth + arrow, footer);
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+            return;
+
+        TextRenderer.DrawText(g, text, FluentStyle.UiFontSmall, new Rectangle(bounds.X, bounds.Y, textWidth, footer), color,
+            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+
+        float size = LogicalToDeviceUnits(3);
+        float cx = bounds.Right - (arrow / 2f) + LogicalToDeviceUnits(2);
+        float cy = bounds.Y + (footer / 2f);
+        float tip = _isExpanded ? -size / 2 : size / 2;
+        using Pen chevron = new(color, LogicalToDeviceUnits(1) * 1.25f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        g.DrawLines(chevron, new[] { new PointF(cx - size, cy - tip), new PointF(cx, cy + tip), new PointF(cx + size, cy - tip) });
     }
 
     private void DrawHeader(Graphics g, Theme theme, int pad)
@@ -303,30 +329,24 @@ public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGrid
 
         if (Icon != null)
         {
+            // Icon on a barely visible tile (about 6% of the foreground).
             Rectangle iconRect = new(x, pad, iconBox, iconBox);
-            FluentStyle.FillRounded(g, Color.FromArgb(theme.IsDark ? 28 : 14, theme.ForegroundColor), iconRect, LogicalToDeviceUnits(6));
+            FluentStyle.FillRounded(g, Color.FromArgb(15, theme.ForegroundColor), iconRect, LogicalToDeviceUnits(8));
             int inset = LogicalToDeviceUnits(6);
             g.DrawImage(Icon, x + inset, pad + inset, iconBox - (inset * 2), iconBox - (inset * 2));
-            x += iconBox + LogicalToDeviceUnits(10);
+            x += iconBox + LogicalToDeviceUnits(12);
         }
 
-        // Chevron on the far right: down when collapsed, up when expanded.
-        float size = LogicalToDeviceUnits(4);
-        float cx = Width - pad - LogicalToDeviceUnits(8);
-        float cy = pad + (iconBox / 2f);
-        float tip = _isExpanded ? -size / 2 : size / 2;
-        using (Pen chevron = new(_isHovered ? theme.AccentColor : theme.MutedForegroundColor, LogicalToDeviceUnits(1) * 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
-            g.DrawLines(chevron, new[] { new PointF(cx - size, cy - tip), new PointF(cx, cy + tip), new PointF(cx + size, cy - tip) });
-
-        int right = (int)cx - LogicalToDeviceUnits(16);
+        int right = Width - pad;
         if (!string.IsNullOrEmpty(BadgeText))
         {
+            // Soft pill: state color at about 14% over the surface, hairline border at 25%, crisp text in the state color.
             int badgeHeight = LogicalToDeviceUnits(22);
-            int badgeWidth = TextRenderer.MeasureText(BadgeText, FluentStyle.UiFontSmallBold).Width + LogicalToDeviceUnits(16);
+            int badgeWidth = TextRenderer.MeasureText(BadgeText, FluentStyle.UiFontSmallBold).Width + LogicalToDeviceUnits(18);
             Rectangle badge = new(right - badgeWidth, pad + ((iconBox - badgeHeight) / 2), badgeWidth, badgeHeight);
             Color color = BadgeColor.IsEmpty ? theme.AccentColor : BadgeColor;
-            FluentStyle.FillRounded(g, Color.FromArgb(35, color), badge, badgeHeight / 2f);
-            FluentStyle.DrawRounded(g, color, badge, badgeHeight / 2f);
+            FluentStyle.FillRounded(g, FluentStyle.Blend(theme.SurfaceColor, color, 0.14), badge, badgeHeight / 2f);
+            FluentStyle.DrawRounded(g, FluentStyle.Blend(theme.SurfaceColor, color, 0.25), badge, badgeHeight / 2f);
             TextRenderer.DrawText(g, BadgeText, FluentStyle.UiFontSmallBold, badge, color,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             right = badge.Left - LogicalToDeviceUnits(10);
@@ -340,7 +360,7 @@ public abstract partial class BentoCardBase : Control, IThemedControl, IWrapGrid
 
     private void DrawDetails(Graphics g, Theme theme, Rectangle area)
     {
-        using SolidBrush stripe = new(Color.FromArgb(theme.IsDark ? 14 : 8, theme.ForegroundColor));
+        using SolidBrush stripe = new(theme.SubtleSurfaceColor);
         LayoutDetails(area.Width, (group, bounds, columns) =>
         {
             bounds.Offset(area.Location);

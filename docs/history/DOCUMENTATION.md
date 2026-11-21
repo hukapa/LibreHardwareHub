@@ -536,3 +536,32 @@
   - NVMe: campos do log 0x02 descodificados (avisos criticos, temperatura, reserva e limite, percentagem usada, dados lidos/escritos em unidades de 512 000 bytes, comandos, tempo ocupado, ciclos de energia, horas ligado, desligamentos inseguros, erros de integridade, entradas no registo de erros, tempos acima das temperaturas de aviso/critica e sensores de temperatura).
   - A negrito ficam as linhas usadas no veredicto; uma nota explica como ler os valores normalizados.
 * **Release v0.10.0:** versao em `Directory.Build.props` passa de 0.9.6 para 0.10.0 (nova aba de ferramenta). Pacotes gerados com `scripts\Publicar-Release.ps1`: `dist\LibreHardwareHub-v0.10.0-Setup.exe` e `dist\LibreHardwareHub-v0.10.0-Portable.zip`.
+
+---
+
+## 27. Fase 27: Blindagem de Foco do Overlay, Refactor Visual Minimalista e Auditoria de Recursos
+* **Problema reportado:** em jogos como Roblox, o atalho global do HUD (`Alt + R`) retirava o foco do teclado ao jogo (a tecla premida deixava de contar ate novo clique). Em jogos em ecra inteiro exclusivo (ex.: League of Legends) o HUD ficava por tras do jogo.
+* **Overlay (`Overlay/OverlayForm.cs`, `MainForm.Overlay.cs`):**
+  - `CreateParams` passa a incluir explicitamente `WS_EX_LAYERED`, `WS_EX_TOOLWINDOW`, `WS_EX_NOACTIVATE`, `WS_EX_TOPMOST` e, com `ClickThrough`, `WS_EX_TRANSPARENT`. `ShowWithoutActivation` mantem-se verdadeiro.
+  - `WndProc` interceta `WM_MOUSEACTIVATE` e responde `MA_NOACTIVATE`: mesmo no modo de arrasto, clicar no HUD nunca ativa a janela nem rouba o foco ao jogo.
+  - Novo `ShowNoActivate()` (cria o handle se preciso, `ShowWindow(SW_SHOWNOACTIVATE)` e `SetWindowPos(HWND_TOPMOST, ... SWP_SHOWWINDOW | SWP_NOACTIVATE)`) e `EnsureTopMostNoActivate()` (reforco leve de Z-order sem `SWP_SHOWWINDOW`), chamado apos cada `UpdateLayeredWindow`.
+  - `MainForm.Overlay.cs` liga o HUD exclusivamente por `ShowNoActivate()`: nunca `Show()`, `Show(this)` nem `BringToFront()`, quer pelo atalho, pelo botao do estudio ou no arranque.
+  - Continua sem injecao de DLLs, sem hooks de DirectX/Vulkan e sem `WH_KEYBOARD_LL`: seguro com anti-cheats.
+* **Estudio de HUD (`OverlayEditorPanel.cs`, `OverlayGameNote.cs`):** `ClickThrough = true` continua o estado por defeito. Com o HUD desbloqueado aparece um selo de aviso (`BadgeStyle.Warning`: "Modo Arrasto Ativo - Bloqueie antes de jogar"). O cartao de interacao ganhou uma nota discreta: para o HUD aparecer sobre jogos em ecra inteiro exclusivo, usar o modo Sem Bordas (Borderless) nas definicoes de video. Limitacao tecnica de qualquer janela Win32 sem injecao.
+* **Tokens de tema (`Theme.cs`, `Themes/`):** novos `SidebarColor`, `ToolbarColor` e `SubtleSurfaceColor`. Paletas reescritas com hairlines ultra-subtis:
+  - Escuro: canvas `#121316`, barra lateral `#16181C`, cartoes `#1B1D23`, tiles `#20232B`, bordas `#282B34`, texto `#EEF0F4`, secundario `#8A909E`, acento `#4C9AFF`.
+  - Preto (OLED): canvas `#08090B`, cartoes `#101216`, bordas `#1E2128`, acento `#4C9AFF`.
+  - Claro: canvas `#F5F6F8`, cartoes `#FFFFFF`, bordas `#E4E7EC`, texto `#16181D`, secundario `#667085`.
+* **Cartoes Bento (`BentoCardBase.cs`, `BentoCardBase.Drawing.cs`, `CpuBentoCard.cs`):**
+  - Mini-tiles KPI planos (`Blend(Surface, SubtleSurface, 0.55)`, hairline a 35%), espacamento `KpiGap = 10`, unidade em tom mais claro a seguir ao numero.
+  - Todas as barras de progresso com 3 px e trilho a cerca de 12% de opacidade.
+  - Selos de estado como "soft pills" (cerca de 14% de preenchimento, borda a 25%), tambem em `FluentBadge.cs`; cores dos selos dos cartoes passam a vir do tema (`StateCool/Warm/HotColor`).
+  - `CardPad = 18`, icone do cabecalho sobre tile a cerca de 6%; o texto longo do rodape foi substituido por "Detalhes"/"Recolher" com seta vetorial de 1,25 px, em acento so no hover.
+  - Matriz de nucleos sem contorno, com mini-barra de 2 px apenas quando a carga e superior a 1%.
+* **Navegacao e controlos:** item ativo da barra lateral com acento a 12% e indicador de 3 px; barra lateral sobre `SidebarColor`; pesquisa e botoes da barra de topo com 32 px e raio de 6 px (`FluentStyle.ControlCornerLogical` de 8 para 6).
+* **Auditoria de recursos (`UI/`):**
+  - `OverlayForm`: DIB, DC de memoria e bitmap selecionado libertados em `ReleaseSurface()`, chamado ao redimensionar e em `Dispose`. Nao ha `GetDC`, logo nao ha `ReleaseDC` a fazer.
+  - `GlobalHotkeyManager.Dispose` passa a desregistar sempre os dois IDs.
+  - Nenhum `OnPaint` cria `Font`, `StringFormat` ou `Bitmap`; os objetos estaticos de `FluentStyle` nao sao libertados por ninguem; pinceis e canetas temporarios usam `using`. Retangulos com dimensao nula sao protegidos (`SearchBox`, `DrawFooter`, `DrawKpiBox`).
+  - Eventos estaticos: nao existe `Theme.Changed`; `ScrollHost` regista e remove o `IMessageFilter` com o handle; `MainForm.PowerModeChanged` passa a ser removido em `CloseApplication`. Os ganchos `SessionEnded`/`ProcessExit` dos motores de ventoinhas e de tuning mantem-se de proposito, por serem a rede de seguranca que repoe o estado de origem depois de a janela fechar.
+  - Repouso: com a janela na bandeja os paineis nao sao atualizados (`isFormVisible`); so corre o ciclo de 1000 ms do HUD, ou, sem HUD nem curvas ativas, o modo de poupanca profunda (`LowPowerMode`) com `EmptyWorkingSet`.

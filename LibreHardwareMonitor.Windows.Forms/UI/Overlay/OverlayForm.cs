@@ -50,11 +50,45 @@ public sealed class OverlayForm : Form
         get
         {
             CreateParams cp = base.CreateParams;
-            cp.ExStyle |= WsExLayered | WsExToolWindow | WsExNoActivate;
+            cp.ExStyle |= WsExLayered | WsExToolWindow | WsExNoActivate | WsExTopMost;
             if (_config is { ClickThrough: true })
                 cp.ExStyle |= WsExTransparent;
             return cp;
         }
+    }
+
+    /// <summary>
+    /// Mouse interaction (drag mode) must never take the keyboard focus from the game: the click is delivered
+    /// to the HUD but the window is not activated.
+    /// </summary>
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmMouseActivate)
+        {
+            m.Result = (IntPtr)MaNoActivate;
+            return;
+        }
+
+        base.WndProc(ref m);
+    }
+
+    /// <summary>Shows the HUD without activating it and raises it above every other topmost window.</summary>
+    public void ShowNoActivate()
+    {
+        if (!IsHandleCreated)
+            CreateHandle();
+
+        ShowWindow(Handle, SwShowNoActivate);
+        SetWindowPos(Handle, HwndTopMost, 0, 0, 0, 0, SwpNoSize | SwpNoMove | SwpNoActivate | SwpShowWindow | SwpNoOwnerZOrder);
+    }
+
+    /// <summary>Re-asserts the topmost position (borderless games, launchers) without activating or flickering.</summary>
+    public void EnsureTopMostNoActivate()
+    {
+        if (!IsHandleCreated)
+            return;
+
+        SetWindowPos(Handle, HwndTopMost, 0, 0, 0, 0, SwpNoSize | SwpNoMove | SwpNoActivate | SwpNoOwnerZOrder);
     }
 
     /// <summary>Applies a configuration change: click-through style, layout, position and a fresh frame.</summary>
@@ -108,7 +142,7 @@ public sealed class OverlayForm : Form
         UpdateLayeredWindow(Handle, IntPtr.Zero, ref destination, ref nativeSize, _memoryDc, ref source, 0, ref blend, UlwAlpha);
 
         // Another topmost window (a borderless game, a launcher) may have been raised above the HUD meanwhile.
-        SetWindowPos(Handle, HwndTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+        EnsureTopMostNoActivate();
     }
 
     private Point ResolveLocation(Size size)
@@ -236,11 +270,17 @@ public sealed class OverlayForm : Form
     private const int WsExLayered = 0x00080000;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
+    private const int WsExTopMost = 0x00000008;
+    private const int WmMouseActivate = 0x0021;
+    private const int MaNoActivate = 3;
+    private const int SwShowNoActivate = 4;
     private const byte AcSrcAlpha = 0x01;
     private const int UlwAlpha = 0x02;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
+    private const uint SwpShowWindow = 0x0040;
+    private const uint SwpNoOwnerZOrder = 0x0200;
     private static readonly IntPtr HwndTopMost = new(-1);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -285,6 +325,9 @@ public sealed class OverlayForm : Form
     [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
     private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref NativePoint pptDst, ref NativeSize psize,
                                                    IntPtr hdcSrc, ref NativePoint pptSrc, int crKey, ref BlendFunction pblend, int dwFlags);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);

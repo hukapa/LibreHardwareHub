@@ -112,6 +112,16 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
         public virtual Color AccentColor => FluentStyle.AccentFor(IsDark);
         public virtual Color AccentForegroundColor => FluentStyle.RelativeLuminance(AccentColor) > 0.4 ? Color.Black : Color.White;
         public virtual Color SurfaceColor => BackgroundColor;
+
+        /// <summary>Navigation pane: barely separated from the canvas, no hard divider.</summary>
+        public virtual Color SidebarColor => BackgroundColor;
+
+        /// <summary>Top bar (search and view switch); follows the navigation pane.</summary>
+        public virtual Color ToolbarColor => SidebarColor;
+
+        /// <summary>Nearly imperceptible elevation over <see cref="SurfaceColor" /> for mini tiles and zebra rows.</summary>
+        public virtual Color SubtleSurfaceColor => FluentStyle.Blend(SurfaceColor, ForegroundColor, IsDark ? 0.05 : 0.03);
+
         public virtual Color SurfaceStrokeColor => StrongLineColor;
         public virtual Color MutedForegroundColor => FluentStyle.Blend(ForegroundColor, SurfaceColor, 0.42);
         public virtual Color HoverBackgroundColor => FluentStyle.Blend(SurfaceColor, ForegroundColor, IsDark ? 0.06 : 0.04);

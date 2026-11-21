@@ -89,8 +89,8 @@ public sealed class CpuBentoCard : BentoCardBase
         if (cellWidth <= 8)
             return;
 
-        Color cellFill = Color.FromArgb(theme.IsDark ? 20 : 10, theme.ForegroundColor);
-        using SolidBrush track = new(Color.FromArgb(40, theme.MutedForegroundColor));
+        Color cellFill = FluentStyle.Blend(theme.SurfaceColor, theme.SubtleSurfaceColor, 0.55);
+        using SolidBrush track = new(Color.FromArgb(30, theme.MutedForegroundColor));
         using SolidBrush fill = new(theme.AccentColor);
 
         for (int i = 0; i < _coreLoads.Count; i++)
@@ -104,12 +104,19 @@ public sealed class CpuBentoCard : BentoCardBase
             TextRenderer.DrawText(g, $"{load:F0}%", FluentStyle.MonoFontSmall, new Rectangle(cell.X + (cellWidth / 2), cell.Y + 2, (cellWidth / 2) - 4, LogicalToDeviceUnits(12)), theme.ForegroundColor,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
+            // Silent at idle: the 2px bar only appears once the thread carries some load.
+            if (load <= 1f)
+                continue;
+
             float ratio = Math.Clamp(load / 100f, 0f, 1f);
-            int barY = cell.Bottom - LogicalToDeviceUnits(4);
-            int barWidth = cellWidth - 6;
-            g.FillRectangle(track, cell.X + 3, barY, barWidth, 2);
+            int barY = cell.Bottom - LogicalToDeviceUnits(5);
+            int barWidth = cellWidth - 12;
+            if (barWidth <= 0)
+                continue;
+
+            g.FillRectangle(track, cell.X + 6, barY, barWidth, 2);
             fill.Color = ratio > 0.85f ? theme.StateHotColor : ratio > 0.6f ? theme.StateWarmColor : theme.AccentColor;
-            g.FillRectangle(fill, cell.X + 3, barY, (int)(barWidth * ratio), 2);
+            g.FillRectangle(fill, cell.X + 6, barY, Math.Max(2, (int)(barWidth * ratio)), 2);
         }
     }
 }

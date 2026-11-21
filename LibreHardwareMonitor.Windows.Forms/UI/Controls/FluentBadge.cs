@@ -89,6 +89,9 @@ public sealed class FluentBadge : Control, IThemedControl
         Invalidate();
     }
 
+    private static (Color Fill, Color Border, Color Text) SoftPill(Theme theme, Color state, double fill, double hairline) =>
+        (FluentStyle.Blend(theme.SurfaceColor, state, fill), FluentStyle.Blend(theme.SurfaceColor, state, hairline), state);
+
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         Theme theme = Theme.Current;
@@ -106,27 +109,18 @@ public sealed class FluentBadge : Control, IThemedControl
         RectangleF bounds = new(1f, 1f, Width - 2f, Height - 2f);
         float radius = bounds.Height / 2f;
 
+        // Soft pill: translucent state color over the surface (about 14%), hairline border at 25%.
+        const double fill = 0.14;
+        const double hairline = 0.25;
         (Color bg, Color border, Color text) = _style switch
         {
-            BadgeStyle.Success => (
-                FluentStyle.Blend(theme.SurfaceColor, theme.StateCoolColor, theme.IsDark ? 0.22 : 0.14),
-                FluentStyle.Blend(theme.SurfaceStrokeColor, theme.StateCoolColor, 0.55),
-                theme.StateCoolColor),
-            BadgeStyle.Warning => (
-                FluentStyle.Blend(theme.SurfaceColor, theme.StateWarmColor, theme.IsDark ? 0.25 : 0.14),
-                FluentStyle.Blend(theme.SurfaceStrokeColor, theme.StateWarmColor, 0.55),
-                theme.StateWarmColor),
-            BadgeStyle.Danger => (
-                FluentStyle.Blend(theme.SurfaceColor, theme.StateHotColor, theme.IsDark ? 0.25 : 0.14),
-                FluentStyle.Blend(theme.SurfaceStrokeColor, theme.StateHotColor, 0.55),
-                theme.StateHotColor),
-            BadgeStyle.Accent => (
-                FluentStyle.Blend(theme.SurfaceColor, theme.AccentColor, theme.IsDark ? 0.25 : 0.14),
-                theme.AccentColor,
-                theme.AccentColor),
+            BadgeStyle.Success => SoftPill(theme, theme.StateCoolColor, fill, hairline),
+            BadgeStyle.Warning => SoftPill(theme, theme.StateWarmColor, fill, hairline),
+            BadgeStyle.Danger => SoftPill(theme, theme.StateHotColor, fill, hairline),
+            BadgeStyle.Accent => SoftPill(theme, theme.AccentColor, fill, hairline),
             _ => (
-                theme.SurfaceColor,
-                theme.SurfaceStrokeColor,
+                theme.SubtleSurfaceColor,
+                FluentStyle.Blend(theme.SubtleSurfaceColor, theme.SurfaceStrokeColor, 0.5),
                 theme.MutedForegroundColor)
         };
 

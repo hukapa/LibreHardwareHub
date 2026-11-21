@@ -284,6 +284,8 @@ public sealed class GpuTuningEngine : IDisposable
 
     public void Dispose()
     {
+        // The ProcessExit / SessionEnded safety hooks stay attached on purpose: they must still restore the stock
+        // state after the window was closed, and this engine lives as long as the process.
         _watchdogTimer.Stop();
         _watchdogTimer.Dispose();
         _stabilityTimer.Stop();

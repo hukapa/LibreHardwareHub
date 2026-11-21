@@ -8,18 +8,22 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
     {
         private readonly Color[] _plotColorPalette;
         public override bool IsDark => true;
-        public override Color ForegroundColor => Color.FromArgb(240, 240, 240);
-        public override Color BackgroundColor => Color.FromArgb(32, 32, 32);
-        public override Color SurfaceColor => Color.FromArgb(43, 43, 43);
+        public override Color ForegroundColor => Color.FromArgb(238, 240, 244);
+        public override Color MutedForegroundColor => Color.FromArgb(138, 144, 158);
+        public override Color BackgroundColor => Color.FromArgb(18, 19, 22);
+        public override Color SidebarColor => Color.FromArgb(22, 24, 28);
+        public override Color SurfaceColor => Color.FromArgb(27, 29, 35);
+        public override Color SubtleSurfaceColor => Color.FromArgb(32, 35, 43);
+        public override Color AccentColor => Color.FromArgb(76, 154, 255);
         public override Color HyperlinkColor => AccentColor;
         public override Color SelectedForegroundColor => ForegroundColor;
-        public override Color SelectedBackgroundColor => Color.FromArgb(55, 55, 55);
-        public override Color LineColor => Color.FromArgb(50, 50, 50);
-        public override Color StrongLineColor => Color.FromArgb(29, 29, 29);
-        public override Color SurfaceStrokeColor => Color.FromArgb(58, 58, 58);
+        public override Color SelectedBackgroundColor => Color.FromArgb(42, 45, 54);
+        public override Color LineColor => Color.FromArgb(35, 38, 46);
+        public override Color StrongLineColor => Color.FromArgb(40, 43, 52);
+        public override Color SurfaceStrokeColor => Color.FromArgb(40, 43, 52);
         public override Color[] PlotColorPalette => _plotColorPalette;
-        public override Color PlotGridMajorColor => Color.FromArgb(70, 70, 70);
-        public override Color PlotGridMinorColor => Color.FromArgb(52, 52, 52);
+        public override Color PlotGridMajorColor => Color.FromArgb(52, 56, 65);
+        public override Color PlotGridMinorColor => Color.FromArgb(38, 42, 49);
         public override bool WindowTitlebarFallbackToImmersiveDarkMode => true;
 
         public DarkTheme() : base("dark", "Dark")

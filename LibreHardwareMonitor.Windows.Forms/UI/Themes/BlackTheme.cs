@@ -8,17 +8,22 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
     {
         private readonly Color[] _plotColorPalette;
         public override bool IsDark => true;
-        public override Color ForegroundColor => Color.FromArgb(228, 228, 228);
-        public override Color BackgroundColor => Color.FromArgb(0, 0, 0);
-        public override Color SurfaceColor => Color.FromArgb(14, 14, 14);
+        public override Color ForegroundColor => Color.FromArgb(230, 232, 236);
+        public override Color MutedForegroundColor => Color.FromArgb(127, 133, 146);
+        public override Color BackgroundColor => Color.FromArgb(8, 9, 11);
+        public override Color SidebarColor => Color.FromArgb(11, 12, 14);
+        public override Color SurfaceColor => Color.FromArgb(16, 18, 22);
+        public override Color SubtleSurfaceColor => Color.FromArgb(22, 25, 32);
+        public override Color AccentColor => Color.FromArgb(76, 154, 255);
         public override Color HyperlinkColor => AccentColor;
         public override Color SelectedForegroundColor => ForegroundColor;
-        public override Color SelectedBackgroundColor => Color.FromArgb(30, 30, 30);
-        public override Color LineColor => Color.FromArgb(24, 24, 24);
-        public override Color StrongLineColor => Color.FromArgb(36, 36, 36);
+        public override Color SelectedBackgroundColor => Color.FromArgb(27, 30, 37);
+        public override Color LineColor => Color.FromArgb(24, 26, 32);
+        public override Color StrongLineColor => Color.FromArgb(30, 33, 40);
+        public override Color SurfaceStrokeColor => Color.FromArgb(30, 33, 40);
         public override Color[] PlotColorPalette => _plotColorPalette;
-        public override Color PlotGridMajorColor => Color.FromArgb(52, 52, 52);
-        public override Color PlotGridMinorColor => Color.FromArgb(28, 28, 28);
+        public override Color PlotGridMajorColor => Color.FromArgb(44, 48, 56);
+        public override Color PlotGridMinorColor => Color.FromArgb(24, 26, 32);
         public override bool WindowTitlebarFallbackToImmersiveDarkMode => true;
 
         public BlackTheme() : base("black", "Black")

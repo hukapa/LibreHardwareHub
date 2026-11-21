@@ -118,7 +118,9 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             g.Clear(theme.BackgroundColor);
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            float radius = LogicalToDeviceUnits(theme.CornerRadius - 1);
+            float radius = LogicalToDeviceUnits(FluentStyle.ControlCornerLogical);
+            if (Width <= 2 || Height <= 2)
+                return;
             RectangleF box = new(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
             FluentStyle.FillRounded(g, theme.SurfaceColor, box, radius);
             FluentStyle.DrawRounded(g, theme.SurfaceStrokeColor, box, radius);

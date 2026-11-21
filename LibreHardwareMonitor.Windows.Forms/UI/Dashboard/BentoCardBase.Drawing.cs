@@ -13,11 +13,14 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 /// <summary>Drawing helpers shared by the card summaries: KPI tiles, section captions, usage bars and badges.</summary>
 public abstract partial class BentoCardBase
 {
+    /// <summary>Gap between KPI tiles, in logical units.</summary>
+    private const int KpiGapLogical = 10;
+
     /// <summary>Splits <paramref name="area" /> into a 2-column grid of KPI tiles and returns tile <paramref name="index" />.</summary>
     protected Rectangle KpiTile(Rectangle area, int index, int tileHeightLogical = 48)
     {
-        int gapX = LogicalToDeviceUnits(10);
-        int gapY = LogicalToDeviceUnits(8);
+        int gapX = LogicalToDeviceUnits(KpiGapLogical);
+        int gapY = LogicalToDeviceUnits(KpiGapLogical);
         int width = (area.Width - gapX) / 2;
         int height = LogicalToDeviceUnits(tileHeightLogical);
         return new Rectangle(area.X + (index % 2 * (width + gapX)), area.Y + (index / 2 * (height + gapY)), width, height);
@@ -38,9 +41,10 @@ public abstract partial class BentoCardBase
         if (!value.HasValue)
             return;
 
-        (BadgeText, BadgeColor) = value.Value >= critical ? (criticalText, Color.FromArgb(235, 60, 60))
-            : value.Value >= warn ? (warning, Color.FromArgb(240, 180, 30))
-            : (normal, Color.FromArgb(70, 200, 100));
+        Theme theme = Theme.Current;
+        (BadgeText, BadgeColor) = value.Value >= critical ? (criticalText, theme.StateHotColor)
+            : value.Value >= warn ? (warning, theme.StateWarmColor)
+            : (normal, theme.StateCoolColor);
     }
 
     protected void DrawSectionTitle(Graphics g, string title, Rectangle area, int y, Theme theme, string rightText = null)
@@ -58,10 +62,16 @@ public abstract partial class BentoCardBase
     /// <summary>Usage bar under a section title; the fill turns warm/hot past the given ratios.</summary>
     protected void DrawUsageBar(Graphics g, Theme theme, Rectangle area, int y, float ratio, float warn, float critical)
     {
-        Rectangle bounds = new(area.X, y, area.Width, LogicalToDeviceUnits(8));
+        Rectangle bounds = new(area.X, y + LogicalToDeviceUnits(2), area.Width, LogicalToDeviceUnits(BarLogical));
         Color fill = ratio > critical ? theme.StateHotColor : ratio > warn ? theme.StateWarmColor : theme.AccentColor;
-        DrawProgressBar(g, bounds, ratio, fill, Color.FromArgb(40, theme.MutedForegroundColor));
+        DrawProgressBar(g, bounds, ratio, fill, TrackColor(theme));
     }
+
+    /// <summary>Thickness of every progress bar (usage and KPI), in logical units.</summary>
+    private const int BarLogical = 3;
+
+    /// <summary>Very quiet bar track: the muted foreground at about 12% opacity.</summary>
+    protected static Color TrackColor(Theme theme) => Color.FromArgb(30, theme.MutedForegroundColor);
 
     protected void DrawProgressBar(Graphics g, Rectangle bounds, float ratio, Color fill, Color background)
     {
@@ -82,11 +92,13 @@ public abstract partial class BentoCardBase
         if (bounds.Width <= 10 || bounds.Height <= 10)
             return;
 
-        int pad = LogicalToDeviceUnits(8);
-        FluentStyle.FillRounded(g, Color.FromArgb(theme.IsDark ? 22 : 12, theme.ForegroundColor), bounds, LogicalToDeviceUnits(6));
-        FluentStyle.DrawRounded(g, Color.FromArgb(theme.IsDark ? 36 : 20, theme.ForegroundColor), bounds, LogicalToDeviceUnits(6));
+        int pad = LogicalToDeviceUnits(10);
 
-        Rectangle labelBounds = new(bounds.X + pad, bounds.Y + pad - 2, bounds.Width - (pad * 2), LogicalToDeviceUnits(12));
+        // Flat block: a subtle elevation over the card surface and a hairline at about 35% opacity.
+        FluentStyle.FillRounded(g, FluentStyle.Blend(theme.SurfaceColor, theme.SubtleSurfaceColor, 0.55), bounds, LogicalToDeviceUnits(6));
+        FluentStyle.DrawRounded(g, Color.FromArgb(90, theme.SurfaceStrokeColor), bounds, LogicalToDeviceUnits(6));
+
+        Rectangle labelBounds = new(bounds.X + pad, bounds.Y + pad - 3, bounds.Width - (pad * 2), LogicalToDeviceUnits(12));
         TextRenderer.DrawText(g, label.ToUpperInvariant(), FluentStyle.UiFontMini, labelBounds, theme.MutedForegroundColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
 
@@ -96,18 +108,19 @@ public abstract partial class BentoCardBase
         TextRenderer.DrawText(g, text, FluentStyle.MonoFontKpi, valueBounds, valueColor ?? theme.ForegroundColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
-        int unitX = valueBounds.Right + LogicalToDeviceUnits(3);
+        // The unit follows the number in a lighter tone so the eye lands on the figure first.
+        int unitX = valueBounds.Right + LogicalToDeviceUnits(4);
         if (!string.IsNullOrEmpty(unit) && bounds.Right - pad - unitX > 4)
         {
             TextRenderer.DrawText(g, unit, FluentStyle.UiFontSmall, new Rectangle(unitX, bounds.Y + LogicalToDeviceUnits(18), bounds.Right - pad - unitX, LogicalToDeviceUnits(14)),
-                theme.MutedForegroundColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                FluentStyle.Blend(theme.SurfaceColor, theme.MutedForegroundColor, 0.8), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         }
 
         if (ratio.HasValue)
         {
-            int barHeight = LogicalToDeviceUnits(3);
+            int barHeight = LogicalToDeviceUnits(BarLogical);
             Rectangle bar = new(bounds.X + pad, bounds.Bottom - pad - barHeight + 2, bounds.Width - (pad * 2), barHeight);
-            DrawProgressBar(g, bar, ratio.Value, valueColor ?? theme.AccentColor, Color.FromArgb(40, theme.MutedForegroundColor));
+            DrawProgressBar(g, bar, ratio.Value, valueColor ?? theme.AccentColor, TrackColor(theme));
         }
     }
 }

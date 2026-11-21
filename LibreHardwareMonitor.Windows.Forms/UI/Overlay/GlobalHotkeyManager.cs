@@ -160,9 +160,8 @@ public sealed class GlobalHotkeyManager : IDisposable
 
     public void Dispose()
     {
-        if (_overlayRegistered)
-            UnregisterHotkey(HotkeyOverlayToggle);
-        if (_clickThroughRegistered)
-            UnregisterHotkey(HotkeyClickThroughToggle);
+        // Unconditional: UnregisterHotKey on an id that is not registered is harmless, and no id can leak.
+        UnregisterHotkey(HotkeyOverlayToggle);
+        UnregisterHotkey(HotkeyClickThroughToggle);
     }
 }

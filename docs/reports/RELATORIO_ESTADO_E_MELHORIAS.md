@@ -562,3 +562,18 @@ A suite foi formalmente consolidada sob a identidade unica **LibreHardwareHub**:
 ### 21.3 Pacote Portatil Autonomo (`Self-Contained Single-File`)
 * O executavel compilado em modo `Self-Contained` embute e compacta todo o runtime .NET 8 e bibliotecas nativas, dispensando a instalacao prévia de runtimes pelo utilizador final.
 * Ficheiro gerado em `dist/LibreHardwareHub-v0.9.6-Portable.zip` (62.1 MB) acompanhado de `portable.txt`, `PawnIO_setup.exe`, `LEIAME.txt` e `LICENSE.txt`.
+
+
+## 22. Fase 27: Foco do Overlay em Jogos, Design Minimalista e Auditoria de Recursos
+
+### 22.1 Overlay sem roubo de foco
+O HUD e agora mostrado com `ShowNoActivate()` e responde `MA_NOACTIVATE` a `WM_MOUSEACTIVATE`, pelo que nem o atalho global nem o modo de arrasto retiram o foco do teclado ao jogo (caso reportado: Roblox). O Z-order e reforcado sem ativacao apos cada frame. Jogos em ecra inteiro exclusivo continuam a ocultar qualquer janela Win32 sem injecao: o estudio indica ao utilizador que deve usar o modo Sem Bordas (Borderless).
+
+### 22.2 Refactor visual minimalista
+Paletas escura, preta e clara reescritas com novos tokens (`SidebarColor`, `ToolbarColor`, `SubtleSurfaceColor`), tiles planos, barras de 3 px, selos translucidos, rodape "Detalhes"/"Recolher", barra lateral com indicador de 3 px e controlos da barra de topo com 32 px e raio de 6 px. Toda a evolucao foi feita nos tokens e nos controlos base, sem duplicar cores nos paineis.
+
+### 22.3 Auditoria de memoria e GDI+
+Sem fugas encontradas nos desenhos (`OnPaint`) nem no DIB do HUD. Corrigido: desregisto incondicional dos atalhos globais e remocao de `PowerModeChanged` ao fechar. Mantidos de proposito os ganchos de seguranca dos motores de ventoinhas e tuning. Sem alteracao ao comportamento de repouso, que ja respeitava os limites pedidos.
+
+### 22.4 Estado de compilacao
+`dotnet build LibreHardwareMonitor.sln -c Release -p:Platform=x64`: 0 avisos e 0 erros.

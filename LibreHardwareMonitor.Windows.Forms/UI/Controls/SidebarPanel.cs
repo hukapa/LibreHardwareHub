@@ -115,7 +115,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
 
         public void ApplyTheme(Theme theme)
         {
-            BackColor = theme.BackgroundColor;
+            BackColor = theme.SidebarColor;
             ForeColor = theme.ForegroundColor;
             Invalidate();
         }

@@ -32,7 +32,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Themes
         private static StringFormat _formatFarCenter;
 
         /// <summary>Corner radius shared by buttons, combo boxes and text fields (logical units; cards use the theme radius + 2).</summary>
-        public const int ControlCornerLogical = 8;
+        public const int ControlCornerLogical = 6;
 
         /// <summary>Default UI font: Segoe UI Variable Text when installed, otherwise the system message font.</summary>
         public static Font UiFont => _uiFont ??= CreateUiFont(FontStyle.Regular);

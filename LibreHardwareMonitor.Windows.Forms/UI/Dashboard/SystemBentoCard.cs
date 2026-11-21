@@ -81,7 +81,7 @@ public sealed class SystemBentoCard : BentoCardBase
         }
 
         BadgeText = _spinningFans > 0 ? $"{_spinningFans} ventoinhas" : "Motherboard";
-        BadgeColor = _spinningFans > 0 ? Color.FromArgb(70, 200, 100) : Color.FromArgb(170, 170, 180);
+        BadgeColor = _spinningFans > 0 ? Theme.Current.StateCoolColor : Theme.Current.MutedForegroundColor;
         EndUpdate();
     }
 
