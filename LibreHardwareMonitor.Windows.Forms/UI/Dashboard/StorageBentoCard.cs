@@ -38,8 +38,11 @@ public sealed class StorageBentoCard : BentoCardBase
 
     public IHardware Hardware { get; private set; }
 
-    // The space caption and bar, two KPI rows, then the main health reason.
-    protected override int SummaryHeight => 26 + 14 + 104 + 20;
+    // Two KPI rows are 2 x 48 + the 10 px KPI gap tall.
+    private const int KpiRowsLogical = 106;
+
+    // The space caption and bar, two KPI rows, a gap, the main health reason and a bottom margin so that line is never clipped.
+    protected override int SummaryHeight => 26 + 14 + KpiRowsLogical + 8 + 20 + 12;
 
     public void UpdateSensors(IHardware storage)
     {
@@ -121,7 +124,7 @@ public sealed class StorageBentoCard : BentoCardBase
         DrawKpiBox(g, KpiTile(tiles, 2), "Leitura", SensorLookup.FormatThroughput(_readBytes.GetValueOrDefault()), string.Empty, null, null, theme);
         DrawKpiBox(g, KpiTile(tiles, 3), "Escrita", SensorLookup.FormatThroughput(_writeBytes.GetValueOrDefault()), string.Empty, null, null, theme);
 
-        DrawHealthReason(g, theme, new Rectangle(area.X, area.Y + LogicalToDeviceUnits(26 + 14 + 104), area.Width, LogicalToDeviceUnits(20)));
+        DrawHealthReason(g, theme, new Rectangle(area.X, area.Y + LogicalToDeviceUnits(26 + 14 + KpiRowsLogical + 8), area.Width, LogicalToDeviceUnits(20)));
     }
 
     /// <summary>The most serious reason behind the verdict; full list on the "Saúde dos discos" page.</summary>

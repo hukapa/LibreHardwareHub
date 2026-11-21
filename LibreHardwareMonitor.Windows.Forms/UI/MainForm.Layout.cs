@@ -98,7 +98,8 @@ public sealed partial class MainForm
         _toolbar.Controls.Add(_btnVisualCards);
 
         // Docking runs from the back of the z-order: summary, then toolbar, then panels.
-        _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, LogicalToDeviceUnits(8), gutter, gutter) };
+        // Same gutter on both sides so the search box and the cards never touch the navigation pane.
+        _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(gutter, LogicalToDeviceUnits(8), gutter, gutter) };
         _content.Controls.Add(_overlayEditorPanel);
         _content.Controls.Add(_cpuTuningPanel);
         _content.Controls.Add(_gpuTuningPanel);
