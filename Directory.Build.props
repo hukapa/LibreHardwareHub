@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>0.11.0</Version>
+    <Version>0.12.0</Version>
     <Product>LibreHardwareHub</Product>
     <Copyright>LibreHardwareHub Contributors</Copyright>
     <!-- .NET 8 appends "+<git hash>" to the informational version; the window title and the updater want the plain version. -->
