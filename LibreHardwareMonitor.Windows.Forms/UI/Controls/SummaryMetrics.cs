@@ -56,22 +56,22 @@ public static class SummaryMetrics
         // 2. CPU Temperature
         if (cpu != null)
         {
-            ISensor cpuTemp = SensorLookup.FindOrFirst(cpu, SensorType.Temperature, "Package", "Core (Tctl/Tdie)", "Core Max", "Core Average", "Tdie", "Tctl", "CPU");
-            Add(metrics, "Temp. CPU", cpu, cpuTemp);
+            ISensor cpuTemp = SensorLookup.CpuTemperature(cpu);
+            Add(metrics, "Temp. CPU", cpu, cpuTemp, () => DetailFor(cpu, cpuTemp, "Package", "Tctl", "Tdie", "Core Max", "Core Average"));
         }
 
         // 3. GPU Load
         if (gpu != null)
         {
-            ISensor gpuLoad = SensorLookup.FindOrFirst(gpu, SensorType.Load, "Core", "D3D 3D", "GPU Core", "GPU");
-            Add(metrics, "Carga GPU", gpu, gpuLoad);
+            ISensor gpuLoad = SensorLookup.GpuCoreLoad(gpu);
+            Add(metrics, "Carga GPU", gpu, gpuLoad, () => DetailFor(gpu, gpuLoad, "Core"));
         }
 
-        // 4. GPU Temperature
+        // 4. GPU Temperature (the core, never silently the hot spot)
         if (gpu != null)
         {
-            ISensor gpuTemp = SensorLookup.FindOrFirst(gpu, SensorType.Temperature, "Core", "GPU Core", "Hot Spot", "GPU");
-            Add(metrics, "Temp. GPU", gpu, gpuTemp);
+            ISensor gpuTemp = SensorLookup.GpuCoreTemperature(gpu);
+            Add(metrics, "Temp. GPU", gpu, gpuTemp, () => DetailFor(gpu, gpuTemp, "Core"));
         }
 
         // 5. Memory (RAM)
@@ -102,6 +102,16 @@ public static class SummaryMetrics
         }
 
         return metrics;
+    }
+
+    /// <summary>
+    /// Caption of a card: the hardware name, plus the real sensor name when the sensor is not one of the expected ones
+    /// (a fallback), so a card never claims to show the core temperature while it shows another sensor.
+    /// </summary>
+    private static string DetailFor(IHardware hardware, ISensor sensor, params string[] expected)
+    {
+        string name = hardware?.Name ?? string.Empty;
+        return sensor == null || SensorLookup.NameContains(sensor, expected) ? name : $"{name} · {sensor.Name}";
     }
 
     private static void Add(List<SummaryMetric> metrics, string title, IHardware hardware, ISensor sensor, Func<string> detail = null)

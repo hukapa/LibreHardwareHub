@@ -49,7 +49,7 @@ public sealed class MemoryBentoCard : BentoCardBase
             if (hw.HardwareType != HardwareType.Memory)
                 continue;
 
-            if (hw != physical && hw.Name.Contains("Virtual"))
+            if (hw != physical && SensorLookup.IsVirtualMemory(hw))
                 _virtualUsedGb = SensorLookup.ToGigabytes(SensorLookup.Find(hw, SensorType.Data, "Memory Used")?.Value);
 
             // Hottest module.

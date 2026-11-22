@@ -453,6 +453,9 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         UpdateUiFromState();
     }
 
+    // Caption of a card: the name of the sensor really read, or the default when there is none yet.
+    private static string Caption(string source, string fallback) => string.IsNullOrEmpty(source) ? fallback : source;
+
     public void UpdateTelemetry()
     {
         if (_engine == null || !Visible)
@@ -464,38 +467,38 @@ public sealed class CpuTuningPanel : UserControl, IThemedControl
         {
             float temp = t.PackageTemperatureC.Value;
             MetricCardSeverity sev = temp >= 85f ? MetricCardSeverity.Hot : (temp >= 75f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal);
-            _tempCard.SetMetric("Temperatura", $"{temp:F0}", "°C", "CPU Package", sev, temp / 100f);
+            _tempCard.SetMetric("Temperatura", $"{temp:F0}", "°C", Caption(t.TemperatureSource, "CPU Package"), sev, temp / 100f);
         }
         else
         {
-            _tempCard.SetMetric("Temperatura", "-", "°C", "CPU Package");
+            _tempCard.SetMetric("Temperatura", "-", "°C", Caption(t.TemperatureSource, "CPU Package"));
         }
 
         if (t.VoltageV is > 0f)
         {
             float volt = t.VoltageV.Value;
             MetricCardSeverity sev = volt >= 1.48f ? MetricCardSeverity.Hot : (volt >= 1.40f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal);
-            _voltageCard.SetMetric("Voltagem", $"{volt:F3}", "V", "CPU VCore", sev, volt / 1.6f);
+            _voltageCard.SetMetric("Voltagem", $"{volt:F3}", "V", Caption(t.VoltageSource, "CPU VCore"), sev, volt / 1.6f);
         }
         else
         {
-            _voltageCard.SetMetric("Voltagem", "-", "V", "CPU VCore");
+            _voltageCard.SetMetric("Voltagem", "-", "V", Caption(t.VoltageSource, "CPU VCore"));
         }
 
         if (t.PackagePowerWatts is > 0f)
         {
             float power = t.PackagePowerWatts.Value;
-            _powerCard.SetMetric("Potência", $"{power:F1}", "W", "Package Power", power > 90f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal, power / 150f);
+            _powerCard.SetMetric("Potência", $"{power:F1}", "W", Caption(t.PowerSource, "Package Power"), power > 90f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal, power / 150f);
         }
         else
         {
-            _powerCard.SetMetric("Potência", "-", "W", "Package Power");
+            _powerCard.SetMetric("Potência", "-", "W", Caption(t.PowerSource, "Package Power"));
         }
 
         if (t.CoreClockMhz is > 0f)
         {
             float clock = t.CoreClockMhz.Value;
-            _clockCard.SetMetric("Frequência", $"{clock:F0}", "MHz", "Média dos núcleos", MetricCardSeverity.Normal, clock / 5000f);
+            _clockCard.SetMetric("Frequência", $"{clock:F0}", "MHz", "Pico dos núcleos", MetricCardSeverity.Normal, clock / 5000f);
         }
         else
         {

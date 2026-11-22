@@ -98,7 +98,7 @@ public sealed class OverlayTelemetry
         IList<IHardware> hardware = computer.Hardware;
 
         IHardware cpu = SensorLookup.First(hardware, HardwareType.Cpu);
-        _cpuTemp = SensorLookup.FindOrFirst(cpu, SensorType.Temperature, "Package", "Tctl", "Core Max");
+        _cpuTemp = SensorLookup.CpuTemperature(cpu);
         _cpuLoad = SensorLookup.FindOrFirst(cpu, SensorType.Load, "Total");
         _cpuPower = SensorLookup.FindOrFirst(cpu, SensorType.Power, "Package");
         _cpuClocks.Clear();
@@ -106,7 +106,7 @@ public sealed class OverlayTelemetry
         {
             foreach (ISensor s in cpu.Sensors)
             {
-                if (s.SensorType == SensorType.Clock && !s.Name.Contains("Bus"))
+                if (s.SensorType == SensorType.Clock && !SensorLookup.IsBusClock(s))
                     _cpuClocks.Add(s);
             }
         }
@@ -114,10 +114,10 @@ public sealed class OverlayTelemetry
         // Only the primary GPU feeds the GPU readings: with a discrete card plus an integrated one, reading
         // every GPU made the idle integrated GPU overwrite the values of the card actually rendering the game.
         IHardware gpu = SensorLookup.PrimaryGpu(hardware);
-        _gpuTemp = SensorLookup.FindOrFirst(gpu, SensorType.Temperature, "Core");
-        _gpuLoad = SensorLookup.FindOrFirst(gpu, SensorType.Load, "Core", "D3D 3D");
+        _gpuTemp = SensorLookup.GpuCoreTemperature(gpu);
+        _gpuLoad = SensorLookup.GpuCoreLoad(gpu);
         _gpuPower = SensorLookup.FindOrFirst(gpu, SensorType.Power, "Package", "GPU");
-        _gpuClock = SensorLookup.Find(gpu, SensorType.Clock, "Core");
+        _gpuClock = SensorLookup.GpuCoreClock(gpu);
         _gpuFan = SensorLookup.FindOrFirst(gpu, SensorType.Fan);
         _gpuFanControl = SensorLookup.FindOrFirst(gpu, SensorType.Control);
         _vramUsed = SensorLookup.Find(gpu, SensorType.Data, "Memory Used");

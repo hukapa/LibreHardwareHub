@@ -16,6 +16,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 public sealed class GpuBentoCard : BentoCardBase
 {
     private float? _coreTemp;
+    private string _tempLabel = "Temp. Core";
     private float? _hotSpotTemp;
     private float? _coreLoad;
     private float? _power;
@@ -43,11 +44,14 @@ public sealed class GpuBentoCard : BentoCardBase
         Title = gpu.Name;
         Icon = FluentIcons.ForHardware(gpu.HardwareType);
 
-        _coreTemp = SensorLookup.FindOrFirst(gpu, SensorType.Temperature, "Core")?.Value;
-        _hotSpotTemp = SensorLookup.Find(gpu, SensorType.Temperature, "Hot Spot")?.Value;
-        _coreLoad = SensorLookup.FindOrFirst(gpu, SensorType.Load, "Core", "D3D 3D")?.Value;
+        ISensor temperature = SensorLookup.GpuCoreTemperature(gpu);
+        _coreTemp = temperature?.Value;
+        // When the GPU has no core sensor the caption names the sensor that is really shown.
+        _tempLabel = temperature == null || SensorLookup.NameContains(temperature, "Core") ? "Temp. Core" : temperature.Name;
+        _hotSpotTemp = SensorLookup.GpuHotSpotTemperature(gpu)?.Value;
+        _coreLoad = SensorLookup.GpuCoreLoad(gpu)?.Value;
         _power = SensorLookup.FindOrFirst(gpu, SensorType.Power, "Package", "GPU")?.Value;
-        _coreClock = SensorLookup.Find(gpu, SensorType.Clock, "Core")?.Value;
+        _coreClock = SensorLookup.GpuCoreClock(gpu)?.Value;
         _fanRpm = SensorLookup.FindOrFirst(gpu, SensorType.Fan)?.Value;
         _fanPercent = SensorLookup.FindOrFirst(gpu, SensorType.Control)?.Value;
 
@@ -66,10 +70,11 @@ public sealed class GpuBentoCard : BentoCardBase
     protected override void DrawSummary(Graphics g, Theme theme, Rectangle area)
     {
         string temp = _coreTemp?.ToString("F1");
-        if (temp != null && _hotSpotTemp.HasValue)
+        // The hot spot is shown next to the core temperature, never instead of it.
+        if (temp != null && _hotSpotTemp.HasValue && _hotSpotTemp != _coreTemp)
             temp += $" (HS {_hotSpotTemp.Value:F0})";
 
-        DrawKpiBox(g, KpiTile(area, 0), "Temp. Core", temp, "°C", _coreTemp / 100f, StateColor(theme, _coreTemp, 70f, 83f), theme);
+        DrawKpiBox(g, KpiTile(area, 0), _tempLabel, temp, "°C", _coreTemp / 100f, StateColor(theme, _coreTemp, 70f, 83f), theme);
         DrawKpiBox(g, KpiTile(area, 1), "Carga Core", _coreLoad?.ToString("F1"), "%", _coreLoad / 100f, null, theme);
         DrawKpiBox(g, KpiTile(area, 2), "Consumo GPU", _power?.ToString("F1"), "W", null, null, theme);
         DrawKpiBox(g, KpiTile(area, 3), "Clock GPU", _coreClock?.ToString("F0"), "MHz", null, null, theme);

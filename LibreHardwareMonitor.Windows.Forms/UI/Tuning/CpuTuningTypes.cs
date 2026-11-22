@@ -124,4 +124,11 @@ public sealed class CpuTuningTelemetry
     public float? TotalLoadPercent { get; set; }
 
     public float? VoltageV { get; set; }
+
+    // Names of the sensors behind the readings, so the page captions what it really shows.
+    public string TemperatureSource { get; set; }
+
+    public string PowerSource { get; set; }
+
+    public string VoltageSource { get; set; }
 }

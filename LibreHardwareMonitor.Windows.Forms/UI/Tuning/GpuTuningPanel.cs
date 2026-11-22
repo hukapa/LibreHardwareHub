@@ -528,11 +528,11 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         if (t.CoreClockMhz is > 0f)
         {
             float clock = t.CoreClockMhz.Value;
-            _coreClockCard.SetMetric("Frequência do núcleo", $"{clock:F0}", "MHz", "GPU Core", MetricCardSeverity.Normal, clock / 2500f);
+            _coreClockCard.SetMetric("Frequência do núcleo", $"{clock:F0}", "MHz", Caption(t.CoreClockSource, "GPU Core"), MetricCardSeverity.Normal, clock / 2500f);
         }
         else
         {
-            _coreClockCard.SetMetric("Frequência do núcleo", "-", "MHz", "GPU Core");
+            _coreClockCard.SetMetric("Frequência do núcleo", "-", "MHz", Caption(t.CoreClockSource, "GPU Core"));
         }
 
         if (t.MemoryClockMhz is > 0f)
@@ -549,11 +549,11 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         {
             float temp = t.TemperatureC.Value;
             MetricCardSeverity sev = temp >= 83f ? MetricCardSeverity.Hot : (temp >= 72f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal);
-            _tempCard.SetMetric("Temperatura", $"{temp:F0}", "°C", "GPU Core", sev, temp / 100f);
+            _tempCard.SetMetric("Temperatura", $"{temp:F0}", "°C", Caption(t.TemperatureSource, "GPU Core"), sev, temp / 100f);
         }
         else
         {
-            _tempCard.SetMetric("Temperatura", "-", "°C", "GPU Core");
+            _tempCard.SetMetric("Temperatura", "-", "°C", Caption(t.TemperatureSource, "GPU Core"));
         }
 
         if (t.PowerWatts is > 0f)
@@ -574,13 +574,16 @@ public sealed class GpuTuningPanel : UserControl, IThemedControl
         if (t.LoadPercent.HasValue)
         {
             float load = t.LoadPercent.Value;
-            _loadCard.SetMetric("Carga", $"{load:F0}", "%", "GPU Core", load > 85f ? MetricCardSeverity.Hot : MetricCardSeverity.Normal, load / 100f);
+            _loadCard.SetMetric("Carga", $"{load:F0}", "%", Caption(t.LoadSource, "GPU Core"), load > 85f ? MetricCardSeverity.Hot : MetricCardSeverity.Normal, load / 100f);
         }
         else
         {
-            _loadCard.SetMetric("Carga", "-", "%", "GPU Core");
+            _loadCard.SetMetric("Carga", "-", "%", Caption(t.LoadSource, "GPU Core"));
         }
     }
+
+    // Caption of a card: the name of the sensor really read, or the default when there is none yet.
+    private static string Caption(string source, string fallback) => string.IsNullOrEmpty(source) ? fallback : source;
 
     private static string FormatSigned(int value) => value > 0 ? $"+{value}" : value.ToString();
 

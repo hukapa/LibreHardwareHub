@@ -62,6 +62,12 @@ public sealed class FanControlEngine
 
     public bool HasEmergencyAlert { get { lock (_sync) return _channels.Any(c => c.InEmergencyOverride); } }
 
+    /// <summary>Name of the sensor behind <see cref="LastCpuTemp" /> (for captions); null when the CPU has none.</summary>
+    public string CpuTempSensorName => _primaryCpuTempSensor?.Name;
+
+    /// <summary>Name of the sensor behind <see cref="LastGpuTemp" /> (for captions); null when there is no GPU sensor.</summary>
+    public string GpuTempSensorName => _primaryGpuTempSensor?.Name;
+
     public float LastCpuTemp { get; private set; } = 40.0f;
 
     public float LastGpuTemp { get; private set; } = 40.0f;
@@ -221,23 +227,6 @@ public sealed class FanControlEngine
                     else if (sensor.SensorType == SensorType.Temperature)
                     {
                         _tempSensorsById[sensor.Identifier.ToString()] = sensor;
-
-                        if (hardware.HardwareType == HardwareType.Cpu)
-                        {
-                            if (_primaryCpuTempSensor == null)
-                                _primaryCpuTempSensor = sensor;
-                            else if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                     sensor.Name.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0)
-                                _primaryCpuTempSensor = sensor;
-                        }
-                        else if (hardware.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
-                        {
-                            if (_primaryGpuTempSensor == null)
-                                _primaryGpuTempSensor = sensor;
-                            else if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                     sensor.Name.IndexOf("GPU", StringComparison.OrdinalIgnoreCase) >= 0)
-                                _primaryGpuTempSensor = sensor;
-                        }
                     }
                 }
 
@@ -247,6 +236,12 @@ public sealed class FanControlEngine
 
             foreach (IHardware hw in _computer.Hardware)
                 Collect(hw);
+
+            // The CPU and GPU temperatures that drive the curves and the emergency come from the one shared rule
+            // (SensorLookup): Package/Tctl/Tdie for the CPU and the GPU Core for the primary GPU. The old rule let the
+            // last sensor whose name contained "GPU" win, which on NVIDIA/AMD cards was the Hot Spot.
+            _primaryCpuTempSensor = SensorLookup.CpuTemperature(SensorLookup.First(_computer.Hardware, HardwareType.Cpu));
+            _primaryGpuTempSensor = SensorLookup.GpuCoreTemperature(SensorLookup.PrimaryGpu(_computer.Hardware));
 
             // A newly found sensor starts "fresh" so it is not reported lost before its first reading.
             long now = Environment.TickCount64;

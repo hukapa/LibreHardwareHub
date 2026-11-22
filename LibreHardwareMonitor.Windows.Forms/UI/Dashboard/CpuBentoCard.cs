@@ -20,6 +20,7 @@ public sealed class CpuBentoCard : BentoCardBase
 
     private readonly List<float> _coreLoads = new();
     private float? _packageTemp;
+    private string _tempLabel = "Temp. Package";
     private float? _totalLoad;
     private float? _packagePower;
     private float? _peakClock;
@@ -47,7 +48,10 @@ public sealed class CpuBentoCard : BentoCardBase
             return;
 
         Title = cpu.Name;
-        _packageTemp = SensorLookup.FindOrFirst(cpu, SensorType.Temperature, "Package", "Tctl", "Core Max")?.Value;
+        ISensor temperature = SensorLookup.CpuTemperature(cpu);
+        _packageTemp = temperature?.Value;
+        // A fallback sensor (no Package/Tctl/Tdie/Core Max on this CPU) is named instead of being called "Package".
+        _tempLabel = temperature == null || SensorLookup.NameContains(temperature, "Package", "Tctl", "Tdie") ? "Temp. Package" : temperature.Name;
         _totalLoad = SensorLookup.Find(cpu, SensorType.Load, "Total")?.Value;
         _packagePower = SensorLookup.FindOrFirst(cpu, SensorType.Power, "Package")?.Value;
 
@@ -57,7 +61,7 @@ public sealed class CpuBentoCard : BentoCardBase
         {
             if (s.SensorType == SensorType.Load && s.Name.StartsWith(CorePrefix))
                 _coreLoads.Add(s.Value.GetValueOrDefault());
-            else if (s.SensorType == SensorType.Clock && !s.Name.Contains("Bus") && s.Value > _peakClock.GetValueOrDefault())
+            else if (s.SensorType == SensorType.Clock && !SensorLookup.IsBusClock(s) && s.Value > _peakClock.GetValueOrDefault())
                 _peakClock = s.Value;
         }
 
@@ -71,7 +75,7 @@ public sealed class CpuBentoCard : BentoCardBase
     protected override void DrawSummary(Graphics g, Theme theme, Rectangle area)
     {
         Color? tempColor = StateColor(theme, _packageTemp, 70f, 85f);
-        DrawKpiBox(g, KpiTile(area, 0), "Temp. Package", _packageTemp?.ToString("F1"), "°C", _packageTemp / 100f, tempColor, theme);
+        DrawKpiBox(g, KpiTile(area, 0), _tempLabel,_packageTemp?.ToString("F1"), "°C", _packageTemp / 100f, tempColor, theme);
         DrawKpiBox(g, KpiTile(area, 1), "Carga Total", _totalLoad?.ToString("F1"), "%", _totalLoad / 100f, null, theme);
         DrawKpiBox(g, KpiTile(area, 2), "Consumo Package", _packagePower?.ToString("F1"), "W", null, null, theme);
         DrawKpiBox(g, KpiTile(area, 3), "Clock Pico", _peakClock?.ToString("F0"), "MHz", null, null, theme);

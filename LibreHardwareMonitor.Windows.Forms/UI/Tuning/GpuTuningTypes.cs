@@ -100,4 +100,11 @@ public sealed class GpuTuningTelemetry
     public float? PowerPercent { get; set; }
 
     public float? LoadPercent { get; set; }
+
+    // Names of the sensors behind the readings, so the page captions what it really shows.
+    public string CoreClockSource { get; set; }
+
+    public string TemperatureSource { get; set; }
+
+    public string LoadSource { get; set; }
 }

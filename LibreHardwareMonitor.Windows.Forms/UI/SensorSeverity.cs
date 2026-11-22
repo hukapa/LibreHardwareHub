@@ -52,17 +52,18 @@ public static class SensorSeverity
 
     private static SeverityLevel ClassifyTemperature(string name, float temp)
     {
-        // CPU e GPU operam normalmente sob carga ate 78-82 °C; alerta térmico real apenas > 85 °C / 90 °C
+        // CPU e GPU operam normalmente sob carga ate 78-82 °C; alerta térmico real apenas > 85 °C / 90 °C.
+        // O GPU e verificado primeiro: "GPU Core" tambem contem "Core" e nao pode receber os limites do CPU.
+        if (name.IndexOf("GPU", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return temp >= 85f ? SeverityLevel.Hot : temp >= 78f ? SeverityLevel.Warm : SeverityLevel.Normal;
+        }
+
         if (name.IndexOf("CPU", StringComparison.OrdinalIgnoreCase) >= 0 ||
             name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ||
             name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             return temp >= 90f ? SeverityLevel.Hot : temp >= 80f ? SeverityLevel.Warm : SeverityLevel.Normal;
-        }
-
-        if (name.IndexOf("GPU", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
-            return temp >= 85f ? SeverityLevel.Hot : temp >= 78f ? SeverityLevel.Warm : SeverityLevel.Normal;
         }
 
         // Motherboard, discos SSD, VRM, ambiente

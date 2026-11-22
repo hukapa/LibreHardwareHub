@@ -403,19 +403,40 @@ public sealed class FanControlPanel : UserControl, IThemedControl
     {
         IReadOnlyList<FanChannelRuntime> channels = _engine?.Channels ?? Array.Empty<FanChannelRuntime>();
         int total = channels.Count;
-        int managed = channels.Count(c => c.IsManaged);
+        int managed = 0;
+        int inUse = 0;
+        float inUseSum = 0f;
+        float managedSum = 0f;
+        for (int i = 0; i < channels.Count; i++)
+        {
+            FanChannelRuntime channel = channels[i];
+            if (channel.IsManaged)
+            {
+                managed++;
+                managedSum += channel.Control.ControlMode == ControlMode.Software ? channel.LastAppliedPwm : (channel.Control.Sensor?.Value ?? 0f);
+            }
+
+            if (channel.Config.Role != FanChannelRole.NotConnected)
+            {
+                inUse++;
+                inUseSum += channel.Control.ControlMode == ControlMode.Software ? channel.LastAppliedPwm : (channel.Control.Sensor?.Value ?? 0f);
+            }
+        }
+
         _channelsCard.SetMetric("Canais", total.ToString(), "", total == 0 ? "Nenhum controlador" : $"{managed} sob controlo da app");
 
-        List<FanChannelRuntime> inUse = channels.Where(c => c.Config.Role != FanChannelRole.NotConnected).ToList();
-        if (inUse.Count == 0)
+        if (inUse == 0)
         {
             _avgPwmCard.SetMetric("Velocidade média", "-", "%", "PWM dos canais em uso");
             return;
         }
 
-        float avg = inUse.Average(c => c.Control.ControlMode == ControlMode.Software ? c.LastAppliedPwm : (c.Control.Sensor?.Value ?? 0f));
+        // With channels under the app's control the average is theirs; otherwise it is what the BIOS currently drives,
+        // and the caption says so instead of claiming control the app does not have.
+        bool appControl = managed > 0;
+        float avg = appControl ? managedSum / managed : inUseSum / inUse;
         MetricCardSeverity sev = avg >= 85f ? MetricCardSeverity.Warm : MetricCardSeverity.Normal;
-        _avgPwmCard.SetMetric("Velocidade média", $"{avg:F0}", "%", "PWM dos canais em uso", sev, avg / 100f);
+        _avgPwmCard.SetMetric("Velocidade média", $"{avg:F0}", "%", appControl ? "PWM dos canais sob controlo" : "PWM atual (controlo BIOS)", sev, avg / 100f);
     }
 
     public void UpdateTelemetry()
@@ -423,13 +444,15 @@ public sealed class FanControlPanel : UserControl, IThemedControl
         if (_engine == null || !Visible)
             return;
 
-        float cpu = ReadTemperature(_engine.LastCpuTemp, h => h.HardwareType == HardwareType.Cpu, ref _lastCpuTemp);
-        SetTemperature(_cpuTempCard, "Temperatura CPU", "CPU Package", cpu, 75f, 85f);
+        // Both come from the sensors the engine itself drives the fans with (SensorLookup rules); the caption is the
+        // real sensor name, so "GPU Core" is only ever written for the GPU Core sensor.
+        ISensor cpuFallback = _engine.LastCpuTemp > 0f || _engine.Computer == null ? null : SensorLookup.CpuTemperature(SensorLookup.First(_engine.Computer.Hardware, HardwareType.Cpu));
+        float cpu = ReadTemperature(_engine.LastCpuTemp, cpuFallback, ref _lastCpuTemp);
+        SetTemperature(_cpuTempCard, "Temperatura CPU", CaptionFor(_engine.CpuTempSensorName, cpuFallback, "CPU Package"), cpu, 75f, 85f);
 
-        float gpu = ReadTemperature(_engine.LastGpuTemp,
-                                    h => h.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel,
-                                    ref _lastGpuTemp);
-        SetTemperature(_gpuTempCard, "Temperatura GPU", "GPU Core", gpu, 72f, 83f);
+        ISensor gpuFallback = _engine.LastGpuTemp > 0f || _engine.Computer == null ? null : SensorLookup.GpuCoreTemperature(SensorLookup.PrimaryGpu(_engine.Computer.Hardware));
+        float gpu = ReadTemperature(_engine.LastGpuTemp, gpuFallback, ref _lastGpuTemp);
+        SetTemperature(_gpuTempCard, "Temperatura GPU", CaptionFor(_engine.GpuTempSensorName, gpuFallback, "GPU Core"), gpu, 72f, 83f);
 
         UpdateChannelMetrics();
         UpdateAlerts();
@@ -437,23 +460,22 @@ public sealed class FanControlPanel : UserControl, IThemedControl
             card.UpdateTelemetry();
     }
 
-    /// <summary>Uses the engine reading, falls back to the first temperature sensor of the hardware, then to the last good value.</summary>
-    private float ReadTemperature(float engineValue, Func<IHardware, bool> match, ref float last)
+    /// <summary>Uses the engine reading, falls back to the representative sensor of the hardware, then to the last good value.</summary>
+    private static float ReadTemperature(float engineValue, ISensor fallback, ref float last)
     {
         float value = engineValue;
-        if (value <= 0f && _engine.Computer != null)
-        {
-            IHardware hw = _engine.Computer.Hardware.FirstOrDefault(match);
-            ISensor sensor = hw?.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
-            if (sensor?.Value != null)
-                value = sensor.Value.Value;
-        }
+        if (value <= 0f && fallback?.Value != null)
+            value = fallback.Value.Value;
 
         if (value > 0f)
             last = value;
 
         return value > 0f ? value : last;
     }
+
+    // Name of the sensor actually read: the engine's, else the fallback's, else the default caption.
+    private static string CaptionFor(string engineSensor, ISensor fallback, string defaultCaption) =>
+        fallback != null ? fallback.Name : string.IsNullOrEmpty(engineSensor) ? defaultCaption : engineSensor;
 
     private static void SetTemperature(FluentMetricCard card, string caption, string detail, float value, float warm, float hot)
     {

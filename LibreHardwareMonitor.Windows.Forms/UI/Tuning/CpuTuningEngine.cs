@@ -357,6 +357,11 @@ public sealed class CpuTuningEngine : IDisposable
         // O ciclo do BackgroundUpdater encarrega-se de atualizar o hardware com cadencia estavel.
         ReadSensorsRecursive(_cpuHardware, telem);
 
+        // Same selector as the cards and the overlay: Package/Tctl/Tdie/Core Max, never "Distance to TjMax".
+        ISensor temperature = SensorLookup.CpuTemperature(_cpuHardware);
+        telem.PackageTemperatureC = temperature?.Value;
+        telem.TemperatureSource = temperature?.Name;
+
         // Fallback para voltagem VCore da Motherboard / Super I/O caso a CPU nao exponha sensor de tensao direto
         if (telem.VoltageV == null && _computer != null)
         {
@@ -411,26 +416,21 @@ public sealed class CpuTuningEngine : IDisposable
 
             switch (sensor.SensorType)
             {
-                case SensorType.Temperature:
-                    if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0)
-                        telem.PackageTemperatureC = val;
-                    else if (sensor.Name.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0 && telem.PackageTemperatureC == null)
-                        telem.PackageTemperatureC = val;
-                    else if (sensor.Name.IndexOf("Tctl", StringComparison.OrdinalIgnoreCase) >= 0 && telem.PackageTemperatureC == null)
-                        telem.PackageTemperatureC = val;
-                    else if (telem.PackageTemperatureC == null && val > 0f)
-                        telem.PackageTemperatureC = val;
-                    break;
-
                 case SensorType.Power:
                     if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
                         telem.PackagePowerWatts = val;
+                        telem.PowerSource = sensor.Name;
+                    }
                     else if (telem.PackagePowerWatts == null && val > 0f)
+                    {
                         telem.PackagePowerWatts = val;
+                        telem.PowerSource = sensor.Name;
+                    }
                     break;
 
                 case SensorType.Clock:
-                    if (sensor.Name.IndexOf("Bus", StringComparison.OrdinalIgnoreCase) < 0)
+                    if (!SensorLookup.IsBusClock(sensor))
                     {
                         if (val > (telem.CoreClockMhz ?? 0f))
                             telem.CoreClockMhz = val;
@@ -446,9 +446,15 @@ public sealed class CpuTuningEngine : IDisposable
 
                 case SensorType.Voltage:
                     if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
                         telem.VoltageV = val;
+                        telem.VoltageSource = sensor.Name;
+                    }
                     else if (telem.VoltageV == null && val > 0f)
+                    {
                         telem.VoltageV = val;
+                        telem.VoltageSource = sensor.Name;
+                    }
                     break;
             }
         }
@@ -467,6 +473,7 @@ public sealed class CpuTuningEngine : IDisposable
                     sensor.Name.IndexOf("CPU", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     telem.VoltageV = sensor.Value.Value;
+                    telem.VoltageSource = sensor.Name;
                     return;
                 }
             }

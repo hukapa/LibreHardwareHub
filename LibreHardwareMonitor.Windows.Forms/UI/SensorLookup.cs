@@ -50,7 +50,7 @@ public static class SensorLookup
                     continue;
 
                 // DIMM devices only carry SPD timings/temperatures; the usage sensors live on the "Total Memory" device.
-                if (Find(hw, SensorType.Data, "Memory Used") != null && !Contains(hw.Name, "Virtual"))
+                if (Find(hw, SensorType.Data, "Memory Used") != null && !IsVirtualMemory(hw))
                     return hw;
 
                 fallback ??= hw;
@@ -122,6 +122,121 @@ public static class SensorLookup
     }
 
     private static bool Contains(string text, string keyword) => text != null && text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    // ---- Representative sensors: the one place that decides which sensor stands for "the CPU temperature" and so on ----
+    // Every card, summary, tuning page, fan page and the overlay asks here, so they can never disagree (a GPU temperature
+    // card that read "Hot Spot" while captioned "GPU Core" was exactly that disagreement).
+
+    private static readonly string[] CpuTemperatureKeywords = { "Package", "Tctl/Tdie", "Tdie", "Tctl", "Core Max", "Core Average" };
+    private static readonly string[] CpuTemperatureExcluded = { "Distance to TjMax", "TjMax" };
+    private static readonly string[] GpuTemperatureKeywords = { "GPU Core", "Core" };
+    private static readonly string[] GpuTemperatureExcluded = { "Hot Spot", "Hotspot", "Memory", "Junction", "VR", "Limit" };
+    private static readonly string[] GpuHotSpotKeywords = { "Hot Spot", "Hotspot" };
+    private static readonly string[] GpuLoadKeywords = { "GPU Core", "Core", "D3D 3D" };
+    private static readonly string[] GpuLoadExcluded = { "Memory", "Video", "Bus", "Copy", "Decode", "Encode", "Controller" };
+    private static readonly string[] GpuClockKeywords = { "GPU Core", "Core" };
+    private static readonly string[] GpuClockExcluded = { "Memory", "Shader" };
+
+    /// <summary>CPU package temperature: Package, Tctl/Tdie, Core Max or Core Average; never a "Distance to TjMax" reading.</summary>
+    public static ISensor CpuTemperature(IHardware cpu) => FindPreferred(cpu, SensorType.Temperature, CpuTemperatureKeywords, CpuTemperatureExcluded);
+
+    /// <summary>GPU core temperature. "Hot Spot", memory, junction, VR and limit sensors are only used when nothing else exists.</summary>
+    public static ISensor GpuCoreTemperature(IHardware gpu) => FindPreferred(gpu, SensorType.Temperature, GpuTemperatureKeywords, GpuTemperatureExcluded);
+
+    /// <summary>GPU hot spot temperature; null when the GPU has none (it is never a stand-in for the core temperature).</summary>
+    public static ISensor GpuHotSpotTemperature(IHardware gpu) => Find(gpu, SensorType.Temperature, GpuHotSpotKeywords);
+
+    /// <summary>GPU core load, not the load of a secondary engine (memory controller, video, bus, copy).</summary>
+    public static ISensor GpuCoreLoad(IHardware gpu) => FindPreferred(gpu, SensorType.Load, GpuLoadKeywords, GpuLoadExcluded);
+
+    /// <summary>GPU core clock, not the memory or shader clock.</summary>
+    public static ISensor GpuCoreClock(IHardware gpu) => FindPreferred(gpu, SensorType.Clock, GpuClockKeywords, GpuClockExcluded);
+
+    /// <summary>The CPU "Bus Speed" (100 MHz) is a clock sensor too, but never a core clock.</summary>
+    public static bool IsBusClock(ISensor sensor) => sensor != null && Contains(sensor.Name, "Bus");
+
+    /// <summary>Highest CPU core clock, ignoring the bus speed.</summary>
+    public static float? CpuPeakClock(IHardware cpu)
+    {
+        float? peak = null;
+        if (cpu == null)
+            return null;
+
+        foreach (ISensor s in cpu.Sensors)
+        {
+            if (s.SensorType == SensorType.Clock && !IsBusClock(s) && s.Value > peak.GetValueOrDefault())
+                peak = s.Value;
+        }
+
+        return peak;
+    }
+
+    /// <summary>The "Virtual Memory" device (page file), which must never be mixed up with the physical memory.</summary>
+    public static bool IsVirtualMemory(IHardware hardware) => hardware != null && Contains(hardware.Name, "Virtual");
+
+    /// <summary>True when the sensor name contains one of the keywords.</summary>
+    public static bool NameContains(ISensor sensor, params string[] keywords)
+    {
+        if (sensor == null)
+            return false;
+
+        foreach (string keyword in keywords)
+        {
+            if (Contains(sensor.Name, keyword))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Sensor of <paramref name="type" /> matching the keywords in priority order while skipping the excluded names; then any
+    /// non-excluded sensor of the type; and only as a last resort an excluded one (so a GPU that exposes nothing but a
+    /// "Hot Spot" still shows a value, and the caller can caption it with <see cref="ISensor.Name" />).
+    /// </summary>
+    private static ISensor FindPreferred(IHardware hardware, SensorType type, string[] keywords, string[] excluded)
+    {
+        if (hardware == null)
+            return null;
+
+        foreach (string keyword in keywords)
+        {
+            ISensor match = FindFiltered(hardware, type, keyword, excluded);
+            if (match != null)
+                return match;
+        }
+
+        return FindFiltered(hardware, type, null, excluded) ?? FindOne(hardware, type, null);
+    }
+
+    private static ISensor FindFiltered(IHardware hardware, SensorType type, string keyword, string[] excluded)
+    {
+        foreach (ISensor s in hardware.Sensors)
+        {
+            if (s.SensorType == type && (keyword == null || Contains(s.Name, keyword)) && !IsExcluded(s.Name, excluded))
+                return s;
+        }
+
+        foreach (IHardware sub in hardware.SubHardware)
+        {
+            ISensor match = FindFiltered(sub, type, keyword, excluded);
+            if (match != null)
+                return match;
+        }
+
+        return null;
+    }
+
+    private static bool IsExcluded(string name, string[] excluded)
+    {
+        foreach (string word in excluded)
+        {
+            if (Contains(name, word))
+                return true;
+        }
+
+        return false;
+    }
 
     /// <summary>Normalizes a memory/data reading to gigabytes whatever unit the driver reports it in.</summary>
     public static float? ToGigabytes(float? value)

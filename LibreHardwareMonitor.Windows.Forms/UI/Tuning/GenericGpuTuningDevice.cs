@@ -61,40 +61,24 @@ public class GenericGpuTuningDevice : IGpuTuningDevice
         if (_hardware == null)
             return telemetry;
 
+        // Core clock, temperature and load come from the same selectors as the cards and the overlay (SensorLookup):
+        // the core temperature is never the hot spot and the load never a secondary engine.
+        ISensor coreClock = SensorLookup.GpuCoreClock(_hardware);
+        ISensor temperature = SensorLookup.GpuCoreTemperature(_hardware);
+        ISensor load = SensorLookup.GpuCoreLoad(_hardware);
+        telemetry.CoreClockMhz = coreClock?.Value;
+        telemetry.CoreClockSource = coreClock?.Name;
+        telemetry.TemperatureC = temperature?.Value;
+        telemetry.TemperatureSource = temperature?.Name;
+        telemetry.LoadPercent = load?.Value;
+        telemetry.LoadSource = load?.Name;
+        telemetry.MemoryClockMhz = SensorLookup.Find(_hardware, SensorType.Clock, "GPU Memory", "Memory")?.Value;
+
         foreach (ISensor sensor in _hardware.Sensors)
         {
-            if (sensor.Value == null)
-                continue;
-
-            float val = sensor.Value.Value;
-
-            switch (sensor.SensorType)
-            {
-                case SensorType.Clock:
-                    if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 || telemetry.CoreClockMhz == null)
-                        telemetry.CoreClockMhz = val;
-                    else if (sensor.Name.IndexOf("Memory", StringComparison.OrdinalIgnoreCase) >= 0)
-                        telemetry.MemoryClockMhz = val;
-                    break;
-
-                case SensorType.Temperature:
-                    if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 || telemetry.TemperatureC == null)
-                        telemetry.TemperatureC = val;
-                    break;
-
-                case SensorType.Power:
-                    telemetry.PowerWatts = val;
-                    break;
-
-                case SensorType.Load:
-                    if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        sensor.Name.IndexOf("Total", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        telemetry.LoadPercent == null)
-                    {
-                        telemetry.LoadPercent = val;
-                    }
-                    break;
-            }
+            // The page shows the last power reading of the device, as before.
+            if (sensor.SensorType == SensorType.Power && sensor.Value != null)
+                telemetry.PowerWatts = sensor.Value.Value;
         }
 
         if (telemetry.CoreClockMhz.HasValue && telemetry.CoreClockMhz.Value > 0f)
