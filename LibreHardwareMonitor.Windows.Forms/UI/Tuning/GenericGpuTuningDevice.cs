@@ -4,7 +4,6 @@
 // All Rights Reserved.
 
 using System;
-using System.Linq;
 using LibreHardwareMonitor.Hardware;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Tuning;

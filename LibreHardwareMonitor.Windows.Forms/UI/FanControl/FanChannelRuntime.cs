@@ -5,7 +5,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using LibreHardwareMonitor.Hardware;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.FanControl;

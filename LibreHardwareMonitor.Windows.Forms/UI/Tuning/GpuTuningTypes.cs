@@ -3,7 +3,6 @@
 // Copyright (C) LibreHardwareMonitor and Contributors.
 // All Rights Reserved.
 
-using System;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Tuning;
 
