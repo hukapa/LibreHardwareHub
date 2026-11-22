@@ -20,7 +20,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Overlay;
 /// </summary>
 public sealed partial class OverlayEditorPanel
 {
-    private StackPanel _metricsList;
+    private OverlayMetricList _metricsList;
     private FluentSectionCard _metricsCard;
     private ContextMenuStrip _sensorMenu;
     private OverlaySectionCaption _activeCaption;
@@ -47,7 +47,13 @@ public sealed partial class OverlayEditorPanel
         header.Controls.Add(_activeCaption);
         header.Controls.Add(add);
 
-        _metricsList = new StackPanel { Gap = 4, OnSurface = true };
+        // A little padding above and below: the drop guide of a drag also has to fit before the first and after the last row.
+        _metricsList = new OverlayMetricList { Gap = 4, OnSurface = true, Padding = new Padding(0, LogicalToDeviceUnits(3), 0, LogicalToDeviceUnits(3)) };
+        _metricsList.OrderChanged += (item, index) =>
+        {
+            if (_config.MoveActiveMetric(item, index))
+                MetricsChanged();
+        };
         _emptyNote = new NoteLabel("Nenhuma leitura ativa. Clique num sensor abaixo para adicionar ao HUD.");
         _availableCaption = new OverlaySectionCaption { Divider = true };
         _availableChips = new OverlayChipFlow();

@@ -1,4 +1,4 @@
-﻿// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 // If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // Copyright (C) LibreHardwareMonitor and Contributors.
 // All Rights Reserved.
@@ -84,6 +84,7 @@ public sealed partial class OverlayEditorPanel : UserControl, IThemedControl
         _page.Controls.Add(BuildPositionCard());
 
         _host = new ScrollHost(_page) { Dock = DockStyle.Fill };
+        _metricsList.ScrollOwner = _host; // dragging a reading near the top or bottom edge scrolls the page
         Controls.Add(_host);
 
         RebuildMetricsList();

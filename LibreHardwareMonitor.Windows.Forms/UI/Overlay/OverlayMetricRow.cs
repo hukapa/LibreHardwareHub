@@ -41,6 +41,10 @@ public sealed class OverlayMetricRow : Control, IThemedControl
     private bool _hasAuto;
     private bool _hasBar;
     private bool _hasFormat;
+    private Point _gestureStart;
+    private Control _gestureSource;
+    private bool _gesture;
+    private bool _dragging;
     private bool _built; // layout needs every control; setting Height in the constructor already asks for one
 
     public OverlayMetricRow(OverlayMetricItem item, OverlayConfig config, ToolTip toolTip, bool canMoveUp, bool canMoveDown)
@@ -145,6 +149,13 @@ public sealed class OverlayMetricRow : Control, IThemedControl
             child.MouseLeave += (_, _) => UpdateHover();
         }
 
+        // Dragging starts on the grip or on any free space of the row (never on the name or the buttons).
+        _grip.MouseDown += (_, e) => GestureDown(_grip, e);
+        _grip.MouseMove += (_, e) => GestureMove(_grip, e);
+        _grip.MouseUp += (_, e) => GestureUp(e);
+        _grip.MouseCaptureChanged += (_, _) => GestureLost(_grip);
+        MouseCaptureChanged += (_, _) => GestureLost(this);
+
         _built = true;
         Sync();
     }
@@ -161,6 +172,104 @@ public sealed class OverlayMetricRow : Control, IThemedControl
     public event EventHandler<int> MoveRequested;
 
     public event EventHandler HideRequested;
+
+    /// <summary>The mouse moved far enough with the button down: the row is being dragged.</summary>
+    public event EventHandler DragStarted;
+
+    /// <summary>The mouse moved while dragging; the argument is the cursor in screen coordinates.</summary>
+    public event EventHandler<Point> DragMoved;
+
+    /// <summary>The button was released after a drag; the argument is true (a cancelled drag raises nothing).</summary>
+    public event EventHandler<bool> DragEnded;
+
+    /// <summary>True while the row is being dragged (it is drawn with an accent border).</summary>
+    public bool IsDragging => _dragging;
+
+    // ---- Dragging with the native mouse capture of the control (no OLE DoDragDrop, which would block the UI thread) ----
+
+    private void GestureDown(Control source, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+            return;
+
+        _gesture = true;
+        _gestureSource = source;
+        _gestureStart = source.PointToScreen(e.Location);
+    }
+
+    private void GestureMove(Control source, MouseEventArgs e)
+    {
+        if (!_gesture)
+            return;
+
+        Point screen = source.PointToScreen(e.Location);
+        if (!_dragging)
+        {
+            // A small threshold keeps ordinary clicks and slips of the hand from starting a drag.
+            int threshold = LogicalToDeviceUnits(4);
+            if (Math.Abs(screen.X - _gestureStart.X) < threshold && Math.Abs(screen.Y - _gestureStart.Y) < threshold)
+                return;
+
+            _dragging = true;
+            Invalidate();
+            DragStarted?.Invoke(this, EventArgs.Empty);
+        }
+
+        DragMoved?.Invoke(this, screen);
+    }
+
+    private void GestureUp(MouseEventArgs e)
+    {
+        if (!_gesture || e.Button != MouseButtons.Left)
+            return;
+
+        bool wasDragging = _dragging;
+        _gesture = false;
+        _dragging = false;
+        Invalidate();
+        if (wasDragging)
+            DragEnded?.Invoke(this, true);
+    }
+
+    // The capture can be taken away (another window, Alt+Tab): the drag is dropped without moving anything.
+    private void GestureLost(Control source)
+    {
+        if (!_dragging || source != _gestureSource || source.Capture)
+            return;
+
+        CancelGesture();
+        DragEnded?.Invoke(this, false);
+    }
+
+    /// <summary>Drops a drag in progress without raising <see cref="DragEnded" /> (Esc, or the list was rebuilt).</summary>
+    public void CancelGesture()
+    {
+        // The flags go first: releasing the capture raises MouseCaptureChanged, which must find nothing to cancel.
+        _gesture = false;
+        _dragging = false;
+        if (_gestureSource != null)
+            _gestureSource.Capture = false;
+
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        GestureDown(this, e);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        GestureMove(this, e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        GestureUp(e);
+    }
 
     // ---- What each reading supports ----
 
@@ -288,6 +397,16 @@ public sealed class OverlayMetricRow : Control, IThemedControl
             return;
 
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        FluentStyle.FillRounded(g, BackColor, new RectangleF(0, 0, Width, Height), LogicalToDeviceUnits(6));
+        RectangleF bounds = new(0, 0, Width, Height);
+        float radius = LogicalToDeviceUnits(6);
+        if (!_dragging)
+        {
+            FluentStyle.FillRounded(g, BackColor, bounds, radius);
+            return;
+        }
+
+        // The row being dragged: a tint and a thin border in the accent color.
+        FluentStyle.FillRounded(g, FluentStyle.Blend(BackColor, theme.AccentColor, 0.14), bounds, radius);
+        FluentStyle.DrawRounded(g, theme.AccentColor, new RectangleF(0.75f, 0.75f, Width - 1.5f, Height - 1.5f), radius, 1.5f);
     }
 }
