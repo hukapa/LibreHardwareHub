@@ -16,31 +16,56 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             g.Clear(theme.SidebarColor);
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            g.SetClip(new Rectangle(0, TopHeight, Width, Height - TopHeight));
-            for (int i = 0; i < _rows.Count; i++)
+            // The scrolling list is clipped strictly between the top bar and the pinned footer: nothing can be seen
+            // (or clicked) behind them while scrolling.
+            int view = ViewHeight;
+            if (view > 0)
             {
-                Row row = _rows[i];
-                Rectangle bounds = RowBounds(row);
-                if (bounds.Bottom < TopHeight || bounds.Top > Height)
-                    continue;
+                g.SetClip(new Rectangle(0, TopHeight, Width, view));
+                for (int i = 0; i < _rows.Count; i++)
+                {
+                    Row row = _rows[i];
+                    Rectangle bounds = RowBounds(row);
+                    if (bounds.Bottom < TopHeight || bounds.Top > TopHeight + view)
+                        continue;
 
-                if (row.Item == null)
-                    DrawHeader(g, theme, row, bounds, i == _hoverRow);
-                else
-                    DrawItem(g, theme, row.Item, bounds, row.Item == _selected, i == _hoverRow);
+                    if (row.Item == null)
+                        DrawHeader(g, theme, row, bounds, i == _hoverRow);
+                    else
+                        DrawItem(g, theme, row.Item, bounds, row.Item == _selected, i == _hoverRow);
+                }
+
+                g.ResetClip();
             }
 
-            g.ResetClip();
             DrawToggle(g, theme);
+            DrawFooter(g, theme);
 
             // Thin scroll indicator, only while the list overflows.
-            if (MaxScroll > 0)
+            if (MaxScroll > 0 && view > 0)
             {
-                int track = Height - TopHeight - LogicalToDeviceUnits(8);
-                int thumb = Math.Max(LogicalToDeviceUnits(24), track * (Height - TopHeight) / _contentHeight);
+                int track = Math.Max(1, view - LogicalToDeviceUnits(8));
+                int thumb = Math.Max(LogicalToDeviceUnits(24), track * view / _contentHeight);
                 int y = TopHeight + LogicalToDeviceUnits(4) + ((track - thumb) * _scrollOffset / MaxScroll);
                 FluentStyle.FillRounded(g, theme.ScrollbarTrack, new RectangleF(Width - LogicalToDeviceUnits(4), y, LogicalToDeviceUnits(3), thumb), LogicalToDeviceUnits(3) / 2f);
             }
+        }
+
+        /// <summary>The pinned entries (Definicoes): always visible, above them a 1 px hairline.</summary>
+        private void DrawFooter(Graphics g, Theme theme)
+        {
+            if (_footer.Count == 0)
+                return;
+
+            int top = Height - FooterHeight;
+            using (SolidBrush background = new(theme.SidebarColor))
+                g.FillRectangle(background, 0, top, Width, FooterHeight);
+
+            using (Pen line = new(theme.LineColor, 1f))
+                g.DrawLine(line, LogicalToDeviceUnits(6), top, Width - LogicalToDeviceUnits(6), top);
+
+            for (int i = 0; i < _footer.Count; i++)
+                DrawItem(g, theme, _footer[i], FooterItemBounds(i), _footer[i] == _selected, _hoverRow == FooterHit - i);
         }
 
         private void DrawToggle(Graphics g, Theme theme)
@@ -68,17 +93,36 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
                 return;
             }
 
+            // A collapsible caption reacts to the mouse: a subtle rounded wash (6 px radius, like the entries).
+            if (hover)
+                FluentStyle.FillRounded(g, FluentStyle.Blend(theme.SidebarColor, theme.ForegroundColor, theme.IsDark ? 0.05 : 0.035), bounds, LogicalToDeviceUnits(6));
+
             bool collapsed = _collapsed.Contains(row.Section);
-            string text = row.Hidden > 0 ? $"{row.Section.ToUpperInvariant()}  ({row.Hidden})" : row.Section.ToUpperInvariant();
-            Rectangle textBounds = new(bounds.Left + LogicalToDeviceUnits(10), bounds.Top + LogicalToDeviceUnits(4), bounds.Width - LogicalToDeviceUnits(34), bounds.Height - LogicalToDeviceUnits(4));
-            TextRenderer.DrawText(g, text, FluentStyle.UiFontSmallBold, textBounds, hover ? theme.ForegroundColor : theme.MutedForegroundColor,
+            Color tone = hover ? theme.ForegroundColor : theme.MutedForegroundColor;
+
+            // Right edge: chevron, and left of it the number of entries hidden by a collapsed section.
+            int chevronSpace = LogicalToDeviceUnits(30);
+            int countWidth = 0;
+            if (row.HiddenText != null)
+            {
+                countWidth = TextRenderer.MeasureText(row.HiddenText, FluentStyle.UiFontSmall, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width + LogicalToDeviceUnits(4);
+                Rectangle countBounds = new(bounds.Right - chevronSpace - countWidth, bounds.Top, countWidth, bounds.Height);
+                if (countBounds.Width > 0 && countBounds.Height > 0)
+                {
+                    TextRenderer.DrawText(g, row.HiddenText, FluentStyle.UiFontSmall, countBounds, theme.MutedForegroundColor,
+                                          TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                }
+            }
+
+            Rectangle textBounds = new(bounds.Left + LogicalToDeviceUnits(10), bounds.Top, Math.Max(1, bounds.Width - LogicalToDeviceUnits(10) - chevronSpace - countWidth), bounds.Height);
+            TextRenderer.DrawText(g, row.Section.ToUpperInvariant(), FluentStyle.UiFontSmallBold, textBounds, tone,
                                   TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-            // Chevron: right when collapsed, down when open.
+            // Chevron: 1.25 px vector stroke, down when open and pointing right when collapsed.
             float size = LogicalToDeviceUnits(3);
             float cx = bounds.Right - LogicalToDeviceUnits(14);
-            float cy = textBounds.Top + (textBounds.Height / 2f);
-            using Pen pen = new(hover ? theme.ForegroundColor : theme.MutedForegroundColor, 1.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            float cy = bounds.Top + (bounds.Height / 2f);
+            using Pen pen = new(tone, LogicalToDeviceUnits(1) * 1.25f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
             if (collapsed)
                 g.DrawLines(pen, new[] { new PointF(cx - (size / 2), cy - size), new PointF(cx + (size / 2), cy), new PointF(cx - (size / 2), cy + size) });
             else

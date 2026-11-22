@@ -217,7 +217,8 @@ public sealed partial class MainForm
             new SidebarItem("Ajuste de GPU", FluentIcons.ForSensorType(SensorType.Clock), "gpu_tuning", tools),
             new SidebarItem("Overlay HUD", FluentIcons.ForSensorType(SensorType.Level), "overlay_hud", tools),
             new SidebarItem("Saúde dos discos", FluentIcons.ForHardware(HardwareType.Storage), "disk_health", tools),
-            new SidebarItem("Definições", FluentIcons.Settings, "settings", tools)
+            // Pinned to the bottom of the pane (outside the scrolling list), but still the 7th entry for Ctrl+7.
+            new SidebarItem("Definições", FluentIcons.Settings, "settings", footer: true, shortcut: "Ctrl+7")
         };
 
         // Devices grouped by kind, so the many memory modules and network adapters do not bury the main components.

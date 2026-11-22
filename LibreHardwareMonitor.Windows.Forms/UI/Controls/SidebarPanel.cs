@@ -17,6 +17,11 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
         private const int ItemLogicalHeight = 36;
         private const int HeaderLogicalHeight = 30;
         private const int TopLogicalHeight = 44;
+        private const int SectionGapLogical = 6;
+        private const int FooterPaddingLogical = 10;
+
+        // Hit-test result for the pinned footer: FooterHit - index of the footer entry.
+        private const int FooterHit = -100;
 
         // A row is either a section caption (Item == null) or an entry.
         private struct Row
@@ -26,9 +31,11 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             public int Top;
             public int Height;
             public int Hidden;
+            public string HiddenText;
         }
 
         private readonly List<SidebarItem> _items = new();
+        private readonly List<SidebarItem> _footer = new();
         private readonly List<Row> _rows = new();
         private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
         private ToolTip _toolTip;
@@ -124,22 +131,39 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
 
         private int TopHeight => LogicalToDeviceUnits(TopLogicalHeight);
 
+        /// <summary>Height of the pinned footer (its entries plus padding); 0 when no entry is pinned.</summary>
+        private int FooterHeight => _footer.Count == 0 ? 0 : LogicalToDeviceUnits((ItemLogicalHeight * _footer.Count) + FooterPaddingLogical);
+
+        /// <summary>Height of the scrolling area: between the top bar and the footer.</summary>
+        private int ViewHeight => Math.Max(0, Height - TopHeight - FooterHeight);
+
         private void BuildRows()
         {
             _rows.Clear();
+            _footer.Clear();
             int y = 0;
             string section = string.Empty;
             int header = -1;
 
             foreach (SidebarItem item in _items)
             {
+                // Pinned entries live below the scrolling list and never take part in sections.
+                if (item.Footer)
+                {
+                    _footer.Add(item);
+                    continue;
+                }
+
                 if (item.Section != section)
                 {
                     section = item.Section;
                     header = -1;
                     if (section.Length > 0)
                     {
-                        // In compact mode a caption is just a hairline separator.
+                        // Same breathing room above every caption; in compact mode it is just a hairline separator.
+                        if (!_compact && _rows.Count > 0)
+                            y += LogicalToDeviceUnits(SectionGapLogical);
+
                         int height = LogicalToDeviceUnits(_compact ? 13 : HeaderLogicalHeight);
                         header = _rows.Count;
                         _rows.Add(new Row { Section = section, Top = y, Height = height });
@@ -165,6 +189,17 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
                 y += itemHeight;
             }
 
+            // The count of hidden entries of a collapsed section is formatted here, not on every paint.
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                if (_rows[i].Hidden > 0)
+                {
+                    Row caption = _rows[i];
+                    caption.HiddenText = caption.Hidden.ToString();
+                    _rows[i] = caption;
+                }
+            }
+
             _contentHeight = y + LogicalToDeviceUnits(8);
             ClampScroll();
             Invalidate();
@@ -176,9 +211,17 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             return new Rectangle(margin, TopHeight + row.Top - _scrollOffset, Width - (margin * 2), row.Height - LogicalToDeviceUnits(2));
         }
 
+        private Rectangle FooterItemBounds(int index)
+        {
+            int margin = LogicalToDeviceUnits(6);
+            int itemHeight = LogicalToDeviceUnits(ItemLogicalHeight);
+            int top = Height - FooterHeight + LogicalToDeviceUnits(FooterPaddingLogical / 2) + (index * itemHeight);
+            return new Rectangle(margin, top, Width - (margin * 2), itemHeight - LogicalToDeviceUnits(2));
+        }
+
         private Rectangle ToggleBounds => new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), LogicalToDeviceUnits(44), LogicalToDeviceUnits(32));
 
-        private int MaxScroll => Math.Max(0, _contentHeight - (Height - TopHeight));
+        private int MaxScroll => Math.Max(0, _contentHeight - ViewHeight);
 
         private void ClampScroll() => _scrollOffset = Math.Clamp(_scrollOffset, 0, MaxScroll);
 
@@ -189,7 +232,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
                 return;
 
             Row row = _rows[index];
-            int view = Height - TopHeight;
+            int view = ViewHeight;
             if (row.Top < _scrollOffset)
                 _scrollOffset = row.Top;
             else if (row.Top + row.Height > _scrollOffset + view)
@@ -204,11 +247,22 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             if (ToggleBounds.Contains(point))
                 return -2;
 
-            if (point.Y < TopHeight)
+            for (int i = 0; i < _footer.Count; i++)
+            {
+                if (FooterItemBounds(i).Contains(point))
+                    return FooterHit - i;
+            }
+
+            // Rows scrolled behind the top bar or the footer are not clickable.
+            if (point.Y < TopHeight || point.Y >= Height - FooterHeight)
                 return -1;
 
             for (int i = 0; i < _rows.Count; i++)
             {
+                // In the icon-only mode captions are plain separators.
+                if (_compact && _rows[i].Item == null)
+                    continue;
+
                 if (RowBounds(_rows[i]).Contains(point))
                     return i;
             }
@@ -250,6 +304,10 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             {
                 CompactToggleRequested?.Invoke(this, EventArgs.Empty);
             }
+            else if (index <= FooterHit)
+            {
+                Select(_footer[FooterHit - index]);
+            }
             else if (index >= 0 && _rows[index].Item != null)
             {
                 Select(_rows[index].Item);
@@ -279,13 +337,15 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
         {
             base.OnKeyDown(e);
 
-            // Moves through the entries currently listed (collapsed sections are skipped).
+            // Moves through the entries currently listed (collapsed sections are skipped); the pinned entries come last.
             List<SidebarItem> visible = new();
             foreach (Row row in _rows)
             {
                 if (row.Item != null)
                     visible.Add(row.Item);
             }
+
+            visible.AddRange(_footer);
 
             if (visible.Count == 0)
                 return;
@@ -333,17 +393,25 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Controls
             {
                 text = _compact ? "Expandir navegação" : "Compactar navegação";
             }
+            else if (row <= FooterHit)
+            {
+                SidebarItem pinned = _footer[FooterHit - row];
+                text = ItemToolTip(pinned);
+            }
             else if (row >= 0 && _rows[row].Item is { } item)
             {
                 bool truncated = TextRenderer.MeasureText(item.Text, FluentStyle.UiFontSemibold).Width > TextBounds(RowBounds(_rows[row])).Width;
                 if (_compact || truncated)
-                    text = item.Text;
+                    text = ItemToolTip(item);
             }
 
             _toolTip ??= new ToolTip { ShowAlways = true };
             if (_toolTip.GetToolTip(this) != (text ?? string.Empty))
                 _toolTip.SetToolTip(this, text);
         }
+
+        // "Definições (Ctrl+7)": the name, plus the shortcut when the entry has one.
+        private static string ItemToolTip(SidebarItem item) => item.Shortcut.Length > 0 ? $"{item.Text} ({item.Shortcut})" : item.Text;
 
         protected override void Dispose(bool disposing)
         {
