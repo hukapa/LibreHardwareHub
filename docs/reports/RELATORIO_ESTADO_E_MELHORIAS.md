@@ -590,3 +590,17 @@ Efeito a ter presente: as curvas e a emergencia do motor de ventoinhas passam a 
 
 ### 23.3 Estado de compilacao
 `dotnet build LibreHardwareMonitor.sln -c Release -p:Platform=x64`: 0 avisos e 0 erros.
+
+## 24. Fase 29B: FPS, 1% Low e Frametime no Overlay
+
+### 24.1 Medicao por ETW, sem injecao
+As leituras `FPS`, `1% Low` e `Frametime` do HUD vem dos eventos de present que o proprio Windows publica por ETW (DXGI para DirectX 10/11/12 e DxgKrnl para OpenGL, Vulkan e DirectX 9). Nao ha injecao de DLLs nem hooks, por isso continua 100% seguro com VAC, Vanguard e EAC; nao ha pacotes novos.
+
+### 24.2 Custo zero quando nao e preciso
+A sessao ETW e a thread de leitura so existem com o HUD visivel e pelo menos uma leitura de FPS ativa. Ao ocultar o HUD (`Alt + R`) ou desligar as leituras, a sessao para na hora. Em funcionamento, o kernel so entrega eventos de present (filtro por id) e o calculo nao aloca memoria. Uma sessao ETW orfa, deixada por um fecho incorreto, e parada no arranque seguinte.
+
+### 24.3 Cores e estudio
+No FPS o valor baixo e o mau: verde a partir de 60 FPS, amarelo de 30 a 59, vermelho abaixo de 30. A pre-visualizacao do estudio mostra valores de exemplo enquanto nao ha jogo. Configuracoes existentes ficam como estavam: as tres leituras novas aparecem no fim, desligadas.
+
+### 24.4 Estado
+Compilacao com 0 avisos e 0 erros. A sessao ETW real so pode ser exercitada com a aplicacao elevada e um jogo: ainda nao foi feito.

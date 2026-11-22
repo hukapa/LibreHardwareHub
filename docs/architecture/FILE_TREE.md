@@ -73,6 +73,10 @@ LibreHardwareMonitor/
 |   |   |   +-- OverlayTelemetry.cs            # Leituras do HUD com sensores em cache; indica se algum texto mudou
 |   |   |   +-- OverlayRenderer.cs             # Medicao, disposicao e pintura do HUD (usado pela janela e pela pre-visualizacao)
 |   |   |   +-- OverlayForm.cs                 # Janela HUD em camadas sobre DIB persistente, click-through e arrasto
+|   |   |   +-- Fps/                           # Medicao de FPS, 1% Low e frametime por ETW (sem injecao, so com o HUD visivel)
+|   |   |   |   +-- EtwNative.cs               # P/Invoke de advapi32/user32 e estruturas x64 escritas em offsets documentados
+|   |   |   |   +-- FrameTimeBuffer.cs         # Buffer circular sem alocacoes, FpsSnapshot e calculo do 1% Low
+|   |   |   |   \-- FpsMonitorService.cs       # Sessao ETW "LibreHardwareHub_FPS_ETW", thread de leitura e filtro do jogo em primeiro plano
 |   |   |   +-- OverlayPreviewCanvas.cs        # Pre-visualizacao ao vivo com arrasto de leituras (disposicao livre)
 |   |   |   +-- OverlayEditorPanel.cs          # Estudio do HUD: toolbar, pre-visualizacao, aspeto, severidade e posicao
 |   |   |   \-- OverlayEditorPanel.Metrics.cs  # Classe parcial: lista de leituras e menu "Adicionar sensor"
@@ -194,6 +198,9 @@ LibreHardwareMonitor/
 | `UI/Overlay/OverlayRenderer.cs` | Unico codigo de layout e pintura do HUD, com fontes em pixeis (independente do DPI). | <= 350 lin | `OverlayConfig`, `OverlayTelemetry` |
 | `UI/Overlay/OverlayForm.cs` | Janela em camadas: pinta diretamente numa seccao DIB selecionada num DC de memoria e chama `UpdateLayeredWindow`. | <= 350 lin | `OverlayRenderer`, `user32.dll`, `gdi32.dll` |
 | `UI/Overlay/OverlayEditorPanel.cs` | Pagina do estudio; cada controlo e criado por um helper que o liga a um valor da configuracao. | <= 450 lin | `OverlayPreviewCanvas`, `FluentColorButton` |
+| `UI/Overlay/Fps/EtwNative.cs` | Chamadas Win32 de ETW (`StartTraceW`, `EnableTraceEx2` com filtro por id de evento, `OpenTraceW`, `ProcessTrace`, `CloseTrace`) e leitura de `EVENT_RECORD` sem alocar. Tudo x64. | <= 250 lin | `advapi32.dll`, `user32.dll` |
+| `UI/Overlay/Fps/FrameTimeBuffer.cs` | Buffer circular de 4096 frames e array de ordenacao reutilizavel; FPS e frametime (1 s) e 1% Low (5 s, media dos `ceil(n/100)` frames mais lentos). Sem alocacoes. | <= 200 lin | `Stopwatch` |
+| `UI/Overlay/Fps/FpsMonitorService.cs` | Ciclo de vida da sessao ETW (Start/Stop idempotentes, sessao orfa, `ProcessExit`), DXGI e DxgKrnl sem dupla contagem e processo em primeiro plano. | <= 350 lin | `EtwNative`, `FrameTimeBuffer` |
 | `UI/MainForm.Updates.cs` | Liga a pagina Definicoes e o servico de atualizacoes ao formulario; verificacao unica 6 s apos o arranque por um temporizador de interface. | <= 150 lin | `SettingsPanel`, `UpdateService` |
 | `UI/Settings/SettingsPanel*.cs` | Pagina Definicoes (Ctrl+7): arranque, bandeja, tema, unidade, atualizacoes e notas de versao; criada no primeiro clique. | <= 300 lin | `SettingsContext`, `UserOption`, `UpdateService` |
 | `UI/Updates/UpdateService.cs` | Estado da verificacao, descarga opcional em segundo plano e dialogo de reinicio; nada corre entre verificacoes. | <= 200 lin | `AppUpdater`, `UpdateApplier`, `UpdateDialog` |
