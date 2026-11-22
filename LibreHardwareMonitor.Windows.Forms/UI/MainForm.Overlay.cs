@@ -6,6 +6,7 @@
 using System;
 using LibreHardwareMonitor.Hardware;
 using LibreHardwareMonitor.Windows.Forms.UI.Overlay;
+using LibreHardwareMonitor.Windows.Forms.UI.Overlay.Fps;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI;
 
@@ -19,6 +20,7 @@ public sealed partial class MainForm
     private readonly OverlayTelemetry _overlayTelemetry;
     private OverlayForm _overlayForm;
     private GlobalHotkeyManager _hotkeyManager;
+    private FpsMonitorService _fpsMonitor;
 
     protected override void OnHandleCreated(EventArgs e)
     {
@@ -79,7 +81,32 @@ public sealed partial class MainForm
             _overlayForm.ShowNoActivate();
         }
 
+        UpdateFpsMonitor();
         ApplyAdaptivePolling();
+    }
+
+    /// <summary>
+    /// The ETW session behind the FPS readings exists only while the HUD is visible and at least one frame-rate reading is
+    /// enabled; in every other case it is stopped on the spot (no session, no thread, no CPU). The service itself is
+    /// only created the first time it is needed.
+    /// </summary>
+    private void UpdateFpsMonitor()
+    {
+        bool needsFps = _overlayForm is { Visible: true } && _overlayConfig.HasAnyEnabledFpsMetric();
+        if (needsFps && _fpsMonitor == null)
+        {
+            _fpsMonitor = new FpsMonitorService();
+            _overlayTelemetry.Fps = _fpsMonitor;
+        }
+
+        _fpsMonitor?.SetActive(needsFps);
+    }
+
+    private void DisposeFpsMonitor()
+    {
+        _overlayTelemetry.Fps = null;
+        _fpsMonitor?.Dispose();
+        _fpsMonitor = null;
     }
 
     /// <summary>Called after every sensor update: reads the HUD values once and repaints only what is on screen and changed.</summary>

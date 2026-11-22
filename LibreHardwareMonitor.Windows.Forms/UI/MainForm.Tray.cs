@@ -52,6 +52,7 @@ public sealed partial class MainForm
         _gpuTuningEngine?.Dispose();
         _cpuTuningEngine?.Dispose();
         _hotkeyManager?.Dispose();
+        DisposeFpsMonitor();
         _overlayForm?.Dispose();
         DisposeUpdates();
         timer.Dispose();

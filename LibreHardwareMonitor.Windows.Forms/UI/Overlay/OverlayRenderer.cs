@@ -29,6 +29,7 @@ public sealed class OverlayRenderer : IDisposable
 
     private readonly OverlayConfig _config;
     private readonly OverlayTelemetry _telemetry;
+    private readonly bool _preview;
     private readonly List<Row> _rows = new();
     private readonly Dictionary<OverlayMetricItem, int> _valueWidths = new();
     private readonly SolidBrush _brush = new(Color.White);
@@ -41,10 +42,12 @@ public sealed class OverlayRenderer : IDisposable
     private int _rowHeight;
     private int _barHeight;
 
-    public OverlayRenderer(OverlayConfig config, OverlayTelemetry telemetry)
+    /// <param name="preview">True for the studio preview, which shows example frame-rate values while no game is measured.</param>
+    public OverlayRenderer(OverlayConfig config, OverlayTelemetry telemetry, bool preview = false)
     {
         _config = config;
         _telemetry = telemetry;
+        _preview = preview;
     }
 
     /// <summary>Rows of the last <see cref="Layout" />, with bounds relative to the top-left of the HUD.</summary>
@@ -92,7 +95,8 @@ public sealed class OverlayRenderer : IDisposable
             if (!item.Enabled)
                 continue;
 
-            if (!_telemetry.TryGet(item.Id, out OverlayReading reading) || reading.Text == null)
+            bool found = _preview ? _telemetry.TryGetPreview(item.Id, out OverlayReading reading) : _telemetry.TryGet(item.Id, out reading);
+            if (!found || reading.Text == null)
                 reading = new OverlayReading("--");
 
             int labelWidth = _config.ShowLabels ? (int)Math.Ceiling(g.MeasureString(item.DisplayName, _labelFont, PointF.Empty, FluentStyle.FormatNearCenter).Width) : 0;

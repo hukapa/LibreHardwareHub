@@ -103,6 +103,9 @@ public sealed class OverlayConfig
     public void ResetMetrics()
     {
         MetricItems.Clear();
+        MetricItems.Add(new OverlayMetricItem("fps_avg", "FPS"));
+        MetricItems.Add(new OverlayMetricItem("fps_1low", "1% Low", false));
+        MetricItems.Add(new OverlayMetricItem("frametime_ms", "Frametime", false));
         MetricItems.Add(new OverlayMetricItem("cpu_temp", "CPU Temp"));
         MetricItems.Add(new OverlayMetricItem("cpu_load", "CPU Carga"));
         MetricItems.Add(new OverlayMetricItem("cpu_power", "CPU Potência", false));
@@ -172,6 +175,21 @@ public sealed class OverlayConfig
     }
 
     public bool HasCustomSensor(string sensorId) => Find(sensorId) is { Enabled: true };
+
+    /// <summary>The readings that come from the frame-rate monitor (FPS, 1% Low and frame time).</summary>
+    public static bool IsFpsMetric(string id) => id is "fps_avg" or "fps_1low" or "frametime_ms";
+
+    /// <summary>True when a frame-rate reading is shown: only then does the HUD need the ETW session.</summary>
+    public bool HasAnyEnabledFpsMetric()
+    {
+        foreach (OverlayMetricItem item in MetricItems)
+        {
+            if (item.Enabled && IsFpsMetric(item.Id))
+                return true;
+        }
+
+        return false;
+    }
 
     /// <summary>Shows/hides a sensor on the HUD, adding it as a custom reading the first time.</summary>
     public void ToggleCustomSensor(string sensorId, string sensorName)
@@ -354,10 +372,15 @@ public sealed class OverlayConfig
             ordered.Add(m);
         }
 
+        // A built-in reading this configuration has never seen (added by a newer version) is appended but starts hidden:
+        // an update must not change what an existing HUD shows. A fresh configuration keeps the defaults of ResetMetrics.
         foreach (OverlayMetricItem m in MetricItems)
         {
-            if (!ordered.Contains(m))
-                ordered.Add(m);
+            if (ordered.Contains(m))
+                continue;
+
+            m.Enabled = false;
+            ordered.Add(m);
         }
 
         MetricItems.Clear();

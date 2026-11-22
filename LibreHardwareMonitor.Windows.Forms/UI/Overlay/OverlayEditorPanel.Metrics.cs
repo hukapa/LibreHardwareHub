@@ -48,6 +48,9 @@ public sealed partial class OverlayEditorPanel
         return item.IsCustom || item.Id is "cpu_temp" or "cpu_load" or "gpu_temp" or "gpu_load" or "ram_used";
     }
 
+    // Frame rates have no bar, but they do change color (inverted: a low value is the bad one).
+    private static bool HasSeverity(OverlayMetricItem item) => HasGauge(item) || OverlayConfig.IsFpsMetric(item.Id);
+
     private void RebuildMetricsList()
     {
         _metricsList.SuspendLayout();
@@ -71,7 +74,9 @@ public sealed partial class OverlayEditorPanel
         FluentButton visible = Toggle("Visível", () => item.Enabled, v => item.Enabled = v, RowHeight, _metricSync);
 
         FluentTextBox name = new() { Text = item.DisplayName, Width = LogicalToDeviceUnits(150), Height = LogicalToDeviceUnits(RowHeight), MaxLength = 24 };
-        _toolTip.SetToolTip(name, item.IsCustom ? $"Sensor: {item.DefaultTitle}" : $"Leitura: {item.DefaultTitle}");
+        _toolTip.SetToolTip(name, item.IsCustom ? $"Sensor: {item.DefaultTitle}" : OverlayConfig.IsFpsMetric(item.Id)
+            ? $"Leitura: {item.DefaultTitle}. Mede o jogo em primeiro plano enquanto o HUD está visível; sem jogo mostra --"
+            : $"Leitura: {item.DefaultTitle}");
         name.TextChanged += (_, _) =>
         {
             item.CustomTitle = name.Text;
@@ -83,13 +88,17 @@ public sealed partial class OverlayEditorPanel
         row.Controls.Add(MetricColor("Cor do rótulo", () => _config.LabelColor, () => item.CustomLabelColor, c => item.CustomLabelColor = c, RowHeight));
         row.Controls.Add(MetricColor("Cor do valor", () => _config.ValueColor, () => item.CustomValueColor, c => item.CustomValueColor = c, RowHeight));
 
-        if (HasGauge(item))
+        if (HasSeverity(item))
         {
             FluentButton severity = Toggle("Severidade", () => item.UseDynamicColor, v => item.UseDynamicColor = v, RowHeight, _metricSync);
-            _toolTip.SetToolTip(severity, "O valor muda de cor conforme a temperatura ou a carga");
+            _toolTip.SetToolTip(severity, OverlayConfig.IsFpsMetric(item.Id)
+                ? "O valor fica amarelo abaixo de 60 FPS (acima de 16,7 ms) e vermelho abaixo de 30 FPS (acima de 33,3 ms)"
+                : "O valor muda de cor conforme a temperatura ou a carga");
             row.Controls.Add(severity);
-            row.Controls.Add(Toggle("Barra", () => item.ShowBar, v => item.ShowBar = v, RowHeight, _metricSync));
         }
+
+        if (HasGauge(item))
+            row.Controls.Add(Toggle("Barra", () => item.ShowBar, v => item.ShowBar = v, RowHeight, _metricSync));
 
         if (item.Id == "ram_used")
         {

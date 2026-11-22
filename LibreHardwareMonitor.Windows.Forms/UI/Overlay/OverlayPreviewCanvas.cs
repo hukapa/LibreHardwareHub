@@ -32,7 +32,7 @@ internal sealed class OverlayPreviewCanvas : Control
     public OverlayPreviewCanvas(OverlayConfig config, OverlayTelemetry telemetry)
     {
         _config = config;
-        _renderer = new OverlayRenderer(config, telemetry);
+        _renderer = new OverlayRenderer(config, telemetry, preview: true);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
         Height = LogicalToDeviceUnits(MinLogicalHeight);
     }

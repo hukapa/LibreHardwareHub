@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using LibreHardwareMonitor.Hardware;
+using LibreHardwareMonitor.Windows.Forms.UI.Overlay.Fps;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Overlay;
 
@@ -54,16 +55,39 @@ public sealed class OverlayTelemetry
     private ISensor _gpuTemp, _gpuLoad, _gpuPower, _gpuClock, _gpuFan, _gpuFanControl, _vramUsed;
     private ISensor _ramUsed, _ramAvailable, _ramLoad;
     private int _age = RebindTicks;
+    private FpsSnapshot _fps;
 
     public OverlayTelemetry(OverlayConfig config)
     {
         _config = config;
     }
 
+    /// <summary>The frame-rate monitor behind the FPS readings; null until the HUD first needs it.</summary>
+    public FpsMonitorService Fps { get; set; }
+
     /// <summary>Forces the sensors to be resolved again on the next update (hardware or metric list changed).</summary>
     public void Invalidate() => _age = RebindTicks;
 
     public bool TryGet(string id, out OverlayReading reading) => _readings.TryGetValue(id, out reading);
+
+    /// <summary>
+    /// Same as <see cref="TryGet" /> for the studio preview: while no game is being measured the frame-rate readings show
+    /// realistic example values, so the layout can be designed and aligned without a game running.
+    /// </summary>
+    public bool TryGetPreview(string id, out OverlayReading reading)
+    {
+        if (OverlayConfig.IsFpsMetric(id) && !_fps.HasData)
+        {
+            reading = FpsReading(id, new FpsSnapshot(PreviewFps, PreviewOnePercentLow, PreviewFrametimeMs));
+            return true;
+        }
+
+        return TryGet(id, out reading);
+    }
+
+    private const float PreviewFps = 144f;
+    private const float PreviewOnePercentLow = 112f;
+    private const float PreviewFrametimeMs = 6.9f;
 
     /// <summary>Reads the enabled metrics. Returns true when at least one displayed text changed.</summary>
     public bool Update(IComputer computer)
@@ -76,6 +100,9 @@ public sealed class OverlayTelemetry
             Bind(computer);
             _age = 0;
         }
+
+        // One reading of the frame-rate monitor per update, and only while a frame-rate reading is shown.
+        _fps = Fps != null && _config.HasAnyEnabledFpsMetric() ? Fps.GetSnapshot() : default;
 
         bool changed = false;
         foreach (OverlayMetricItem item in _config.MetricItems)
@@ -188,10 +215,31 @@ public sealed class OverlayTelemetry
             case "fan_rpm": return Plain(FirstSpinning(_fans), "F0", " RPM");
             case "net_speed": return new OverlayReading($"D {SensorLookup.FormatThroughput(Sum(_netDown))}  U {SensorLookup.FormatThroughput(Sum(_netUp))}");
             case "system_time": return new OverlayReading(DateTime.Now.ToString("HH:mm:ss"));
+            case "fps_avg" or "fps_1low" or "frametime_ms": return FpsReading(item.Id, _fps);
         }
 
         return _custom.TryGetValue(item.Id, out ISensor sensor) ? Custom(sensor) : new OverlayReading("--");
     }
+
+    // Frame rates are the opposite of temperatures: a LOW value is the bad one.
+    private static OverlayReading FpsReading(string id, FpsSnapshot snapshot)
+    {
+        if (!snapshot.HasData)
+            return new OverlayReading("--");
+
+        switch (id)
+        {
+            case "fps_avg": return new OverlayReading(snapshot.Fps.ToString("F0"), null, FpsSeverity(snapshot.Fps));
+            case "fps_1low": return new OverlayReading(snapshot.OnePercentLow.ToString("F0"), null, FpsSeverity(snapshot.OnePercentLow));
+            default: return new OverlayReading($"{snapshot.FrametimeMs:F1} ms", null, FrametimeSeverity(snapshot.FrametimeMs));
+        }
+    }
+
+    // 60 FPS or more is fine, 30 to 59 is a warning, under 30 is critical.
+    private static OverlaySeverity FpsSeverity(float fps) => fps >= 60f ? OverlaySeverity.Cool : fps >= 30f ? OverlaySeverity.Warm : OverlaySeverity.Hot;
+
+    // The same limits as frame times: up to 16.7 ms (60 FPS), up to 33.3 ms (30 FPS), above that.
+    private static OverlaySeverity FrametimeSeverity(float ms) => ms <= 16.7f ? OverlaySeverity.Cool : ms <= 33.3f ? OverlaySeverity.Warm : OverlaySeverity.Hot;
 
     private OverlayReading Custom(ISensor sensor)
     {
