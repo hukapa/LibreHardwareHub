@@ -577,3 +577,16 @@ Sem fugas encontradas nos desenhos (`OnPaint`) nem no DIB do HUD. Corrigido: des
 
 ### 22.4 Estado de compilacao
 `dotnet build LibreHardwareMonitor.sln -c Release -p:Platform=x64`: 0 avisos e 0 erros.
+
+## 23. Fase 29A: Auditoria de Sensores e Barra Lateral
+
+### 23.1 Sensores
+O cartao de temperatura da GPU no ecra Ventoinhas lia o Hot Spot com a legenda "GPU Core": o motor de ventoinhas deixava ganhar o ultimo sensor com "Core" ou "GPU" no nome. Todas as escolhas de sensores passaram a vir de `SensorLookup` (CPU: Package, Tctl/Tdie, Core Max, nunca Distance to TjMax; GPU: core, carga do core e clock do core, com o Hot Spot a parte), usadas pelos cartoes Bento, resumo, ventoinhas, ajustes de CPU e GPU e overlay. As legendas dos cartoes mostram o nome real do sensor quando ha alternativa. Outras inconsistencias corrigidas: "Velocidade media" a dizer "PWM dos canais em uso" sem canais da app (agora "PWM atual (controlo BIOS)"), clock da CPU legendado "Media dos nucleos" sendo o pico, e temperaturas da GPU classificadas com os limites da CPU.
+
+Efeito a ter presente: as curvas e a emergencia do motor de ventoinhas passam a ler a temperatura do core da GPU (antes, na pratica, o Hot Spot). O Hot Spot continua selecionavel como fonte de um canal.
+
+### 23.2 Barra lateral
+"Definicoes" e um rodape fixo, sempre visivel, com linha divisoria, modo compacto, tooltip com o atalho e navegacao por rato e teclado. Os cabecalhos das seccoes ganharam hover, chevron vetorial de 1,25 px e contador de itens ocultos quando recolhidos.
+
+### 23.3 Estado de compilacao
+`dotnet build LibreHardwareMonitor.sln -c Release -p:Platform=x64`: 0 avisos e 0 erros.
