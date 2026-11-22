@@ -79,6 +79,10 @@ LibreHardwareMonitor/
 |   |   |   |   \-- FpsMonitorService.cs       # Sessao ETW "LibreHardwareHub_FPS_ETW", thread de leitura e filtro do jogo em primeiro plano
 |   |   |   +-- OverlayPreviewCanvas.cs        # Pre-visualizacao ao vivo com arrasto de leituras (disposicao livre)
 |   |   |   +-- OverlayEditorPanel.cs          # Estudio do HUD: toolbar, pre-visualizacao, aspeto, severidade e posicao
+|   |   |   +-- OverlayMetricRow.cs            # Linha compacta de uma leitura ativa: pega, nome, cores, pills, setas, ocultar e gesto de arrasto
+|   |   |   +-- OverlayMetricList.cs           # Lista das leituras ativas: indice de insercao, linha guia, scroll automatico e Esc no arrasto
+|   |   |   +-- OverlayMetricChip.cs           # Chips "+ nome" das leituras disponiveis, grelha que quebra linha e legendas dos blocos
+|   |   |   +-- OverlayIconButton.cs           # Botoes vetoriais (fechar, subir, descer) e a pega de arrasto de 6 pontos
 |   |   |   \-- OverlayEditorPanel.Metrics.cs  # Classe parcial: lista de leituras e menu "Adicionar sensor"
 |   |   +-- Settings/                          # Pagina Definicoes (Ctrl+7), criada no primeiro clique
 |   |   |   +-- SettingsContext.cs             # Opcoes e acoes do MainForm que a pagina usa (mesmos objetos do menu)
@@ -201,6 +205,9 @@ LibreHardwareMonitor/
 | `UI/Overlay/Fps/EtwNative.cs` | Chamadas Win32 de ETW (`StartTraceW`, `EnableTraceEx2` com filtro por id de evento, `OpenTraceW`, `ProcessTrace`, `CloseTrace`) e leitura de `EVENT_RECORD` sem alocar. Tudo x64. | <= 250 lin | `advapi32.dll`, `user32.dll` |
 | `UI/Overlay/Fps/FrameTimeBuffer.cs` | Buffer circular de 4096 frames e array de ordenacao reutilizavel; FPS e frametime (1 s) e 1% Low (5 s, media dos `ceil(n/100)` frames mais lentos). Sem alocacoes. | <= 200 lin | `Stopwatch` |
 | `UI/Overlay/Fps/FpsMonitorService.cs` | Ciclo de vida da sessao ETW (Start/Stop idempotentes, sessao orfa, `ProcessExit`), DXGI e DxgKrnl sem dupla contagem e processo em primeiro plano. | <= 350 lin | `EtwNative`, `FrameTimeBuffer` |
+| `UI/Overlay/OverlayMetricRow.cs` | Uma leitura ativa numa linha de 36 px: so mostra as pills que se aplicam, esbate a cor do valor com "Cor auto" e inicia o arrasto pela pega ou por espaco livre (limiar de 4 px, captura de rato nativa). | <= 300 lin | `OverlayMetricItem`, `FluentTextBox`, `FluentColorButton` |
+| `UI/Overlay/OverlayMetricList.cs` | Segue a linha arrastada: indice de insercao, guia de 2 px, scroll automatico perto das bordas e cancelamento com Esc; temporizador e filtro so existem durante o arrasto. | <= 250 lin | `OverlayMetricRow`, `ScrollHost` |
+| `UI/Overlay/OverlayMetricChip.cs` | Chips das leituras desligadas (um clique ativa, x apaga os personalizados), a grelha que os distribui e as legendas "ATIVOS" e "DISPONIVEIS". | <= 250 lin | `OverlayMetricItem` |
 | `UI/MainForm.Updates.cs` | Liga a pagina Definicoes e o servico de atualizacoes ao formulario; verificacao unica 6 s apos o arranque por um temporizador de interface. | <= 150 lin | `SettingsPanel`, `UpdateService` |
 | `UI/Settings/SettingsPanel*.cs` | Pagina Definicoes (Ctrl+7): arranque, bandeja, tema, unidade, atualizacoes e notas de versao; criada no primeiro clique. | <= 300 lin | `SettingsContext`, `UserOption`, `UpdateService` |
 | `UI/Updates/UpdateService.cs` | Estado da verificacao, descarga opcional em segundo plano e dialogo de reinicio; nada corre entre verificacoes. | <= 200 lin | `AppUpdater`, `UpdateApplier`, `UpdateDialog` |

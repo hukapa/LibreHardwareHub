@@ -604,3 +604,17 @@ No FPS o valor baixo e o mau: verde a partir de 60 FPS, amarelo de 30 a 59, verm
 
 ### 24.4 Estado
 Compilacao com 0 avisos e 0 erros. A sessao ETW real so pode ser exercitada com a aplicacao elevada e um jogo: ainda nao foi feito.
+
+## 25. Fase 30: Leituras do Estudio de Overlay
+
+### 25.1 Ativos no topo
+A lista de leituras tem agora dois blocos: as ativas, pela ordem do HUD, e as disponiveis. Ativar uma leitura poe-na no fim das ativas e desativa-la guarda o nome, as cores e as opcoes para mais tarde. Configuracoes antigas sao organizadas ao carregar, sem perder nada.
+
+### 25.2 Interface mais limpa
+Cada leitura ativa e uma linha compacta com so o que lhe diz respeito ("Cor auto", "Barra" e o formato da memoria apenas onde se aplicam). As leituras desligadas passam a chips de um clique, e os sensores adicionados pelo utilizador podem ser apagados com um x. O botao repetido "Visivel" foi substituido por um X de ocultar, e a cor do valor aparece esbatida enquanto a cor automatica a sobrepoe.
+
+### 25.3 Arrasto
+As leituras ativas reordenam-se arrastando a pega, com uma guia na cor de destaque, scroll automatico perto das bordas e cancelamento com Esc. Usa a captura de rato nativa, sem OLE, e o temporizador e o filtro de teclado so existem durante o arrasto.
+
+### 25.4 Estado
+Compilacao com 0 avisos e 0 erros. O arrasto foi verificado disparando os eventos no estudio real; o gesto com o rato real e o scroll automatico ainda nao foram experimentados.
