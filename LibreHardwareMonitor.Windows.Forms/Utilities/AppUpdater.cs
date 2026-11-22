@@ -6,9 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -43,11 +41,9 @@ public sealed class UpdateReleaseInfo
 /// Looks for new releases of LibreHardwareHub on GitHub and downloads them. Uses only HttpClient and
 /// System.Text.Json: one request per check, nothing runs in the background between checks.
 /// </summary>
-public static class AppUpdater
+public static partial class AppUpdater
 {
     private const string Repository = "hukapa/LibreHardwareHub";
-    private const long MinimumExecutableBytes = 1024 * 1024;
-    private const string ReadyMarker = "ready.txt";
 
     private static readonly HttpClient Http = CreateClient();
 
@@ -163,111 +159,4 @@ public static class AppUpdater
 
     private static string GetString(JsonElement element, string name) =>
         element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
-
-    /// <summary>Path of the already downloaded and validated executable of <paramref name="release" />, if any.</summary>
-    public static bool TryGetDownloaded(UpdateReleaseInfo release, out string executable)
-    {
-        executable = Path.Combine(PackageDirectory(release), AppInfo.Id + ".exe");
-        return File.Exists(Path.Combine(PackageDirectory(release), ReadyMarker)) && IsValidExecutable(executable);
-    }
-
-    private static string PackageDirectory(UpdateReleaseInfo release) => Path.Combine(UpdateRoot, release.VersionText, "pkg");
-
-    private static bool IsValidExecutable(string path)
-    {
-        try
-        {
-            return File.Exists(path) && new FileInfo(path).Length > MinimumExecutableBytes;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-    }
-
-    // Only the project's own release assets on GitHub over HTTPS are downloaded.
-    private static bool IsTrustedDownload(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri) || uri.Scheme != Uri.UriSchemeHttps)
-            return false;
-
-        return uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
-               uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Downloads the portable zip into %TEMP%\LibreHardwareHub_Update, extracts it into a clean folder and checks that the
-    /// new executable is there. Returns the path of that executable.
-    /// </summary>
-    public static async Task<string> DownloadUpdateAsync(UpdateReleaseInfo release, IProgress<int> progress, CancellationToken ct)
-    {
-        if (release == null || !IsTrustedDownload(release.AssetUrl))
-            throw new InvalidOperationException("A versão não tem um pacote portátil para descarregar.");
-
-        if (TryGetDownloaded(release, out string existing))
-        {
-            progress?.Report(100);
-            return existing;
-        }
-
-        string versionDirectory = Path.Combine(UpdateRoot, release.VersionText);
-        if (Directory.Exists(versionDirectory))
-            Directory.Delete(versionDirectory, true);
-
-        Directory.CreateDirectory(versionDirectory);
-        string zipPath = Path.Combine(versionDirectory, "update.zip");
-        string packageDirectory = PackageDirectory(release);
-
-        // The package is large: the 15 s of the shared client apply to the headers only, not to the body.
-        using (HttpResponseMessage response = await Http.GetAsync(release.AssetUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
-        {
-            response.EnsureSuccessStatusCode();
-            long total = response.Content.Headers.ContentLength ?? release.AssetSize;
-            await using Stream source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            await using FileStream target = new(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-
-            byte[] buffer = new byte[81920];
-            long done = 0;
-            int lastPercent = -1;
-            int read;
-            while ((read = await source.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
-            {
-                await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-                done += read;
-                int percent = total > 0 ? (int)Math.Min(99, done * 100 / total) : 0;
-                if (percent != lastPercent)
-                {
-                    lastPercent = percent;
-                    progress?.Report(percent);
-                }
-            }
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // GitHub publishes the SHA-256 of every asset: a package that does not match it is never extracted.
-        if (release.AssetSha256.Length > 0)
-        {
-            string actual;
-            await using (FileStream stream = new(zipPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true))
-                actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false));
-
-            if (!actual.Equals(release.AssetSha256, StringComparison.OrdinalIgnoreCase))
-            {
-                File.Delete(zipPath);
-                throw new InvalidDataException("A verificação de integridade do pacote falhou. Tente novamente mais tarde.");
-            }
-        }
-
-        ZipFile.ExtractToDirectory(zipPath, packageDirectory, true);
-        File.Delete(zipPath);
-
-        string executable = Path.Combine(packageDirectory, AppInfo.Id + ".exe");
-        if (!IsValidExecutable(executable))
-            throw new InvalidDataException("O pacote descarregado não contém um " + AppInfo.Id + ".exe válido.");
-
-        File.WriteAllText(Path.Combine(packageDirectory, ReadyMarker), release.VersionText);
-        progress?.Report(100);
-        return executable;
-    }
 }

@@ -171,7 +171,7 @@ public class HttpServer
             try
             {
                 var context = await _listener.GetContextAsync();
-                _ = Task.Run(() => HandleContextAsync(context), cancellationToken);
+                _ = Task.Run(() => HandleContextSafeAsync(context), cancellationToken);
             }
             catch (HttpListenerException ex) when (ex.ErrorCode == 50)
             {
@@ -196,6 +196,29 @@ public class HttpServer
                 if (_listener == null || !_listener.IsListening)
                     break;
                 System.Diagnostics.Debug.WriteLine($"Unexpected HttpListener error: {ex.Message}");
+            }
+        }
+    }
+
+    // A request that fails (an unknown sensor id, a malformed value, a resource that is not an image) must still be answered
+    // and closed: before, the exception went unobserved and the connection stayed open until the client gave up.
+    private async Task HandleContextSafeAsync(HttpListenerContext context)
+    {
+        try
+        {
+            await HandleContextAsync(context);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Request failed: {ex.Message}");
+            try
+            {
+                context.Response.StatusCode = ex is ArgumentException or InvalidOperationException ? 400 : 500;
+                context.Response.Close();
+            }
+            catch (Exception closing) when (closing is HttpListenerException or ObjectDisposedException or InvalidOperationException)
+            {
+                // The client is already gone or the response was already closed.
             }
         }
     }
@@ -395,7 +418,7 @@ public class HttpServer
         catch (Exception e)
         {
             result["result"] = "fail";
-            result["message"] = e.ToString();
+            result["message"] = e.Message; // not the stack trace: it would show the client paths and internals
         }
         return System.Text.Json.JsonSerializer.Serialize(result);
     }
@@ -410,7 +433,10 @@ public class HttpServer
             try
             {
                 HttpListenerBasicIdentity identity = (HttpListenerBasicIdentity)context.User.Identity;
-                authenticated = (identity.Name == UserName) && (ComputeSHA256(identity.Password) == PasswordSHA256);
+                // Both are always compared, in constant time: the answer does not reveal which of them was wrong.
+                bool nameMatches = FixedTimeEquals(identity.Name, UserName);
+                bool passwordMatches = FixedTimeEquals(ComputeSHA256(identity.Password), PasswordSHA256);
+                authenticated = nameMatches && passwordMatches;
             }
             catch
             {
@@ -561,6 +587,15 @@ public class HttpServer
 
     private async Task ServeResourceImageAsync(HttpListenerResponse response, string name)
     {
+        // Only the icons of the page: a plain file name of an image. Any other embedded resource (the driver installer, for
+        // one) is not reachable through this address.
+        if (name.IndexOfAny(new[] { '/', '\\' }) >= 0 || !name.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+        {
+            response.StatusCode = 404;
+            response.Close();
+            return;
+        }
+
         name = "LibreHardwareMonitor.Windows.Forms.Resources." + name;
 
         string[] names = Assembly.GetExecutingAssembly().GetManifestResourceNames();
@@ -1009,6 +1044,9 @@ public class HttpServer
                 return "power.png";
         }
     }
+
+    private static bool FixedTimeEquals(string a, string b) =>
+        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a ?? string.Empty), Encoding.UTF8.GetBytes(b ?? string.Empty));
 
     private string ComputeSHA256(string text)
     {

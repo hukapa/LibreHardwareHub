@@ -1,4 +1,4 @@
-﻿// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 // If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 // Copyright (C) LibreHardwareMonitor and Contributors.
 // Partial Copyright (C) Michael Möller <mmoeller@openhardwaremonitor.org> and Contributors.
@@ -90,9 +90,13 @@ public partial class InterfacePortForm : Form
     {
         try
         {
-            Process.Start(new ProcessStartInfo(e.Link.LinkData.ToString()));
+            // The address is built by this form (http, the chosen interface and port). Without UseShellExecute .NET cannot open it.
+            Process.Start(new ProcessStartInfo(e.Link.LinkData.ToString()) { UseShellExecute = true });
         }
-        catch { }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            // No browser could be started: the address is also shown as text.
+        }
     }
 
     private void PortNumericUpDn_KeyUp(object sender, KeyEventArgs e)

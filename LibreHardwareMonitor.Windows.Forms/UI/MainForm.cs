@@ -236,6 +236,7 @@ public sealed partial class MainForm : Form
         {
             string shipped = Path.Combine(AppInfo.ExeDirectory, "PawnIO_setup.exe");
             string path;
+            byte[] extractedHash = null;
             bool isTemporary = false;
 
             if (File.Exists(shipped))
@@ -244,7 +245,7 @@ public sealed partial class MainForm : Form
             }
             else
             {
-                path = ExtractPawnIO();
+                path = ExtractPawnIO(out extractedHash);
                 isTemporary = !string.IsNullOrEmpty(path);
             }
 
@@ -253,11 +254,19 @@ public sealed partial class MainForm : Form
 
             try
             {
+                // An extracted copy lives in the temp folder, which other programs of this user can write to: it is held open
+                // without write access and checked against the embedded installer until the installer has finished.
+                using FileStream guard = extractedHash != null ? VerifiedFile.OpenVerified(path, extractedHash) : null;
+
                 // The installer requires elevation; ShellExecute with "runas" triggers UAC
                 // instead of failing with ERROR_ELEVATION_REQUIRED (740) when not elevated.
                 var startInfo = new ProcessStartInfo(path, "-install") { UseShellExecute = true, Verb = "runas" };
                 using Process process = Process.Start(startInfo);
                 process?.WaitForExit();
+            }
+            catch (InvalidDataException)
+            {
+                MessageBox.Show("O instalador do driver PawnIO mudou depois de ser extraído e não foi executado.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
@@ -273,7 +282,8 @@ public sealed partial class MainForm : Form
                 {
                     try
                     {
-                        File.Delete(path);
+                        // The folder belongs to this extraction alone, with a name nobody can guess: it goes away with the installer.
+                        Directory.Delete(Path.GetDirectoryName(path), true);
                     }
                     catch (IOException)
                     { }
@@ -284,10 +294,10 @@ public sealed partial class MainForm : Form
         }
 
         // The setup shipped next to the executable, or the embedded copy, placed in the temp folder to run from there.
-        static string ExtractPawnIO()
+        static string ExtractPawnIO(out byte[] sha256)
         {
             const string fileName = "PawnIO_setup.exe";
-            string destination = Path.Combine(Path.GetTempPath(), fileName);
+            sha256 = null;
 
             try
             {
@@ -295,11 +305,21 @@ public sealed partial class MainForm : Form
                 if (resourceStream == null)
                     return null;
 
-                using FileStream fileStream = new(destination, FileMode.Create, FileAccess.Write);
-                resourceStream.CopyTo(fileStream);
+                using MemoryStream content = new();
+                resourceStream.CopyTo(content);
+                byte[] bytes = content.ToArray();
+
+                // A folder with a random name and CreateNew: nothing planted beforehand can be reused, followed or predicted.
+                string directory = Path.Combine(Path.GetTempPath(), "LibreHardwareHub_PawnIO_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(directory);
+                string destination = Path.Combine(directory, fileName);
+                using (FileStream fileStream = new(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    fileStream.Write(bytes, 0, bytes.Length);
+
+                sha256 = System.Security.Cryptography.SHA256.HashData(bytes);
                 return destination;
             }
-            catch
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 return null;
             }

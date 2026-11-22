@@ -25,11 +25,19 @@ public static class UpdateApplier
 
     private static readonly string[] PackageFiles = { "PawnIO_setup.exe" };
 
-    /// <summary>Starts the downloaded executable in apply mode. The caller must then close this instance cleanly.</summary>
+    /// <summary>
+    /// Starts the downloaded executable in apply mode. The caller must then close this instance cleanly. Only the executable
+    /// that this session extracted from the update folder is started, and only if it is still byte for byte what was
+    /// extracted: it is held open without write access while it is hashed and started.
+    /// </summary>
     public static bool LaunchApply(string stagedExecutable)
     {
+        if (!AppUpdater.IsUnderUpdateRoot(stagedExecutable) || !AppUpdater.TryGetStagedHash(stagedExecutable, out byte[] hash))
+            return false;
+
         try
         {
+            using FileStream guard = VerifiedFile.OpenVerified(stagedExecutable, hash);
             ProcessStartInfo start = new(stagedExecutable)
             {
                 UseShellExecute = false,
@@ -40,7 +48,13 @@ public static class UpdateApplier
             start.ArgumentList.Add(AppInfo.ExeDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             return Process.Start(start) != null;
         }
-        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        catch (InvalidDataException)
+        {
+            // The extracted file is not what was extracted: it is never started, and the next attempt fetches it again.
+            AppUpdater.ForgetStaged(stagedExecutable);
+            return false;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             return false;
         }
@@ -53,13 +67,34 @@ public static class UpdateApplier
         if (index < 0)
             return false;
 
-        if (index + 2 < args.Length && int.TryParse(args[index + 1], out int pid))
-            Apply(pid, args[index + 2]);
+        if (index + 2 < args.Length && int.TryParse(args[index + 1], out int pid) && IsValidApplyRequest(pid, args[index + 2], out string target))
+            Apply(pid, target);
 
         return true;
     }
 
-    /// <summary>Folder named by "--cleanup-update DIR", only when it is the updater's own temp folder.</summary>
+    // Apply mode is for the new executable only, running from the update folder: a copy of the program started from anywhere
+    // else (or by anyone who just types the arguments) never writes into another folder. The destination must exist and hold
+    // the installed executable.
+    private static bool IsValidApplyRequest(int pid, string targetDirectory, out string fullTarget)
+    {
+        fullTarget = null;
+        string source = Environment.ProcessPath;
+        if (pid <= 0 || pid == Environment.ProcessId || source == null || !AppUpdater.IsUnderUpdateRoot(source))
+            return false;
+
+        string full = Path.GetFullPath(targetDirectory);
+        if (!Directory.Exists(full) || AppUpdater.IsUnderUpdateRoot(Path.Combine(full, AppInfo.Id + ".exe")) || !File.Exists(Path.Combine(full, AppInfo.Id + ".exe")))
+            return false;
+
+        fullTarget = full;
+        return true;
+    }
+
+    /// <summary>
+    /// Folder named by "--cleanup-update DIR", only when it is strictly one level inside the temp folder, named for the updater
+    /// and a real folder (a link planted there would make the delete reach somewhere else): null otherwise.
+    /// </summary>
     public static string GetCleanupDirectory(string[] args)
     {
         int index = Array.FindIndex(args, a => string.Equals(a, CleanupArgument, StringComparison.OrdinalIgnoreCase));
@@ -67,7 +102,12 @@ public static class UpdateApplier
             return null;
 
         string full = Path.GetFullPath(args[index + 1]).TrimEnd(Path.DirectorySeparatorChar);
-        return string.Equals(full, AppUpdater.UpdateRoot.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ? full : null;
+        string temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+        if (!string.Equals(Path.GetDirectoryName(full), temp, StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(full).StartsWith("LibreHardwareHub_Update", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return Directory.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0 ? null : full;
     }
 
     /// <summary>Deletes the update folder once the apply process, which ran from it, has exited.</summary>
@@ -86,7 +126,7 @@ public static class UpdateApplier
                     if (!Directory.Exists(directory))
                         return;
 
-                    Directory.Delete(directory, true);
+                    AppUpdater.DeleteDirectory(directory);
                     return;
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -166,7 +206,8 @@ public static class UpdateApplier
     }
 
     // Copies next to the destination first and then moves it over, so an interrupted copy never leaves a half-written
-    // executable behind. Antivirus scanners may hold the file for a moment: a few retries.
+    // executable behind. A leftover ".new" is deleted first (a link is removed, not followed) and the copy never overwrites,
+    // so nothing planted there can redirect the write. Antivirus scanners may hold the file for a moment: a few retries.
     private static void ReplaceFile(string source, string destination)
     {
         string temporary = destination + ".new";
@@ -174,7 +215,8 @@ public static class UpdateApplier
         {
             try
             {
-                File.Copy(source, temporary, true);
+                File.Delete(temporary);
+                File.Copy(source, temporary, false);
                 File.Move(temporary, destination, true);
                 return;
             }

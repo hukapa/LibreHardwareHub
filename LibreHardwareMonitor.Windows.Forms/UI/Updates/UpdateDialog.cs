@@ -191,6 +191,9 @@ public sealed class UpdateDialog : Form
         _cancellation = new CancellationTokenSource();
         Progress<int> progress = new(percent =>
         {
+            if (IsDisposed)
+                return;
+
             _progress.Value = percent;
             _status.Text = $"A descarregar... {percent}%";
         });
@@ -201,12 +204,14 @@ public sealed class UpdateDialog : Form
             _downloading = false;
             CloseDialog(DialogResult.OK);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
         {
+            // The user cancelled: the dialog is closing.
             _downloading = false;
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException or JsonException)
         {
+            // OperationCanceledException here is the HTTP timeout, not the user: it is a failure like any other.
             _downloading = false;
             if (IsDisposed)
                 return;

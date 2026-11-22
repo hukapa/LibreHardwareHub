@@ -15,14 +15,19 @@ on:
         description: 'Versao a publicar (X.Y.Z); tem de coincidir com Directory.Build.props'
         required: true
 
-permissions:
-  contents: write
+# No permissions for the workflow as a whole; the only job asks for the one it needs (publishing a Release).
+permissions: {}
 
 jobs:
   release:
+    permissions:
+      contents: write
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+        with:
+          # The job never pushes: the token must not stay in the repository configuration for the steps that run scripts.
+          persist-credentials: false
       - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # 5.2.0
         with:
           dotnet-version: '8.0.x'
