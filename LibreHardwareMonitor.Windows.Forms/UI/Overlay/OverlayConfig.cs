@@ -120,6 +120,7 @@ public sealed class OverlayConfig
         MetricItems.Add(new OverlayMetricItem("fan_rpm", "Ventoinha", false));
         MetricItems.Add(new OverlayMetricItem("net_speed", "Rede D/U", false));
         MetricItems.Add(new OverlayMetricItem("system_time", "Hora"));
+        NormalizeMetricOrder();
     }
 
     public void ApplyPreset(OverlayThemePreset preset)
@@ -196,21 +197,107 @@ public sealed class OverlayConfig
     {
         OverlayMetricItem existing = Find(sensorId);
         if (existing != null)
-            existing.Enabled = !existing.Enabled;
-        else
-            MetricItems.Add(new OverlayMetricItem(sensorId, sensorName, true, true));
+        {
+            SetMetricEnabled(existing, !existing.Enabled);
+            return;
+        }
+
+        MetricItems.Add(new OverlayMetricItem(sensorId, sensorName, true, true));
+        NormalizeMetricOrder(); // the new reading lands at the end of the active block
     }
 
-    /// <summary>Moves a reading up (-1) or down (+1) in the display order.</summary>
-    public bool Move(OverlayMetricItem item, int delta)
+    // ---- Order of the readings: the active ones are always first, in their display order; the hidden ones follow ----
+
+    /// <summary>Number of readings currently shown on the HUD; they are the first ones of <see cref="MetricItems" />.</summary>
+    public int ActiveMetricCount
     {
+        get
+        {
+            int count = 0;
+            foreach (OverlayMetricItem item in MetricItems)
+            {
+                if (item.Enabled)
+                    count++;
+            }
+
+            return count;
+        }
+    }
+
+    /// <summary>
+    /// Stable partition: every active reading first, keeping the order they already have among themselves, then the
+    /// hidden ones, also in their current order. Names, colors and options are never touched.
+    /// </summary>
+    public void NormalizeMetricOrder()
+    {
+        List<OverlayMetricItem> hidden = new();
+        int write = 0;
+        for (int read = 0; read < MetricItems.Count; read++)
+        {
+            OverlayMetricItem item = MetricItems[read];
+            if (item.Enabled)
+                MetricItems[write++] = item;
+            else
+                hidden.Add(item);
+        }
+
+        for (int i = 0; i < hidden.Count; i++)
+            MetricItems[write + i] = hidden[i];
+    }
+
+    /// <summary>
+    /// Shows or hides a reading. Showing it puts it at the end of the active block; hiding it puts it at the start of the
+    /// hidden block. Its name, colors and options are kept for when it is shown again.
+    /// </summary>
+    public void SetMetricEnabled(OverlayMetricItem item, bool enabled)
+    {
+        if (item == null || item.Enabled == enabled)
+            return;
+
+        MetricItems.Remove(item);
+        item.Enabled = enabled;
+
+        // After the removal the active block is the first ActiveMetricCount entries: enabled goes right after them
+        // (the item is already counted as active), disabled right after them too (it no longer is).
+        MetricItems.Insert(ActiveCountExcluding(item), item);
+    }
+
+    /// <summary>Deletes a custom reading for good; built-in readings can only be hidden.</summary>
+    public bool RemoveMetric(OverlayMetricItem item) => item is { IsCustom: true } && MetricItems.Remove(item);
+
+    /// <summary>
+    /// Moves an active reading to position <paramref name="targetActiveIndex" /> of the active block (0 = first on the HUD);
+    /// the index is clamped to the block. Returns true when the order changed.
+    /// </summary>
+    public bool MoveActiveMetric(OverlayMetricItem item, int targetActiveIndex)
+    {
+        int active = ActiveMetricCount;
         int index = MetricItems.IndexOf(item);
-        int target = index + delta;
-        if (index < 0 || target < 0 || target >= MetricItems.Count)
+        if (item == null || !item.Enabled || index < 0 || index >= active)
             return false;
 
-        (MetricItems[index], MetricItems[target]) = (MetricItems[target], MetricItems[index]);
+        int target = Math.Clamp(targetActiveIndex, 0, active - 1);
+        if (target == index)
+            return false;
+
+        MetricItems.RemoveAt(index);
+        MetricItems.Insert(target, item);
         return true;
+    }
+
+    /// <summary>Moves an active reading up (-1) or down (+1) in the display order.</summary>
+    public bool Move(OverlayMetricItem item, int delta) => MoveActiveMetric(item, MetricItems.IndexOf(item) + delta);
+
+    private int ActiveCountExcluding(OverlayMetricItem excluded)
+    {
+        int count = 0;
+        foreach (OverlayMetricItem item in MetricItems)
+        {
+            if (item.Enabled && item != excluded)
+                count++;
+        }
+
+        return count;
     }
 
     public void Load(PersistentSettings settings)
@@ -259,6 +346,9 @@ public sealed class OverlayConfig
         ShowLabels = settings.GetValue(Prefix + "labels", ShowLabels);
 
         LoadMetrics(settings.GetValue(Prefix + "metrics", string.Empty));
+
+        // Configurations saved before the active readings were kept on top get sorted now, losing nothing.
+        NormalizeMetricOrder();
     }
 
     public void Save(PersistentSettings settings)

@@ -71,7 +71,7 @@ public sealed partial class OverlayEditorPanel
     {
         const int RowHeight = 28;
         ToolbarRow row = new() { OnSurface = true, Height = LogicalToDeviceUnits(36) };
-        FluentButton visible = Toggle("Visível", () => item.Enabled, v => item.Enabled = v, RowHeight, _metricSync);
+        FluentButton visible = Toggle("Visível", () => item.Enabled, v => { _config.SetMetricEnabled(item, v); MetricsChanged(); }, RowHeight, _metricSync);
 
         FluentTextBox name = new() { Text = item.DisplayName, Width = LogicalToDeviceUnits(150), Height = LogicalToDeviceUnits(RowHeight), MaxLength = 24 };
         _toolTip.SetToolTip(name, item.IsCustom ? $"Sensor: {item.DefaultTitle}" : OverlayConfig.IsFpsMetric(item.Id)
