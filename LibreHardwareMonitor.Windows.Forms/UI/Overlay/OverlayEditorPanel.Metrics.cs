@@ -64,7 +64,14 @@ public sealed partial class OverlayEditorPanel
     {
         _metricsList.SuspendLayout();
         while (_metricsList.Controls.Count > 0)
-            _metricsList.Controls[0].Dispose();
+        {
+            Control old = _metricsList.Controls[0];
+            ReleaseToolTips(old);
+            old.Dispose();
+        }
+
+        foreach (Control chip in _availableChips.Controls)
+            ReleaseToolTips(chip);
 
         _availableChips.Clear();
         _metricSync.Clear();
@@ -97,6 +104,15 @@ public sealed partial class OverlayEditorPanel
         _metricsCard.PerformLayout();
         _page.PerformLayout();
         _host.PerformLayout();
+    }
+
+    // A ToolTip keeps every control it has a tip for (disposed ones too) until the tip is removed: without this each rebuild
+    // of the list left all its old rows and chips alive, with their GDI objects.
+    private void ReleaseToolTips(Control control)
+    {
+        _toolTip.SetToolTip(control, null);
+        foreach (Control child in control.Controls)
+            ReleaseToolTips(child);
     }
 
     private OverlayMetricRow BuildMetricRow(OverlayMetricItem item, int index, int activeCount)

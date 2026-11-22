@@ -448,7 +448,10 @@ public sealed partial class OverlayEditorPanel : UserControl, IThemedControl
     protected override void Dispose(bool disposing)
     {
         if (disposing)
+        {
             _toolTip.Dispose();
+            _sensorMenu?.Dispose();
+        }
 
         base.Dispose(disposing);
     }

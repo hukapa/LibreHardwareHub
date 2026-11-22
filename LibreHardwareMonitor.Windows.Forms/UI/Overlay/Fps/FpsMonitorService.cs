@@ -104,8 +104,9 @@ public sealed class FpsMonitorService : IDisposable
             }
             catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or OutOfMemoryException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception or ThreadStartException)
             {
-                // No ETW on this system: the HUD simply shows "--" for the frame readings.
-                ReleaseNative();
+                // No ETW on this system (or the thread could not start): the HUD shows "--" for the frame readings.
+                // A session that was already started must not stay behind in the kernel.
+                AbortStart();
                 return false;
             }
         }
@@ -173,6 +174,18 @@ public sealed class FpsMonitorService : IDisposable
         return true;
     }
 
+    // Undoes a Start that failed half way: stops the session, closes the trace if it was opened and frees what was allocated.
+    private void AbortStart()
+    {
+        if (_session != 0)
+            StopSession();
+
+        if (_trace != EtwNative.InvalidTraceHandle)
+            EtwNative.CloseTrace(_trace);
+
+        ReleaseNative();
+    }
+
     private bool EnableProvider(Guid provider, ushort eventId, bool allowUnfiltered)
     {
         // Keyword 0 means "every keyword": the event id alone decides what is delivered.
@@ -198,9 +211,17 @@ public sealed class FpsMonitorService : IDisposable
             bool exited = _thread == null || _thread.Join(StopJoinMs);
             _thread = null;
 
-            // Memory the reader may still touch is only freed once it has really left.
+            // Memory the reader may still touch is only freed once it has really left. If it has not, the callback must
+            // not be collected either: native code would call into freed memory, so it is pinned for the rest of the process.
             if (exited)
+            {
                 ReleaseNative();
+            }
+            else
+            {
+                GCHandle.Alloc(_callback);
+                _properties = _logFile = _logFileName = IntPtr.Zero; // leaked on purpose, never reused
+            }
 
             lock (_data)
                 _buffer.Reset();

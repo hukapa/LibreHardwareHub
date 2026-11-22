@@ -119,6 +119,17 @@ public class FluentSectionCard : Panel, IThemedControl
         Invalidate();
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _titleFont?.Dispose();
+            _subtitleFont?.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         Theme theme = Theme.Current;

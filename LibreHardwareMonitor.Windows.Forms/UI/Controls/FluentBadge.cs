@@ -35,7 +35,7 @@ public sealed class FluentBadge : Control, IThemedControl
 
         Height = 22;
         Width = 100;
-        Font = FluentStyle.CreateUiFont(FontStyle.Bold, 8f);
+        Font = FluentStyle.UiFontSmallBold; // the shared 8 pt bold: a badge owns no font of its own
     }
 
     public override string Text

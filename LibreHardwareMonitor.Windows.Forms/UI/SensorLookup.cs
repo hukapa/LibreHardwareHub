@@ -174,8 +174,14 @@ public static class SensorLookup
     /// <summary>The "Virtual Memory" device (page file), which must never be mixed up with the physical memory.</summary>
     public static bool IsVirtualMemory(IHardware hardware) => hardware != null && Contains(hardware.Name, "Virtual");
 
-    /// <summary>True when the sensor name contains one of the keywords.</summary>
-    public static bool NameContains(ISensor sensor, params string[] keywords)
+    /// <summary>True when the sensor name contains the keyword.</summary>
+    public static bool NameContains(ISensor sensor, string keyword) => sensor != null && Contains(sensor.Name, keyword);
+
+    /// <summary>
+    /// True when the sensor name contains one of the keywords. Pass a static array: a params call would allocate one on every
+    /// sensor update.
+    /// </summary>
+    public static bool NameContainsAny(ISensor sensor, string[] keywords)
     {
         if (sensor == null)
             return false;

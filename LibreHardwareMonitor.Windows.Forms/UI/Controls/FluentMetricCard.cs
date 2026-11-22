@@ -278,6 +278,7 @@ public sealed class FluentMetricCard : Control, IThemedControl
         if (disposing)
         {
             _valueFont?.Dispose();
+            _compactValueFont?.Dispose();
             _detailFont?.Dispose();
         }
 

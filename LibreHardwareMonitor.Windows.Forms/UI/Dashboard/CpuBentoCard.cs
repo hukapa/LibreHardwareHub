@@ -17,6 +17,7 @@ namespace LibreHardwareMonitor.Windows.Forms.UI.Dashboard;
 public sealed class CpuBentoCard : BentoCardBase
 {
     private const string CorePrefix = "CPU Core #";
+    private static readonly string[] PackageTemperatureNames = { "Package", "Tctl", "Tdie" };
 
     private readonly List<float> _coreLoads = new();
     private float? _packageTemp;
@@ -51,7 +52,7 @@ public sealed class CpuBentoCard : BentoCardBase
         ISensor temperature = SensorLookup.CpuTemperature(cpu);
         _packageTemp = temperature?.Value;
         // A fallback sensor (no Package/Tctl/Tdie/Core Max on this CPU) is named instead of being called "Package".
-        _tempLabel = temperature == null || SensorLookup.NameContains(temperature, "Package", "Tctl", "Tdie") ? "Temp. Package" : temperature.Name;
+        _tempLabel = temperature == null || SensorLookup.NameContainsAny(temperature, PackageTemperatureNames) ? "Temp. Package" : temperature.Name;
         _totalLoad = SensorLookup.Find(cpu, SensorType.Load, "Total")?.Value;
         _packagePower = SensorLookup.FindOrFirst(cpu, SensorType.Power, "Package")?.Value;
 
