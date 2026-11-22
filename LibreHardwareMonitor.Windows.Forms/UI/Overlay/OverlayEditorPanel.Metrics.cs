@@ -13,14 +13,20 @@ using LibreHardwareMonitor.Windows.Forms.UI.Themes;
 
 namespace LibreHardwareMonitor.Windows.Forms.UI.Overlay;
 
-/// <summary>"Leituras" card of the HUD studio: which readings are shown, their names, colors and order.</summary>
+/// <summary>
+/// "Leituras" card of the HUD studio. Two blocks: the readings that are on the HUD, as compact rows in display order,
+/// and the other ones as one-click chips. The rows and chips are rebuilt only when the structure changes (show, hide,
+/// move, add, remove), never while a name is being typed.
+/// </summary>
 public sealed partial class OverlayEditorPanel
 {
-    private static readonly string[] MemoryFormats = { "GB + %", "Só GB", "Usado / Total" };
-
     private StackPanel _metricsList;
     private FluentSectionCard _metricsCard;
     private ContextMenuStrip _sensorMenu;
+    private OverlaySectionCaption _activeCaption;
+    private OverlaySectionCaption _availableCaption;
+    private OverlayChipFlow _availableChips;
+    private NoteLabel _emptyNote;
 
     // Refresh actions of the reading rows; they are rebuilt with the list, unlike the page-level ones in _sync.
     private readonly List<Action> _metricSync = new();
@@ -34,22 +40,19 @@ public sealed partial class OverlayEditorPanel
             AutoHeight = true
         };
 
-        ToolbarRow actions = new() { OnSurface = true, Height = LogicalToDeviceUnits(40) };
-        FluentButton add = PageMetrics.FitButton(new FluentButton { Text = "Adicionar sensor...", Variant = FluentButtonVariant.Accent });
+        ToolbarRow header = new() { OnSurface = true, Height = LogicalToDeviceUnits(40) };
+        _activeCaption = new OverlaySectionCaption { Tag = PageMetrics.Fill };
+        FluentButton add = PageMetrics.FitButton(new FluentButton { Text = "+ Adicionar sensor...", Variant = FluentButtonVariant.Accent, Tag = PageMetrics.AlignRight });
         add.Click += (_, _) => ShowSensorMenu(add);
-        actions.Controls.Add(add);
+        header.Controls.Add(_activeCaption);
+        header.Controls.Add(add);
 
         _metricsList = new StackPanel { Gap = 4, OnSurface = true };
-        return Stack(_metricsCard, actions, _metricsList);
+        _emptyNote = new NoteLabel("Nenhuma leitura ativa. Clique num sensor abaixo para adicionar ao HUD.");
+        _availableCaption = new OverlaySectionCaption { Divider = true };
+        _availableChips = new OverlayChipFlow();
+        return Stack(_metricsCard, header, _metricsList, _emptyNote, _availableCaption, _availableChips);
     }
-
-    private static bool HasGauge(OverlayMetricItem item)
-    {
-        return item.IsCustom || item.Id is "cpu_temp" or "cpu_load" or "gpu_temp" or "gpu_load" or "ram_used";
-    }
-
-    // Frame rates have no bar, but they do change color (inverted: a low value is the bad one).
-    private static bool HasSeverity(OverlayMetricItem item) => HasGauge(item) || OverlayConfig.IsFpsMetric(item.Id);
 
     private void RebuildMetricsList()
     {
@@ -57,112 +60,79 @@ public sealed partial class OverlayEditorPanel
         while (_metricsList.Controls.Count > 0)
             _metricsList.Controls[0].Dispose();
 
+        _availableChips.Clear();
         _metricSync.Clear();
 
+        int active = _config.ActiveMetricCount;
         for (int i = 0; i < _config.MetricItems.Count; i++)
-            _metricsList.Controls.Add(BuildMetricRow(_config.MetricItems[i], i));
+        {
+            if (i < active)
+                _metricsList.Controls.Add(BuildMetricRow(_config.MetricItems[i], i, active));
+            else
+                _availableChips.Controls.Add(BuildMetricChip(_config.MetricItems[i]));
+        }
 
-        _metricsList.ApplyTheme(Theme.Current);
+        int hidden = _config.MetricItems.Count - active;
+        _activeCaption.Text = $"ATIVOS NO HUD ({active})";
+        _availableCaption.Text = $"DISPONÍVEIS ({hidden}) - clique para ativar";
+        _emptyNote.Visible = active == 0;
+        _availableCaption.Visible = hidden > 0;
+        _availableChips.Visible = hidden > 0;
+
+        Theme theme = Theme.Current;
+        _metricsList.ApplyTheme(theme);
+        _activeCaption.ApplyTheme(theme);
+        _availableCaption.ApplyTheme(theme);
+        _availableChips.ApplyTheme(theme);
+        _emptyNote.ApplyTheme(theme);
+
         _metricsList.ResumeLayout(true);
+        _availableChips.PerformLayout();
         _metricsCard.PerformLayout();
+        _page.PerformLayout();
+        _host.PerformLayout();
     }
 
-    private Control BuildMetricRow(OverlayMetricItem item, int index)
+    private OverlayMetricRow BuildMetricRow(OverlayMetricItem item, int index, int activeCount)
     {
-        const int RowHeight = 28;
-        ToolbarRow row = new() { OnSurface = true, Height = LogicalToDeviceUnits(36) };
-        FluentButton visible = Toggle("Visível", () => item.Enabled, v => { _config.SetMetricEnabled(item, v); MetricsChanged(); }, RowHeight, _metricSync);
-
-        FluentTextBox name = new() { Text = item.DisplayName, Width = LogicalToDeviceUnits(150), Height = LogicalToDeviceUnits(RowHeight), MaxLength = 24 };
-        _toolTip.SetToolTip(name, item.IsCustom ? $"Sensor: {item.DefaultTitle}" : OverlayConfig.IsFpsMetric(item.Id)
-            ? $"Leitura: {item.DefaultTitle}. Mede o jogo em primeiro plano enquanto o HUD está visível; sem jogo mostra --"
-            : $"Leitura: {item.DefaultTitle}");
-        name.TextChanged += (_, _) =>
+        OverlayMetricRow row = new(item, _config, _toolTip, index > 0, index < activeCount - 1);
+        row.Edited += (_, _) => Changed();
+        row.FormatChanged += (_, _) =>
         {
-            item.CustomTitle = name.Text;
+            _telemetry.Update(_computer());
             Changed();
         };
-
-        row.Controls.Add(visible);
-        row.Controls.Add(name);
-        row.Controls.Add(MetricColor("Cor do rótulo", () => _config.LabelColor, () => item.CustomLabelColor, c => item.CustomLabelColor = c, RowHeight));
-        row.Controls.Add(MetricColor("Cor do valor", () => _config.ValueColor, () => item.CustomValueColor, c => item.CustomValueColor = c, RowHeight));
-
-        if (HasSeverity(item))
-        {
-            FluentButton severity = Toggle("Severidade", () => item.UseDynamicColor, v => item.UseDynamicColor = v, RowHeight, _metricSync);
-            _toolTip.SetToolTip(severity, OverlayConfig.IsFpsMetric(item.Id)
-                ? "O valor fica amarelo abaixo de 60 FPS (acima de 16,7 ms) e vermelho abaixo de 30 FPS (acima de 33,3 ms)"
-                : "O valor muda de cor conforme a temperatura ou a carga");
-            row.Controls.Add(severity);
-        }
-
-        if (HasGauge(item))
-            row.Controls.Add(Toggle("Barra", () => item.ShowBar, v => item.ShowBar = v, RowHeight, _metricSync));
-
-        if (item.Id == "ram_used")
-        {
-            FluentButton format = PageMetrics.FitButton(new FluentButton { Text = MemoryFormats[Math.Clamp(item.DisplayFormat, 0, 2)] }, RowHeight);
-            _toolTip.SetToolTip(format, "Formato do valor");
-            format.Click += (_, _) =>
-            {
-                item.DisplayFormat = (item.DisplayFormat + 1) % MemoryFormats.Length;
-                format.Text = MemoryFormats[item.DisplayFormat];
-                PageMetrics.FitButton(format, RowHeight);
-                _telemetry.Update(_computer());
-                Changed();
-            };
-            row.Controls.Add(format);
-        }
-
-        // Right side, added from the edge inwards: remove (custom only), down, up.
-        if (item.IsCustom)
-        {
-            FluentButton remove = PageMetrics.FitButton(new FluentButton { Text = "Remover", Tag = PageMetrics.AlignRight }, RowHeight);
-            remove.Click += (_, _) =>
-            {
-                _config.MetricItems.Remove(item);
-                MetricsChanged();
-            };
-            row.Controls.Add(remove);
-        }
-
-        row.Controls.Add(MoveButton(item, +1, "Mover para baixo", index < _config.MetricItems.Count - 1));
-        row.Controls.Add(MoveButton(item, -1, "Mover para cima", index > 0));
-
-        return row;
-    }
-
-    private FluentColorButton MetricColor(string toolTip, Func<Color> fallback, Func<Color?> get, Action<Color?> set, int heightLogical)
-    {
-        FluentColorButton button = new(string.Empty, allowReset: true) { Fallback = fallback, Height = LogicalToDeviceUnits(heightLogical) };
-        _toolTip.SetToolTip(button, toolTip + " (o ponto indica que segue a cor geral)");
-        button.ValueChanged += (_, _) =>
-        {
-            set(button.Value);
-            Changed();
-        };
-        _metricSync.Add(() => button.Value = get());
-        return button;
-    }
-
-    private FluentButton MoveButton(OverlayMetricItem item, int delta, string toolTip, bool enabled)
-    {
-        FluentButton button = new()
-        {
-            Text = delta < 0 ? "↑" : "↓",
-            Width = LogicalToDeviceUnits(32),
-            Height = LogicalToDeviceUnits(28),
-            Enabled = enabled,
-            Tag = PageMetrics.AlignRight
-        };
-        _toolTip.SetToolTip(button, toolTip);
-        button.Click += (_, _) =>
+        row.MoveRequested += (_, delta) =>
         {
             if (_config.Move(item, delta))
                 MetricsChanged();
         };
-        return button;
+        row.HideRequested += (_, _) =>
+        {
+            _config.SetMetricEnabled(item, false);
+            MetricsChanged();
+        };
+
+        _metricSync.Add(row.Sync);
+        return row;
+    }
+
+    private OverlayMetricChip BuildMetricChip(OverlayMetricItem item)
+    {
+        OverlayMetricChip chip = new(item);
+        _toolTip.SetToolTip(chip, item.IsCustom ? "Clique para mostrar no HUD. O x apaga o sensor da configuração" : "Mostrar no HUD");
+        chip.Activated += (_, _) =>
+        {
+            _config.SetMetricEnabled(item, true);
+            MetricsChanged();
+        };
+        chip.RemoveRequested += (_, _) =>
+        {
+            if (_config.RemoveMetric(item))
+                MetricsChanged();
+        };
+
+        return chip;
     }
 
     /// <summary>The set or order of readings changed: rebuild the rows and resolve the sensors again.</summary>
@@ -170,7 +140,7 @@ public sealed partial class OverlayEditorPanel
     {
         _telemetry.Invalidate();
         _telemetry.Update(_computer());
-        // Rebuilding disposes the button being clicked; let its click handler return first.
+        // Rebuilding disposes the control being clicked; let its click handler return first.
         BeginInvoke(new Action(() =>
         {
             RebuildMetricsList();

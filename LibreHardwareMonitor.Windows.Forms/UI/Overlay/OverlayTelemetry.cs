@@ -52,7 +52,7 @@ public sealed class OverlayTelemetry
     private readonly List<ISensor> _netUp = new();
 
     private ISensor _cpuTemp, _cpuLoad, _cpuPower;
-    private ISensor _gpuTemp, _gpuLoad, _gpuPower, _gpuClock, _gpuFan, _gpuFanControl, _vramUsed;
+    private ISensor _gpuTemp, _gpuLoad, _gpuPower, _gpuClock, _gpuFan, _gpuFanControl, _vramUsed, _vramTotal, _vramFree;
     private ISensor _ramUsed, _ramAvailable, _ramLoad;
     private int _age = RebindTicks;
     private FpsSnapshot _fps;
@@ -148,6 +148,8 @@ public sealed class OverlayTelemetry
         _gpuFan = SensorLookup.FindOrFirst(gpu, SensorType.Fan);
         _gpuFanControl = SensorLookup.FindOrFirst(gpu, SensorType.Control);
         _vramUsed = SensorLookup.Find(gpu, SensorType.Data, "Memory Used");
+        _vramTotal = SensorLookup.Find(gpu, SensorType.Data, "Memory Total");
+        _vramFree = SensorLookup.Find(gpu, SensorType.Data, "Memory Free");
 
         IHardware memory = SensorLookup.PhysicalMemory(hardware);
         _ramUsed = SensorLookup.Find(memory, SensorType.Data, "Memory Used", "Used");
@@ -210,7 +212,7 @@ public sealed class OverlayTelemetry
             case "gpu_power": return Plain(_gpuPower, "F0", " W");
             case "gpu_clock": return Plain(_gpuClock, "F0", " MHz");
             case "gpu_fan": return _gpuFan?.Value != null ? Plain(_gpuFan, "F0", " RPM") : Plain(_gpuFanControl, "F0", " %");
-            case "vram_used": return Gigabytes(_vramUsed);
+            case "vram_used": return Vram(item.DisplayFormat);
             case "ram_used": return Memory(item.DisplayFormat);
             case "fan_rpm": return Plain(FirstSpinning(_fans), "F0", " RPM");
             case "net_speed": return new OverlayReading($"D {SensorLookup.FormatThroughput(Sum(_netDown))}  U {SensorLookup.FormatThroughput(Sum(_netUp))}");
@@ -280,9 +282,26 @@ public sealed class OverlayTelemetry
         return new OverlayReading(sensor?.Value is float v ? v.ToString(format) + unit : "--");
     }
 
-    private static OverlayReading Gigabytes(ISensor sensor)
+    // Video memory with the same three formats as the RAM. Without a total (some drivers only report the used part)
+    // every format falls back to the used amount, as before.
+    private OverlayReading Vram(int format)
     {
-        return new OverlayReading(SensorLookup.ToGigabytes(sensor?.Value) is float gb ? $"{gb:F1} GB" : "--");
+        if (SensorLookup.ToGigabytes(_vramUsed?.Value) is not float used)
+            return new OverlayReading("--");
+
+        float total = SensorLookup.ToGigabytes(_vramTotal?.Value) ?? (SensorLookup.ToGigabytes(_vramFree?.Value) is float free ? used + free : 0f);
+        if (total <= 0.1f)
+            return new OverlayReading($"{used:F1} GB");
+
+        float percent = used / total * 100f;
+        string text = format switch
+        {
+            1 => $"{used:F1} GB",
+            2 => $"{used:F1} / {total:F1} GB",
+            _ => $"{used:F1} GB ({percent:F0}%)"
+        };
+
+        return new OverlayReading(text, percent / 100f, LoadSeverity(percent));
     }
 
     private OverlayReading Memory(int format)

@@ -276,6 +276,7 @@ public sealed class FluentColorButton : Control, IThemedControl
     private ToolStripDropDown _popup;
     private Color? _value;
     private bool _hovered;
+    private bool _dimmed;
 
     public FluentColorButton(string text, bool allowReset = false)
     {
@@ -304,6 +305,20 @@ public sealed class FluentColorButton : Control, IThemedControl
     }
 
     public Color EffectiveColor => _value ?? Fallback?.Invoke() ?? Color.White;
+
+    /// <summary>Drawn faded when another setting currently overrides this color (it stays clickable).</summary>
+    public bool Dimmed
+    {
+        get => _dimmed;
+        set
+        {
+            if (_dimmed == value)
+                return;
+
+            _dimmed = value;
+            Invalidate();
+        }
+    }
 
     public void ApplyTheme(Theme theme) => Invalidate();
 
@@ -385,7 +400,7 @@ public sealed class FluentColorButton : Control, IThemedControl
 
         int size = LogicalToDeviceUnits(16);
         Rectangle swatch = new(LogicalToDeviceUnits(10), (Height - size) / 2, size, size);
-        FluentStyle.FillRounded(g, Color.FromArgb(255, EffectiveColor), swatch, LogicalToDeviceUnits(4));
+        FluentStyle.FillRounded(g, Color.FromArgb(_dimmed ? 90 : 255, EffectiveColor), swatch, LogicalToDeviceUnits(4));
         FluentStyle.DrawRounded(g, FluentStyle.Blend(FluentComboBox.Border(theme), theme.ForegroundColor, 0.25), swatch, LogicalToDeviceUnits(4));
 
         // An inherited color is marked with a small dot so it reads as "automatic".
@@ -399,7 +414,7 @@ public sealed class FluentColorButton : Control, IThemedControl
         if (Text.Length > 0)
         {
             Rectangle text = new(swatch.Right + LogicalToDeviceUnits(8), 0, Width - swatch.Right - LogicalToDeviceUnits(12), Height);
-            TextRenderer.DrawText(g, Text, FluentStyle.UiFont, text, theme.ForegroundColor,
+            TextRenderer.DrawText(g, Text, FluentStyle.UiFont, text, _dimmed ? theme.MutedForegroundColor : theme.ForegroundColor,
                                   TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         }
     }
